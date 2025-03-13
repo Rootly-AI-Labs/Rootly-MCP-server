@@ -14,7 +14,6 @@ A Model Context Protocol (MCP) server for Rootly API. This server dynamically ge
 - Python 3.12 or higher
 - `uv` package manager
   ```bash
-  # Install UV if you haven't already
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
 - Rootly API token
