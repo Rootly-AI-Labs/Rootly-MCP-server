@@ -78,3 +78,7 @@ The server configuration is defined in `mcp.json`. To use this server with Claud
 
 Replace `/path/to/rootly-mcp-server` with the absolute path to your project directory.
 
+## About the Rootly AI Labs
+This project was developed by the [Rootly AI Labs](https://labs.rootly.ai/). The AI Labs is building the future of system reliability and operational excellence. We operate as an open-source incubator, sharing ideas, experimenting, and rapidly prototyping. We're committed to ensuring our research benefits the entire community.
+![Rootly AI logo](https://github.com/Rootly-AI-Labs/EventOrOutage/raw/main/rootly-ai.png)
+
