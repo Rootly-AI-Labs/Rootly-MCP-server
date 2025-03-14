@@ -1,16 +1,18 @@
 [project]
 name = "rootly-mcp-server"
-version = "0.1.0"
+version = "0.0.1"
 description = "A Model Context Protocol server for Rootly APIs using OpenAPI spec"
 readme = "README.md"
 requires-python = ">=3.12"
-authors = [{ name = "Anthropic, PBC." }]
+authors = [{ name = "Rootly AI Labs", email="support@rootly.com"}]
 keywords = ["rootly", "mcp", "llm", "automation", "incidents"]
-license = { text = "MIT" }
+license = "AGPL-3.0-only"
+license-files = ["LICEN[CS]E*"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "Topic :: Software Development :: Build Tools",
+    "License :: OSI Approved :: GNU License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
 ]
@@ -19,6 +21,10 @@ dependencies = [
     "requests>=2.28.0",     # For API calls
     "pydantic>=2.0.0",      # For data validation
 ]
+
+[project.urls]
+Homepage = "https://github.com/Rootly-AI-Labs/Rootly-MCP-server"
+Issues = "https://github.com/Rootly-AI-Labs/Rootly-MCP-server/issues"
 
 [build-system]
 requires = ["hatchling"]
@@ -50,4 +56,4 @@ dev-dependencies = [
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
-python_functions = "test_*" 
+python_functions = "test_*"
