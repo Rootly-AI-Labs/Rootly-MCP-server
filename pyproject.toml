@@ -1,5 +1,5 @@
 [project]
-name = "rootly_mcp_server"
+name = "rootlyhq-mcp-server"
 version = "0.0.1"
 description = "A Model Context Protocol server for Rootly APIs using OpenAPI spec"
 readme = "README.md"
@@ -36,7 +36,7 @@ packages = ["src/rootly_mcp_server"]
 allow-direct-references = true
 
 [project.scripts]
-rootly-mcp = "rootly_mcp_server.__main__:main"
+rootlyhq-mcp-server = "rootly_mcp_server.__main__:main"
 
 [project.optional-dependencies]
 dev = [
