@@ -378,7 +378,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rootly-mcp-server"
+name = "rootlyhq-mcp-server"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
