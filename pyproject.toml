@@ -1,5 +1,5 @@
 [project]
-name = "rootly-mcp-server_sylvainkalache-rootly"
+name = "rootly_mcp_server"
 version = "0.0.1"
 description = "A Model Context Protocol server for Rootly APIs using OpenAPI spec"
 readme = "README.md"
