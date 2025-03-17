@@ -50,7 +50,7 @@ export ROOTLY_API_TOKEN="your-api-token-here"
 
 Start the server:
 ```bash
-rootly-mcp
+rootly-mcp-server
 ```
 
 ## MCP Configuration
@@ -66,7 +66,7 @@ The server configuration is defined in `mcp.json`. To use this server with Claud
           "run",
           "--directory",
           "/path/to/rootly-mcp-server",
-          "rootly-mcp"
+          "rootly-mcp-server"
         ],
         "env": {
           "ROOTLY_API_TOKEN": "YOUR_ROOTLY_API_TOKEN"
