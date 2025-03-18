@@ -5,6 +5,7 @@ A Model Context Protocol (MCP) server for Rootly API. This server dynamically ge
 ## Features
 
 - Dynamically generated MCP tools based on Rootly's OpenAPI specification
+- Swagger specification is bundled with the package
 - Automatic fetching of the latest Swagger spec if not found locally
 - Authentication via Rootly API token
 - Default pagination (10 items) for incidents endpoints to prevent context window overflow
@@ -55,9 +56,10 @@ rootly-mcp-server
 ```
 
 The server will automatically:
-1. Look for a local `swagger.json` file in the current and parent directories
-2. If not found, download the latest Swagger spec from Rootly's servers
-3. Cache the downloaded spec to `swagger.json` in the current directory for future use
+1. Use the bundled Swagger specification that comes with the package
+2. If not found in the package, look for a local `swagger.json` file in the current and parent directories
+3. If still not found, download the latest Swagger spec from Rootly's servers
+4. Cache the downloaded spec to `swagger.json` in the current directory for future use
 
 You can also specify a custom Swagger file path:
 ```bash

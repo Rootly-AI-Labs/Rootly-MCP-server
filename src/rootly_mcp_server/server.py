@@ -11,6 +11,7 @@ import re
 import logging
 from pathlib import Path
 import requests
+import importlib.resources
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 
 import mcp
@@ -95,7 +96,10 @@ class RootlyMCPServer(FastMCP):
         
         Args:
             swagger_path: Path to the Swagger JSON file. If None, will look for
-                          swagger.json in the current directory and parent directories.
+                          swagger.json in the following locations (in order):
+                          1. package data directory
+                          2. current directory and parent directories
+                          3. download from the URL
         
         Returns:
             The Swagger specification as a dictionary.
@@ -108,7 +112,17 @@ class RootlyMCPServer(FastMCP):
             with open(swagger_path, "r") as f:
                 return json.load(f)
         else:
-            # Look for swagger.json in the current directory and parent directories
+            # First, check in the package data directory
+            try:
+                package_data_path = Path(__file__).parent / "data" / "swagger.json"
+                if package_data_path.is_file():
+                    logger.info(f"Found Swagger file in package data: {package_data_path}")
+                    with open(package_data_path, "r") as f:
+                        return json.load(f)
+            except Exception as e:
+                logger.debug(f"Could not load Swagger file from package data: {e}")
+            
+            # Then, look for swagger.json in the current directory and parent directories
             logger.info("Looking for swagger.json in current directory and parent directories")
             current_dir = Path.cwd()
             
