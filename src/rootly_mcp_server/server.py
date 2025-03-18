@@ -10,6 +10,7 @@ import os
 import re
 import logging
 from pathlib import Path
+import requests
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 
 import mcp
@@ -20,6 +21,9 @@ from .client import RootlyClient
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
+# Default Swagger URL
+SWAGGER_URL = "https://rootly-heroku.s3.amazonaws.com/swagger/v1/swagger.json"
 
 
 class RootlyMCPServer(FastMCP):
@@ -60,6 +64,31 @@ class RootlyMCPServer(FastMCP):
         logger.info("Registering tools based on Swagger spec")
         self._register_tools()
     
+    def _fetch_swagger_from_url(self, url: str = SWAGGER_URL) -> Dict[str, Any]:
+        """
+        Fetch the Swagger specification from the specified URL.
+        
+        Args:
+            url: URL of the Swagger JSON file.
+        
+        Returns:
+            The Swagger specification as a dictionary.
+            
+        Raises:
+            Exception: If the request fails or the response is not valid JSON.
+        """
+        logger.info(f"Fetching Swagger specification from {url}")
+        try:
+            response = requests.get(url)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Failed to fetch Swagger spec: {e}")
+            raise Exception(f"Failed to fetch Swagger specification: {e}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Swagger spec: {e}")
+            raise Exception(f"Failed to parse Swagger specification: {e}")
+    
     def _load_swagger_spec(self, swagger_path: Optional[str] = None) -> Dict[str, Any]:
         """
         Load the Swagger specification from a file.
@@ -98,8 +127,21 @@ class RootlyMCPServer(FastMCP):
                     with open(swagger_path, "r") as f:
                         return json.load(f)
             
-            # If we get here, we didn't find the file
-            raise FileNotFoundError("Could not find swagger.json in current directory or parent directories")
+            # If the file wasn't found, fetch it from the URL and save it
+            logger.info("Swagger file not found locally, fetching from URL")
+            swagger_spec = self._fetch_swagger_from_url()
+            
+            # Save the fetched spec to the current directory
+            swagger_path = current_dir / "swagger.json"
+            logger.info(f"Saving Swagger file to {swagger_path}")
+            try:
+                with open(swagger_path, "w") as f:
+                    json.dump(swagger_spec, f)
+                logger.info(f"Saved Swagger file to {swagger_path}")
+            except Exception as e:
+                logger.warning(f"Failed to save Swagger file: {e}")
+            
+            return swagger_spec
     
     def _register_tools(self) -> None:
         """
