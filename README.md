@@ -40,7 +40,7 @@ To set it up in your favorite MCP-compatible editor (we tested it with Cursor an
   }
 ```
 
-If you want to customize `allowed_paths` to have access to more Rootly API path, clone the package and use this config
+If you want to customize `allowed_paths` to have access to more Rootly API paths, clone the package and use this confi.g
 
 ```json
 {
@@ -69,6 +69,9 @@ This server dynamically generates MCP resources based on Rootly's OpenAPI (Swagg
 Because [Rootly's API](https://docs.rootly.com/api-reference/overview) is very rich in paths, AI agents can get overwhelmed and not perform simple actions properly. As of now we only expose the [/incidents](https://docs.rootly.com/api-reference/incidents/list-incidents) and [/incidents/{incident_id}/alerts](https://docs.rootly.com/api-reference/incidentevents/list-incident-events). 
 
 If you want to make more path available, edit the variable `allowed_paths` in `src/rootly_mcp_server/server.py`.
+
+## Disclaimer
+This project is a prototype and not intended for production use. If you have featured ideas or spotted some issues, feel free to submit a PR or open an issue.
 
 ## About the Rootly AI Labs
 This project was developed by the [Rootly AI Labs](https://labs.rootly.ai/). The AI Labs is building the future of system reliability and operational excellence. We operate as an open-source incubator, sharing ideas, experimenting, and rapidly prototyping. We're committed to ensuring our research benefits the entire community.
