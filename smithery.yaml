@@ -1,0 +1,24 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - rootlyApiToken
+    properties:
+      rootlyApiToken:
+        type: string
+        description: Rootly API token for authenticating with the Rootly API
+      swaggerPath:
+        type: string
+        description: Optional path to the Swagger JSON file. Defaults to searching in
+          the working directory if not provided.
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => { const command = 'rootly-mcp-server'; const args = ['--transport', 'stdio']; if(config.swaggerPath) { args.push('--swagger-path', config.swaggerPath); } return { command, args, env: { ROOTLY_API_TOKEN: config.rootlyApiToken } } }
+  exampleConfig:
+    rootlyApiToken: abcde12345
+    swaggerPath: ./swagger.json
