@@ -1,15 +1,7 @@
+
 # Rootly MCP Server
 
-A Model Context Protocol (MCP) server for Rootly API. This server dynamically generates MCP resources based on Rootly's OpenAPI (Swagger) specification.
-
-## Features
-
-- Dynamically generated MCP tools based on Rootly's OpenAPI specification
-- Swagger specification is bundled with the package
-- Automatic fetching of the latest Swagger spec if not found locally
-- Authentication via Rootly API token
-- Default pagination (10 items) for incidents endpoints to prevent context window overflow
-- Easy integration with Claude and other MCP-compatible LLMs
+An MCP server for Rootly API that you can plug into your favorite MCP-compatible editor like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
 
 ## Prerequisites
 
@@ -18,58 +10,12 @@ A Model Context Protocol (MCP) server for Rootly API. This server dynamically ge
   ```bash
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
-- Rootly API token
+- [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F)
 
-## Setup
+## Run it in your IDE
+You can either directly install the sever with our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repo.
 
-1. Create and activate a virtual environment:
-```bash
-# Create a new virtual environment
-uv venv
-
-# Activate the virtual environment
-# On macOS/Linux:
-source .venv/bin/activate
-# On Windows:
-.venv\Scripts\activate
-```
-
-2. Install the package in development mode:
-```bash
-# Install all dependencies
-uv pip install -e .
-
-# Install dev dependencies (optional)
-uv pip install -e ".[dev]"
-```
-
-3. Set your Rootly API token:
-```bash
-export ROOTLY_API_TOKEN="your-api-token-here"
-```
-
-## Running the Server
-
-Start the server:
-```bash
-rootly-mcp-server
-```
-
-The server will automatically:
-1. Use the bundled Swagger specification that comes with the package
-2. If not found in the package, look for a local `swagger.json` file in the current and parent directories
-3. If still not found, download the latest Swagger spec from Rootly's servers
-4. Cache the downloaded spec to `swagger.json` in the current directory for future use
-
-You can also specify a custom Swagger file path:
-```bash
-rootly-mcp-server --swagger-path=/path/to/your/swagger.json
-```
-
-## MCP Configuration
-
-The server configuration is defined in `mcp.json`. To use this server with Claude or other MCP clients, add the following configuration to your MCP configuration file:
-
+To set it up in your favorite MCP-compatible editor (we tested it with Cursor and Windsurf), here is the config :
 ```json
 {
     "mcpServers": {
@@ -82,14 +28,42 @@ The server configuration is defined in `mcp.json`. To use this server with Claud
           "rootly-mcp-server"
         ],
         "env": {
-          "ROOTLY_API_TOKEN": "YOUR_ROOTLY_API_TOKEN"
+          "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
         }
       }
     }
   }
 ```
 
-Replace `/path/to/rootly-mcp-server` with the absolute path to your project directory.
+If you want to customize `allowed_paths` to have access to more Rootly API path, clone the package and use this config
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "uv",
+      "args": [
+        "--from",
+        "rootly-mcp-server",
+        "rootly-mcp-server"
+      ],
+      "env": {
+        "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+
+```
+## Features
+This server dynamically generates MCP resources based on Rootly's OpenAPI (Swagger) specification:
+- Dynamically generated MCP tools based on Rootly's OpenAPI specification
+- Default pagination (10 items) for incident endpoints to prevent context window overflow
+- Limits the number of API paths exposed to the AI agent
+
+Because Rootly's API is very rich in paths, AI agents can get overwhelmed and not perform simple actions properly. As of now we only expose the [/incidents](https://docs.rootly.com/api-reference/incidents/list-incidents) and [/incidents/{incident_id}/alerts](https://docs.rootly.com/api-reference/incidentevents/list-incident-events). 
+
+If you want to make more path available, edit the variable `allowed_paths` in `src/rootly_mcp_server/server.py`.
 
 ## About the Rootly AI Labs
 This project was developed by the [Rootly AI Labs](https://labs.rootly.ai/). The AI Labs is building the future of system reliability and operational excellence. We operate as an open-source incubator, sharing ideas, experimenting, and rapidly prototyping. We're committed to ensuring our research benefits the entire community.
