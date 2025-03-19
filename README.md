@@ -1,5 +1,6 @@
-
 # Rootly MCP Server
+
+[![smithery badge](https://smithery.ai/badge/@Rootly-AI-Labs/rootly-mcp-server)](https://smithery.ai/server/@Rootly-AI-Labs/rootly-mcp-server)
 
 An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) that you can plug into your favorite MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
 <br>
@@ -18,7 +19,15 @@ An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) t
 - [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F)
 
 ## Run it in your IDE
-Install with our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repo.
+Install with our [PyPi package](https://pypi.org/project/rootly-mcp-server/), [Smithery](https://smithery.ai/server/@Rootly-AI-Labs/rootly-mcp-server), or by cloning this repo.
+
+### Installing via Smithery
+
+To install rootly-mcp-server for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@Rootly-AI-Labs/rootly-mcp-server):
+
+```bash
+npx -y @smithery/cli install @Rootly-AI-Labs/rootly-mcp-server --client claude
+```
 
 To set it up in your favorite MCP-compatible editor (we tested it with Cursor and Windsurf), here is the config :
 ```json
@@ -74,4 +83,3 @@ This project is a prototype and not intended for production use. If you have fea
 ## About the Rootly AI Labs
 This project was developed by the [Rootly AI Labs](https://labs.rootly.ai/). The AI Labs is building the future of system reliability and operational excellence. We operate as an open-source incubator, sharing ideas, experimenting, and rapidly prototyping. We're committed to ensuring our research benefits the entire community.
 ![Rootly AI logo](https://github.com/Rootly-AI-Labs/EventOrOutage/raw/main/rootly-ai.png)
-
