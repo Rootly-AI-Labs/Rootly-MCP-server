@@ -1,7 +1,7 @@
 
 # Rootly MCP Server
 
-An MCP server for Rootly API that you can plug into your favorite MCP-compatible editor like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
+An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) that you can plug into your favorite MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
 <br>
 <br>
 
@@ -66,7 +66,7 @@ This server dynamically generates MCP resources based on Rootly's OpenAPI (Swagg
 - Default pagination (10 items) for incident endpoints to prevent context window overflow
 - Limits the number of API paths exposed to the AI agent
 
-Because [Rootly's](https://docs.rootly.com/api-reference/overview) API is very rich in paths, AI agents can get overwhelmed and not perform simple actions properly. As of now we only expose the [/incidents](https://docs.rootly.com/api-reference/incidents/list-incidents) and [/incidents/{incident_id}/alerts](https://docs.rootly.com/api-reference/incidentevents/list-incident-events). 
+Because [Rootly's API](https://docs.rootly.com/api-reference/overview) is very rich in paths, AI agents can get overwhelmed and not perform simple actions properly. As of now we only expose the [/incidents](https://docs.rootly.com/api-reference/incidents/list-incidents) and [/incidents/{incident_id}/alerts](https://docs.rootly.com/api-reference/incidentevents/list-incident-events). 
 
 If you want to make more path available, edit the variable `allowed_paths` in `src/rootly_mcp_server/server.py`.
 
