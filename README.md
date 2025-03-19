@@ -18,7 +18,7 @@ An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) t
 - [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F)
 
 ## Run it in your IDE
-You can directly install the server with our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repo.
+Install with our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repo.
 
 To set it up in your favorite MCP-compatible editor (we tested it with Cursor and Windsurf), here is the config :
 ```json
@@ -38,7 +38,7 @@ To set it up in your favorite MCP-compatible editor (we tested it with Cursor an
   }
 }
 ```
-If you want to customize `allowed_paths` to have access to more Rootly API paths, clone the package and use this config.
+If you want to customize `allowed_paths` to access more Rootly API paths, clone the package and use this config.
 ```json
 {
     "mcpServers": {
