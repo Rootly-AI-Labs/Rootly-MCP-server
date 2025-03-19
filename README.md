@@ -18,9 +18,27 @@ An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) t
 - [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F)
 
 ## Run it in your IDE
-You can either directly install the sever with our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repo.
+You can directly install the server with our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repo.
 
 To set it up in your favorite MCP-compatible editor (we tested it with Cursor and Windsurf), here is the config :
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "rootly-mcp-server",
+        "rootly-mcp-server"
+      ],
+      "env": {
+        "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+If you want to customize `allowed_paths` to have access to more Rootly API paths, clone the package and use this config.
 ```json
 {
     "mcpServers": {
@@ -40,26 +58,6 @@ To set it up in your favorite MCP-compatible editor (we tested it with Cursor an
   }
 ```
 
-If you want to customize `allowed_paths` to have access to more Rootly API paths, clone the package and use this confi.g
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "command": "uv",
-      "args": [
-        "--from",
-        "rootly-mcp-server",
-        "rootly-mcp-server"
-      ],
-      "env": {
-        "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
-      }
-    }
-  }
-}
-
-```
 ## Features
 This server dynamically generates MCP resources based on Rootly's OpenAPI (Swagger) specification:
 - Dynamically generated MCP tools based on Rootly's OpenAPI specification
