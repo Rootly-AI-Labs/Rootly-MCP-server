@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name = "Rootly AI Labs", email="support@rootly.com"}]
 keywords = ["rootly", "mcp", "llm", "automation", "incidents"]
-license = "AGPL-3.0-only"
+license = "Apache-2.0"
 license-files = ["LICEN[CS]E*"]
 classifiers = [
     "Development Status :: 4 - Beta",
