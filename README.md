@@ -1,7 +1,10 @@
 
 # Rootly MCP Server
 
-An MCP server for Rootly API that you can plug into your favorite MCP-compatible editor like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.<br>
+An MCP server for Rootly API that you can plug into your favorite MCP-compatible editor like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
+<br>
+<br>
+
 ![Demo GIF](rootly-mcp-server-demo.gif)
 
 
