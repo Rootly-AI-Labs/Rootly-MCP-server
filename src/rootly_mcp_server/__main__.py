@@ -67,7 +67,11 @@ def setup_logging(log_level, debug=False):
     
     # Set specific logger levels
     logging.getLogger("rootly_mcp_server").setLevel(numeric_level)
-    logging.getLogger("mcp").setLevel(numeric_level)
+    logging.getLogger("rootly_mcp_server.server").setLevel(logging.WARNING)  # Reduce server-specific logs
+    
+    # Always set MCP logger to ERROR level to fix Cline UI issue
+    # This prevents INFO logs from causing problems with Cline tool display
+    logging.getLogger("mcp").setLevel(logging.ERROR)
     
     # Log the configuration
     logger = logging.getLogger(__name__)

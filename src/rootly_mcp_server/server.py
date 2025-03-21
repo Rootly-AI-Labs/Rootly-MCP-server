@@ -64,7 +64,8 @@ class RootlyMCPServer(FastMCP):
         ]
 
         logger.info(f"Initializing RootlyMCPServer with allowed paths: {self.allowed_paths}")
-        super().__init__(name)
+        # Initialize FastMCP with ERROR log level to fix Cline UI issue
+        super().__init__(name, log_level="ERROR")
 
         # Initialize the Rootly API client
         self.client = RootlyClient()
@@ -389,7 +390,7 @@ class RootlyMCPServer(FastMCP):
                 # If no pagination parameters are specified, add default page size
                 if not has_pagination:
                     query_params["page[size]"] = self.default_page_size
-                    logger.info(f"Added default pagination (page[size]={self.default_page_size}) for incidents endpoint: {path}")
+                    logger.debug(f"Added default pagination (page[size]={self.default_page_size}) for incidents endpoint: {path}")
         else:
             # For other methods, check which parameters are query parameters
             for param in operation.get("parameters", []):
