@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/rootly-ai-labs-rootly-mcp-server-badge.png)](https://mseep.ai/app/rootly-ai-labs-rootly-mcp-server)
+
 
 # Rootly MCP Server
 
