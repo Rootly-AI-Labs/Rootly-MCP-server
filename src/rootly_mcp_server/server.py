@@ -55,7 +55,40 @@ class RootlyMCPServer(FastMCP):
         # Set default allowed paths if none provided
         self.allowed_paths = allowed_paths or [
             "/incidents",
-            "/incidents/{incident_id}/alerts"
+            "/incidents/{incident_id}/alerts",
+            "/alerts",
+            "/alerts/{alert_id}",
+            "/severities",
+            "/severities/{severity_id}",
+            "/teams",
+            "/teams/{team_id}",
+            "/services",
+            "/services/{service_id}",
+            "/functionalities",
+            "/functionalities/{functionality_id}",
+            # Incident types
+            "/incident_types",
+            "/incident_types/{incident_type_id}",
+            # Action items (all, by id, by incident)
+            "/incident_action_items",
+            "/incident_action_items/{incident_action_item_id}",
+            "/incidents/{incident_id}/action_items",
+            # Workflows
+            "/workflows",
+            "/workflows/{workflow_id}",
+            # Workflow runs
+            "/workflow_runs",
+            "/workflow_runs/{workflow_run_id}",
+            # Environments
+            "/environments",
+            "/environments/{environment_id}",
+            # Users
+            "/users",
+            "/users/{user_id}",
+            "/users/me",
+            # Status pages
+            "/status_pages",
+            "/status_pages/{status_page_id}"
         ]
         # Add /v1 prefix to paths if not present
         self.allowed_paths = [
