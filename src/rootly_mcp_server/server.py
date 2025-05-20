@@ -390,7 +390,7 @@ class RootlyMCPServer(FastMCP):
             path: The API path.
             method: The HTTP method.
             operation: The Swagger operation object.
-            **kwargs: The parameters for the request.
+            **v: The parameters for the request.
 
         Returns:
             The API response as a JSON string.
@@ -412,39 +412,25 @@ class RootlyMCPServer(FastMCP):
         body_params = {}
 
         if method.lower() == "get":
-            # For GET requests, all remaining parameters are query parameters
             query_params = kwargs
-
-            # Add default pagination for incident-related endpoints
             if "incidents" in path and method.lower() == "get":
-                # Check if pagination parameters are already specified
                 has_pagination = any(param.startswith("page[") for param in query_params.keys())
-
-                # If no pagination parameters are specified, add default page size
                 if not has_pagination:
                     query_params["page[size]"] = self.default_page_size
                     logger.debug(f"Added default pagination (page[size]={self.default_page_size}) for incidents endpoint: {path}")
         else:
-            # For other methods, check which parameters are query parameters
             for param in operation.get("parameters", []):
                 param_name = param.get("name")
                 param_in = param.get("in")
-
                 if param_in == "query" and param_name in kwargs:
                     query_params[param_name] = kwargs.pop(param_name)
-
-            # All remaining parameters go in the request body
             body_params = kwargs
 
-        # Make the API request
         try:
-            # Determine JSON-API type for POST/PUT/PATCH
             json_api_type = None
             if method.lower() in ["post", "put", "patch"]:
-                # Use the last path segment as the type (e.g., 'incidents' for /v1/incidents)
                 segments = [seg for seg in actual_path.split("/") if seg and not seg.startswith(":") and not seg.startswith("{")]
                 if segments:
-                    # If the last segment is an ID, use the previous one
                     if segments[-1].startswith("by_") or segments[-1].endswith("_id") or segments[-1].startswith("id") or segments[-1].startswith("{id"):
                         if len(segments) > 1:
                             json_api_type = segments[-2]
@@ -458,6 +444,7 @@ class RootlyMCPServer(FastMCP):
                 json_data=body_params if body_params else None,
                 json_api_type=json_api_type
             )
+            # Do not include kwargs or payload in the output, just return the response
             return response
         except Exception as e:
             logger.error(f"Error calling Rootly API: {e}")

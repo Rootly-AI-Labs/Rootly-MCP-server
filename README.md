@@ -1,4 +1,3 @@
-
 # Rootly MCP Server
 
 An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) that you can plug into your favorite MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
@@ -76,4 +75,30 @@ This project is a prototype and not intended for production use. If you have fea
 ## About the Rootly AI Labs
 This project was developed by the [Rootly AI Labs](https://labs.rootly.ai/). The AI Labs is building the future of system reliability and operational excellence. We operate as an open-source incubator, sharing ideas, experimenting, and rapidly prototyping. We're committed to ensuring our research benefits the entire community.
 ![Rootly AI logo](https://github.com/Rootly-AI-Labs/EventOrOutage/raw/main/rootly-ai.png)
+
+## Developer Setup & Troubleshooting
+
+### 1. Install dependencies with `uv`
+This project uses [`uv`](https://github.com/astral-sh/uv) for fast dependency management. To install all dependencies from your `pyproject.toml`:
+```bash
+uv pip install .
+```
+
+### 2. Using a virtual environment
+It is recommended to use a virtual environment for development:
+```bash
+uv venv .venv
+source .venv/bin/activate
+```
+
+### 3. Running the test client
+To run the test client and verify your setup:
+```bash
+python test_mcp_client.py
+```
+
+### 5. General tips
+- Always activate your virtual environment before running scripts.
+- If you add new dependencies, use `uv pip install <package>` to keep your environment up to date.
+- If you encounter issues, check your Python version and ensure it matches the project's requirements.
 

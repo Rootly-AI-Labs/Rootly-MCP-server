@@ -78,7 +78,16 @@ def main():
                 }
             })
             response = receive_message(process)
-            print(f"Call Tool Response: {json.dumps(response, indent=2)}")
+            # Check for 'kwargs' in the response and print only its value parsed as JSON
+            if response and isinstance(response, dict) and "kwargs" in response:
+                try:
+                    parsed_kwargs = json.loads(response["kwargs"])
+                    print(json.dumps(parsed_kwargs, indent=2))
+                except Exception as e:
+                    print(f"Error parsing 'kwargs': {e}")
+                    print(f"Raw kwargs: {response['kwargs']}")
+            else:
+                print(f"Call Tool Response: {json.dumps(response, indent=2)}")
             
     except Exception as e:
         print(f"Error: {e}")
