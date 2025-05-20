@@ -24,7 +24,7 @@ class RootlyClient:
             raise ValueError("ROOTLY_API_TOKEN environment variable is not set")
         return api_token
 
-    def make_request(self, method: str, path: str, query_params: Optional[Dict[str, Any]] = None, json_data: Optional[Dict[str, Any]] = None) -> str:
+    def make_request(self, method: str, path: str, query_params: Optional[Dict[str, Any]] = None, json_data: Optional[Dict[str, Any]] = None, json_api_type: Optional[str] = None) -> str:
         """
         Make an authenticated request to the Rootly API.
         
@@ -33,16 +33,32 @@ class RootlyClient:
             path: The API path.
             query_params: Query parameters for the request.
             json_data: JSON data for the request body.
+            json_api_type: If set, use JSON-API format and this type value.
             
         Returns:
             The API response as a JSON string.
         """
+        # Default headers
         headers = {
             "Authorization": f"Bearer {self._api_token}",
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
-        
+
+        # If JSON-API, update headers and wrap payload
+        if json_api_type and method.upper() in ["POST", "PUT", "PATCH"]:
+            headers["Content-Type"] = "application/vnd.api+json"
+            headers["Accept"] = "application/vnd.api+json"
+            if json_data:
+                json_data = {
+                    "data": {
+                        "type": json_api_type,
+                        "attributes": json_data
+                    }
+                }
+            else:
+                json_data = None
+
         # Ensure path starts with a slash
         if not path.startswith("/"):
             path = f"/{path}"

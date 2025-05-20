@@ -405,11 +405,25 @@ class RootlyMCPServer(FastMCP):
 
         # Make the API request
         try:
+            # Determine JSON-API type for POST/PUT/PATCH
+            json_api_type = None
+            if method.lower() in ["post", "put", "patch"]:
+                # Use the last path segment as the type (e.g., 'incidents' for /v1/incidents)
+                segments = [seg for seg in actual_path.split("/") if seg and not seg.startswith(":") and not seg.startswith("{")]
+                if segments:
+                    # If the last segment is an ID, use the previous one
+                    if segments[-1].startswith("by_") or segments[-1].endswith("_id") or segments[-1].startswith("id") or segments[-1].startswith("{id"):
+                        if len(segments) > 1:
+                            json_api_type = segments[-2]
+                    else:
+                        json_api_type = segments[-1]
+
             response = self.client.make_request(
                 method=method.upper(),
                 path=actual_path,
                 query_params=query_params if query_params else None,
-                json_data=body_params if body_params else None
+                json_data=body_params if body_params else None,
+                json_api_type=json_api_type
             )
             return response
         except Exception as e:
