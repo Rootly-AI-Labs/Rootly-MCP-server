@@ -94,14 +94,11 @@ By default, the following Rootly API endpoints are exposed to the AI agent (see 
 /v1/status_pages/{status_page_id}
 ```
 
-We limited the number of API paths exposed for 2 reasons
-* Context size: because [Rootly's API](https://docs.rootly.com/api-reference/overview) is very rich in paths, AI agents can get overwhelmed and not perform simple actions properly. As of now we only expose the [/incidents](https://docs.rootly.com/api-reference/incidents/list-incidents) and [/incidents/{incident_id}/alerts](https://docs.rootly.com/api-reference/incidentevents/list-incident-events).
+We limited the number of API paths exposed for 2 reasons:
+* Context size: because [Rootly's API](https://docs.rootly.com/api-reference/overview) is very rich in paths, AI agents can get overwhelmed and not perform simple actions properly.
 * Security: if you want to limit the type of information or actions that users can access through the MCP server
 
-If you want to make more path available, edit the variable `allowed_paths` in `src/rootly_mcp_server/server.py`.
-
-## Disclaimer
-This project is a prototype and not intended for production use. If you have featured ideas or spotted some issues, feel free to submit a PR or open an issue.
+If you want to make more paths available, edit the variable `allowed_paths` in `src/rootly_mcp_server/server.py`.
 
 ## About the Rootly AI Labs
 This project was developed by the [Rootly AI Labs](https://labs.rootly.ai/). The AI Labs is building the future of system reliability and operational excellence. We operate as an open-source incubator, sharing ideas, experimenting, and rapidly prototyping. We're committed to ensuring our research benefits the entire community.
