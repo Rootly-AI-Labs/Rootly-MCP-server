@@ -14,9 +14,11 @@ import requests
 import importlib.resources
 from typing import Any, Dict, List, Optional, Tuple, Union, Callable
 
-import mcp
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
+from fastmcp.server.dependencies import get_http_request
+from starlette.requests import Request
 from pydantic import BaseModel, Field
+
 
 from .client import RootlyClient
 
@@ -35,11 +37,16 @@ class RootlyMCPServer(FastMCP):
     OpenAPI (Swagger) specification.
     """
 
-    def __init__(self,
-                 swagger_path: Optional[str] = None,
-                 name: str = "Rootly",
-                 default_page_size: int = 10,
-                 allowed_paths: Optional[List[str]] = None):
+    def __init__(
+        self,
+        swagger_path: Optional[str] = None,
+        name: str = "Rootly",
+        default_page_size: int = 10,
+        allowed_paths: Optional[List[str]] = None,
+        hosted: bool = False,
+        *args,
+        **kwargs,
+    ):
         """
         Initialize the Rootly MCP Server.
 
@@ -52,6 +59,8 @@ class RootlyMCPServer(FastMCP):
                          Paths should be specified without the /v1 prefix.
                          Example: ["/incidents", "/incidents/{incident_id}/alerts"]
         """
+        self.hosted = hosted
+
         # Set default allowed paths if none provided
         self.allowed_paths = allowed_paths or [
             "/incidents",
@@ -88,7 +97,7 @@ class RootlyMCPServer(FastMCP):
             "/users/me",
             # Status pages
             "/status_pages",
-            "/status_pages/{status_page_id}"
+            "/status_pages/{status_page_id}",
         ]
         # Add /v1 prefix to paths if not present
         self.allowed_paths = [
@@ -96,12 +105,14 @@ class RootlyMCPServer(FastMCP):
             for path in self.allowed_paths
         ]
 
-        logger.info(f"Initializing RootlyMCPServer with allowed paths: {self.allowed_paths}")
+        logger.info(
+            f"Initializing RootlyMCPServer with allowed paths: {self.allowed_paths}"
+        )
         # Initialize FastMCP with ERROR log level to fix Cline UI issue
-        super().__init__(name, log_level="ERROR")
+        super().__init__(name, log_level="ERROR", *args, **kwargs)
 
         # Initialize the Rootly API client
-        self.client = RootlyClient()
+        self.client = RootlyClient(hosted=self.hosted)
 
         # Store default page size
         self.default_page_size = default_page_size
@@ -110,7 +121,9 @@ class RootlyMCPServer(FastMCP):
         # Load the Swagger specification
         logger.info("Loading Swagger specification")
         self.swagger_spec = self._load_swagger_spec(swagger_path)
-        logger.info(f"Loaded Swagger spec with {len(self.swagger_spec.get('paths', {}))} total paths")
+        logger.info(
+            f"Loaded Swagger spec with {len(self.swagger_spec.get('paths', {}))} total paths"
+        )
 
         # Register tools based on the Swagger spec
         logger.info("Registering tools based on Swagger spec")
@@ -167,14 +180,18 @@ class RootlyMCPServer(FastMCP):
             try:
                 package_data_path = Path(__file__).parent / "data" / "swagger.json"
                 if package_data_path.is_file():
-                    logger.info(f"Found Swagger file in package data: {package_data_path}")
+                    logger.info(
+                        f"Found Swagger file in package data: {package_data_path}"
+                    )
                     with open(package_data_path, "r") as f:
                         return json.load(f)
             except Exception as e:
                 logger.debug(f"Could not load Swagger file from package data: {e}")
 
             # Then, look for swagger.json in the current directory and parent directories
-            logger.info("Looking for swagger.json in current directory and parent directories")
+            logger.info(
+                "Looking for swagger.json in current directory and parent directories"
+            )
             current_dir = Path.cwd()
 
             # Check current directory first
@@ -222,7 +239,9 @@ class RootlyMCPServer(FastMCP):
             if path in self.allowed_paths
         }
 
-        logger.info(f"Registering {len(filtered_paths)} paths out of {len(paths)} total paths")
+        logger.info(
+            f"Registering {len(filtered_paths)} paths out of {len(paths)} total paths"
+        )
 
         # Register the list_endpoints tool
         @self.tool()
@@ -237,13 +256,15 @@ class RootlyMCPServer(FastMCP):
                     summary = operation.get("summary", "")
                     description = operation.get("description", "")
 
-                    endpoints.append({
-                        "path": path,
-                        "method": method.upper(),
-                        "summary": summary,
-                        "description": description,
-                        "tool_name": self._create_tool_name(path, method)
-                    })
+                    endpoints.append(
+                        {
+                            "path": path,
+                            "method": method.upper(),
+                            "summary": summary,
+                            "description": description,
+                            "tool_name": self._create_tool_name(path, method),
+                        }
+                    )
 
             return json.dumps(endpoints, indent=2)
 
@@ -263,7 +284,9 @@ class RootlyMCPServer(FastMCP):
                 tool_name = self._create_tool_name(path, method)
 
                 # Create a tool description
-                description = operation.get("summary", "") or operation.get("description", "")
+                description = operation.get("summary", "") or operation.get(
+                    "description", ""
+                )
                 if not description:
                     description = f"{method.upper()} {path}"
 
@@ -271,8 +294,8 @@ class RootlyMCPServer(FastMCP):
                 try:
                     # Define the tool function
                     def create_tool_fn(p=path, m=method, op=operation):
-                        def tool_fn(**kwargs):
-                            return self._handle_api_request(p, m, op, **kwargs)
+                        def tool_fn():
+                            return self._handle_api_request(p, m, op)
 
                         # Set the function name and docstring
                         tool_fn.__name__ = tool_name
@@ -283,18 +306,16 @@ class RootlyMCPServer(FastMCP):
                     tool_fn = create_tool_fn()
 
                     # Register the tool with FastMCP
-                    self.add_tool(
-                        name=tool_name,
-                        description=description,
-                        fn=tool_fn
-                    )
+                    self.add_tool(name=tool_name, description=description, fn=tool_fn)
 
                     tool_count += 1
                     logger.info(f"Registered tool: {tool_name}")
                 except Exception as e:
                     logger.error(f"Error registering tool {tool_name}: {e}")
 
-        logger.info(f"Registered {tool_count} tools in total. Modify allowed_paths to register more paths from the Rootly API.")
+        logger.info(
+            f"Registered {tool_count} tools in total. Modify allowed_paths to register more paths from the Rootly API."
+        )
 
     def _create_tool_name(self, path: str, method: str) -> str:
         """
@@ -319,7 +340,9 @@ class RootlyMCPServer(FastMCP):
 
         return f"{path}_{method.lower()}"
 
-    def _create_input_schema(self, path: str, operation: Dict[str, Any]) -> Dict[str, Any]:
+    def _create_input_schema(
+        self, path: str, operation: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Create an input schema for the tool.
 
@@ -335,7 +358,7 @@ class RootlyMCPServer(FastMCP):
             "type": "object",
             "properties": {},
             "required": [],
-            "additionalProperties": False
+            "additionalProperties": False,
         }
 
         # Extract path parameters
@@ -343,7 +366,7 @@ class RootlyMCPServer(FastMCP):
         for param in path_params:
             schema["properties"][param] = {
                 "type": "string",
-                "description": f"Path parameter: {param}"
+                "description": f"Path parameter: {param}",
             }
             schema["required"].append(param)
 
@@ -358,7 +381,9 @@ class RootlyMCPServer(FastMCP):
 
                 schema["properties"][param_name] = {
                     "type": param_type,
-                    "description": param.get("description", f"{param_in} parameter: {param_name}")
+                    "description": param.get(
+                        "description", f"{param_in} parameter: {param_name}"
+                    ),
                 }
 
                 if param.get("required", False):
@@ -374,7 +399,9 @@ class RootlyMCPServer(FastMCP):
                     for prop_name, prop_schema in body_schema["properties"].items():
                         schema["properties"][prop_name] = {
                             "type": prop_schema.get("type", "string"),
-                            "description": prop_schema.get("description", f"Body parameter: {prop_name}")
+                            "description": prop_schema.get(
+                                "description", f"Body parameter: {prop_name}"
+                            ),
                         }
 
                 if "required" in body_schema:
@@ -382,7 +409,9 @@ class RootlyMCPServer(FastMCP):
 
         return schema
 
-    def _handle_api_request(self, path: str, method: str, operation: Dict[str, Any], **kwargs) -> str:
+    def _handle_api_request(
+        self, path: str, method: str, operation: Dict[str, Any], **kwargs
+    ) -> str:
         """
         Handle an API request to the Rootly API.
 
@@ -398,6 +427,16 @@ class RootlyMCPServer(FastMCP):
         logger.debug(f"Handling API request: {method} {path}")
         logger.debug(f"Request parameters: {kwargs}")
 
+        api_token = None
+        if self.hosted:
+            request: Request = get_http_request()
+
+            auth_header = request.headers.get("Authorization")
+            if auth_header:
+                parts = auth_header.split(" ")
+                if len(parts) == 2 and parts[0].lower() == "bearer":
+                    api_token = parts[1]
+
         # Extract path parameters
         path_params = re.findall(r"\{([^}]+)\}", path)
         actual_path = path
@@ -405,7 +444,9 @@ class RootlyMCPServer(FastMCP):
         # Replace path parameters in the URL
         for param in path_params:
             if param in kwargs:
-                actual_path = actual_path.replace(f"{{{param}}}", str(kwargs.pop(param)))
+                actual_path = actual_path.replace(
+                    f"{{{param}}}", str(kwargs.pop(param))
+                )
 
         # Separate query parameters and body parameters
         query_params = {}
@@ -414,10 +455,14 @@ class RootlyMCPServer(FastMCP):
         if method.lower() == "get":
             query_params = kwargs
             if "incidents" in path and method.lower() == "get":
-                has_pagination = any(param.startswith("page[") for param in query_params.keys())
+                has_pagination = any(
+                    param.startswith("page[") for param in query_params.keys()
+                )
                 if not has_pagination:
                     query_params["page[size]"] = self.default_page_size
-                    logger.debug(f"Added default pagination (page[size]={self.default_page_size}) for incidents endpoint: {path}")
+                    logger.debug(
+                        f"Added default pagination (page[size]={self.default_page_size}) for incidents endpoint: {path}"
+                    )
         else:
             for param in operation.get("parameters", []):
                 param_name = param.get("name")
@@ -429,9 +474,18 @@ class RootlyMCPServer(FastMCP):
         try:
             json_api_type = None
             if method.lower() in ["post", "put", "patch"]:
-                segments = [seg for seg in actual_path.split("/") if seg and not seg.startswith(":") and not seg.startswith("{")]
+                segments = [
+                    seg
+                    for seg in actual_path.split("/")
+                    if seg and not seg.startswith(":") and not seg.startswith("{")
+                ]
                 if segments:
-                    if segments[-1].startswith("by_") or segments[-1].endswith("_id") or segments[-1].startswith("id") or segments[-1].startswith("{id"):
+                    if (
+                        segments[-1].startswith("by_")
+                        or segments[-1].endswith("_id")
+                        or segments[-1].startswith("id")
+                        or segments[-1].startswith("{id")
+                    ):
                         if len(segments) > 1:
                             json_api_type = segments[-2]
                     else:
@@ -442,7 +496,8 @@ class RootlyMCPServer(FastMCP):
                 path=actual_path,
                 query_params=query_params if query_params else None,
                 json_data=body_params if body_params else None,
-                json_api_type=json_api_type
+                json_api_type=json_api_type,
+                api_token=api_token,
             )
             # Do not include kwargs or payload in the output, just return the response
             return response

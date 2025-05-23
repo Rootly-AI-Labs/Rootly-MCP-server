@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "A Model Context Protocol server for Rootly APIs using OpenAPI spec"
 readme = "README.md"
 requires-python = ">=3.12"
-authors = [{ name = "Rootly AI Labs", email="support@rootly.com"}]
+authors = [{ name = "Rootly AI Labs", email = "support@rootly.com" }]
 keywords = ["rootly", "mcp", "llm", "automation", "incidents"]
 license = "Apache-2.0"
 license-files = ["LICEN[CS]E*"]
@@ -16,9 +16,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mcp>=1.1.2",           # MCP Python SDK
-    "requests>=2.28.0",     # For API calls
-    "pydantic>=2.0.0",      # For data validation
+    "fastmcp>=2.4.0",
+    "requests>=2.28.0", # For API calls
+    "pydantic>=2.0.0",  # For data validation
 ]
 
 [project.urls]
@@ -45,17 +45,10 @@ allow-direct-references = true
 rootly-mcp-server = "rootly_mcp_server.__main__:main"
 
 [project.optional-dependencies]
-dev = [
-    "black>=23.0.0",
-    "isort>=5.0.0",
-]
+dev = ["black>=23.0.0", "isort>=5.0.0"]
 
 [tool.uv]
-dev-dependencies = [
-    "pyright>=1.1.389",
-    "ruff>=0.7.3",
-    "pytest>=8.0.0"
-]
+dev-dependencies = ["pyright>=1.1.389", "ruff>=0.7.3", "pytest>=8.0.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
