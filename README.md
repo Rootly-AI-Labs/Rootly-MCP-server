@@ -2,7 +2,7 @@
 
 An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) that you can plug into your favorite MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
 
-[![Install in Cursor](https://img.shields.io/badge/Install%20in-Cursor-0066CC?style=for-the-badge&logo=cursor&logoColor=white)](cursor://anysphere.cursor-deeplink/mcp/install?name=Rootly%20MCP%20Server&config=eyJyb290bHkiOnsiY29tbWFuZCI6Im5weCIsImFyZ3MiOlsiLXkiLCJtY3AtcmVtb3RlIiwiaHR0cHM6Ly9tY3Aucm9vdGx5LmNvbS9zc2UiLCItLWhlYWRlciIsIkF1dGhvcml6YXRpb246JHtST09UTFlfQVVUSF9IRUFERVJ9Il0sImVudiI6eyJST09UTFlfQVVUSF9IRUFERVIiOiJCZWFyZXIgPFlPVVJfUk9PVExZX0FQSV9UT0tFTj4ifX19Cg==)
+[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=rootly&config=eyJjb21tYW5kIjoibnB4IC15IG1jcC1yZW1vdGUgaHR0cHM6Ly9tY3Aucm9vdGx5LmNvbS9zc2UgLS1oZWFkZXIgQXV0aG9yaXphdGlvbjoke1JPT1RMWV9BVVRIX0hFQURFUn0iLCJlbnYiOnsiUk9PVExZX0FVVEhfSEVBREVSIjoiQmVhcmVyIDxZT1VSX1JPT1RMWV9BUElfVE9LRU4%2BIn19)
 
 ![Demo GIF](rootly-mcp-server-demo.gif)
 
