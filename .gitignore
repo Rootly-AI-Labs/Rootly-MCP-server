@@ -173,4 +173,17 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+# IDE/Editor files
 .cursor
+.vscode/
+*.swp
+*.swo
+*~
+
+# MCP Server specific
+# Downloaded swagger.json files (auto-fetched from URL)
+swagger.json
+
+# Test outputs and temporary files
+test_output/
+*.tmp
