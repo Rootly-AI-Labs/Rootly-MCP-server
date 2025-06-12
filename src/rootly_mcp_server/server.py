@@ -268,6 +268,122 @@ class RootlyMCPServer(FastMCP):
 
             return json.dumps(endpoints, indent=2)
 
+        # Register enhanced search tools for better pagination
+        @self.tool()
+        def search_incidents_paginated(
+            query: str = "",
+            page_size: int = 100,
+            page_number: int = 1,
+            **kwargs
+        ) -> str:
+            """
+            Search incidents with enhanced pagination control.
+            
+            Args:
+                query: Search query to filter incidents by title/summary
+                page_size: Number of results per page (default: 100, max: 100)
+                page_number: Page number to retrieve (default: 1)
+                **kwargs: Additional filter parameters
+            """
+            # Prepare search parameters
+            search_params = {
+                "page[size]": min(page_size, 100),  # Cap at 100 for API limits
+                "page[number]": page_number,
+                **kwargs
+            }
+            
+            # Add search query if provided
+            if query:
+                search_params["filter[search]"] = query
+            
+            try:
+                response = self.client.make_request(
+                    method="GET",
+                    path="/v1/incidents",
+                    query_params=search_params,
+                )
+                return response
+            except Exception as e:
+                logger.error(f"Error searching incidents: {e}")
+                return json.dumps({"error": str(e)})
+
+        @self.tool()
+        def get_all_incidents_matching(
+            query: str = "",
+            max_results: int = 500,
+            **kwargs
+        ) -> str:
+            """
+            Get all incidents matching a query by automatically fetching multiple pages.
+            
+            Args:
+                query: Search query to filter incidents by title/summary
+                max_results: Maximum number of results to return (default: 500)
+                **kwargs: Additional filter parameters
+            """
+            all_incidents = []
+            page_number = 1
+            page_size = 100
+            
+            while len(all_incidents) < max_results:
+                # Prepare search parameters
+                search_params = {
+                    "page[size]": page_size,
+                    "page[number]": page_number,
+                    **kwargs
+                }
+                
+                # Add search query if provided
+                if query:
+                    search_params["filter[search]"] = query
+                
+                try:
+                    response_str = self.client.make_request(
+                        method="GET",
+                        path="/v1/incidents",
+                        query_params=search_params,
+                    )
+                    
+                    response_data = json.loads(response_str)
+                    
+                    # Extract incidents from response
+                    if "data" in response_data:
+                        incidents = response_data["data"]
+                        if not incidents:  # No more results
+                            break
+                        all_incidents.extend(incidents)
+                        
+                        # Check if we have more pages
+                        meta = response_data.get("meta", {})
+                        current_page = meta.get("current_page", page_number)
+                        total_pages = meta.get("total_pages", 1)
+                        
+                        if current_page >= total_pages:
+                            break  # No more pages
+                            
+                        page_number += 1
+                    else:
+                        break  # Unexpected response format
+                        
+                except Exception as e:
+                    logger.error(f"Error fetching incidents page {page_number}: {e}")
+                    break
+            
+            # Limit to max_results
+            if len(all_incidents) > max_results:
+                all_incidents = all_incidents[:max_results]
+            
+            result = {
+                "data": all_incidents,
+                "meta": {
+                    "total_fetched": len(all_incidents),
+                    "max_results": max_results,
+                    "query": query
+                }
+            }
+            
+            return json.dumps(result, indent=2)
+
         # Register a tool for each endpoint
         tool_count = 0
 
@@ -459,9 +575,11 @@ class RootlyMCPServer(FastMCP):
                     param.startswith("page[") for param in query_params.keys()
                 )
                 if not has_pagination:
-                    query_params["page[size]"] = self.default_page_size
+                    # Use a larger default page size for better search results
+                    query_params["page[size]"] = 50  # Increased from default_page_size
+                    query_params["page[number]"] = 1  # Ensure we start from page 1
                     logger.debug(
-                        f"Added default pagination (page[size]={self.default_page_size}) for incidents endpoint: {path}"
+                        f"Added default pagination (page[size]=50, page[number]=1) for incidents endpoint: {path}"
                     )
         else:
             for param in operation.get("parameters", []):
