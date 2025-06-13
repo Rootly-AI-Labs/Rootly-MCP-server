@@ -47,3 +47,19 @@ blocks:
                 --task-definition "$NEW_TASK_DEFINITION_ARN" \
                 --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
                 --force-new-deployment >/dev/null
+
+              echo "Waiting for service to stabilize at the new revision..."
+
+              # Wait for the service to stabilize for up to 20 minutes
+              for i in {1..80}; do
+                if aws ecs describe-services --cluster rootly-web --service rootly-mcp-server --output json | jq -e \
+                  '.services | map(select((.deployments | length) != 1 or .runningCount != .desiredCount)) | length == 0' >/dev/null; then
+                  break
+                fi
+                sleep 15
+              done
+
+              if [ $i -eq 80 ]; then
+                echo "Service failed to stabilize after 20 minutes"
+                exit 1
+              fi
