@@ -274,7 +274,6 @@ class RootlyMCPServer(FastMCP):
             query: str = "",
             page_size: int = 100,
             page_number: int = 1,
-            **kwargs
         ) -> str:
             """
             Search incidents with enhanced pagination control.
@@ -283,13 +282,11 @@ class RootlyMCPServer(FastMCP):
                 query: Search query to filter incidents by title/summary
                 page_size: Number of results per page (default: 100, max: 100)
                 page_number: Page number to retrieve (default: 1)
-                **kwargs: Additional filter parameters
             """
             # Prepare search parameters
             search_params = {
                 "page[size]": min(page_size, 100),  # Cap at 100 for API limits
                 "page[number]": page_number,
-                **kwargs
             }
             
             # Add search query if provided
@@ -311,7 +308,6 @@ class RootlyMCPServer(FastMCP):
         def get_all_incidents_matching(
             query: str = "",
             max_results: int = 500,
-            **kwargs
         ) -> str:
             """
             Get all incidents matching a query by automatically fetching multiple pages.
@@ -319,7 +315,6 @@ class RootlyMCPServer(FastMCP):
             Args:
                 query: Search query to filter incidents by title/summary
                 max_results: Maximum number of results to return (default: 500)
-                **kwargs: Additional filter parameters
             """
             all_incidents = []
             page_number = 1
@@ -330,7 +325,6 @@ class RootlyMCPServer(FastMCP):
                 search_params = {
                     "page[size]": page_size,
                     "page[number]": page_number,
-                    **kwargs
                 }
                 
                 # Add search query if provided
