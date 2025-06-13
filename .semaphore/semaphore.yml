@@ -29,6 +29,7 @@ blocks:
         - name: Build and Deploy
           commands:
             - checkout
+            - export BUILDKIT_PROGRESS=plain
             - |
               docker build --push \
                 -t 657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:${SEMAPHORE_GIT_SHA} \

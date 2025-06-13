@@ -500,7 +500,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
-    { name = "fastmcp", specifier = ">=2.4.0" },
+    { name = "fastmcp", specifier = "==2.4.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "requests", specifier = ">=2.28.0" },

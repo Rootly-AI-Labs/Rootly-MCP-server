@@ -16,7 +16,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "fastmcp>=2.4.0",
+    # Pinned to 2.4.0 to avoid unexpected breaking changes - to upgrade, just bump the pinned version here
+    # and run `uv sync` to update the lockfile.
+    "fastmcp==2.4.0",
     "requests>=2.28.0", # For API calls
     "pydantic>=2.0.0",  # For data validation
 ]
