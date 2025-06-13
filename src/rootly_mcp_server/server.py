@@ -416,7 +416,7 @@ class RootlyMCPServer(FastMCP):
                     tool_fn = create_tool_fn()
 
                     # Register the tool with FastMCP
-                    self.add_tool(name=tool_name, description=description, fn=tool_fn)
+                    self.add_tool(tool_fn, description=description)
 
                     tool_count += 1
                     logger.info(f"Registered tool: {tool_name}")
