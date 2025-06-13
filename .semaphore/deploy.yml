@@ -1,0 +1,55 @@
+version: v1.0
+name: Build and Deploy
+
+queue:
+  name: Deployment Queue
+  scope: project
+
+agent:
+  machine:
+    type: r1-standard-4
+    os_image: ubuntu2204
+
+blocks:
+  - name: 'Deploy'
+    dependencies: []
+    task:
+      secrets:
+        - name: 'AWS Credentials'
+      prologue:
+        commands:
+          - export AWS_PROFILE=production
+          - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
+      jobs:
+        - name: Deploy
+          commands:
+            - checkout
+            - |
+              export TASK_FAMILY=rootly-mcp-server
+              export CONTAINER_NAME=mcp
+              export IMAGE=657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:${SEMAPHORE_GIT_SHA}
+              NEW_TASK_DEFINITION_ARN=$(./.semaphore/update-task-definition.sh)
+
+              aws ecs update-service \
+                --cluster rootly-web \
+                --service rootly-mcp-server \
+                --task-definition "$NEW_TASK_DEFINITION_ARN" \
+                --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
+                --force-new-deployment >/dev/null
+
+              echo "Waiting for service to stabilize at the new revision..."
+
+              # Wait for the service to stabilize for up to 10 minutes
+              for i in {1..40}; do
+                if aws ecs describe-services --cluster rootly-web --service rootly-mcp-server --output json | jq -e \
+                  '.services | map(select((.deployments | length) != 1 or .runningCount != .desiredCount)) | length == 0' >/dev/null; then
+                  break
+                fi
+                sleep 15
+              done
+
+              if [ $i -eq 40 ]; then
+                echo "Service failed to stabilize after 10 minutes"
+                exit 1
+              fi
