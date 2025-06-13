@@ -1,0 +1,49 @@
+version: v1.0
+name: Build and Deploy
+
+queue:
+  name: Deployment Queue
+  scope: project
+
+auto_cancel:
+  queued:
+    when: 'true'
+
+agent:
+  machine:
+    type: r1-standard-4
+    os_image: ubuntu2204
+
+blocks:
+  - name: 'Build and Deploy'
+    dependencies: []
+    task:
+      secrets:
+        - name: 'AWS Credentials'
+      prologue:
+        commands:
+          - sudo pip install awscli
+          - export AWS_PROFILE=production
+          - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
+      jobs:
+        - name: Build and Deploy
+          commands:
+            - checkout
+            - |
+              docker build --push \
+                -t 657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:${SEMAPHORE_GIT_SHA} \
+                -t 657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:latest \
+                -t 657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:production .
+            - |
+              export TASK_FAMILY=rootly-mcp-server
+              export CONTAINER_NAME=mcp
+              export IMAGE=657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:${SEMAPHORE_GIT_SHA}
+              NEW_TASK_DEFINITION_ARN=$(./.semaphore/update-task-definition.sh)
+
+              aws ecs update-service \
+                --cluster rootly-web \
+                --service rootly-mcp-server \
+                --task-definition "$NEW_TASK_DEFINITION_ARN" \
+                --deployment-configuration "deploymentCircuitBreaker={enable=true,rollback=true},maximumPercent=200,minimumHealthyPercent=100" \
+                --force-new-deployment >/dev/null
