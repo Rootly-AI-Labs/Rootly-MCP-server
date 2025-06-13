@@ -416,12 +416,15 @@ class RootlyMCPServer(FastMCP):
                     tool_fn = create_tool_fn()
 
                     # Register the tool with FastMCP
-                    self.add_tool(tool_fn, description=description)
+                    self.add_tool(tool_fn)
 
                     tool_count += 1
                     logger.info(f"Registered tool: {tool_name}")
                 except Exception as e:
-                    logger.error(f"Error registering tool {tool_name}: {e}")
+                    logger.exception(f"Error registering tool {tool_name}")
+
+        if tool_count == 0:
+            raise Exception("Expected at least one tool to be registered")
 
         logger.info(
             f"Registered {tool_count} tools in total. Modify allowed_paths to register more paths from the Rootly API."
