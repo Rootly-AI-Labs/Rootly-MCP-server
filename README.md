@@ -2,6 +2,10 @@
 
 An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) that you can plug into your favorite MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
 
+<a href="https://glama.ai/mcp/servers/@Rootly-AI-Labs/Rootly-MCP-server">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@Rootly-AI-Labs/Rootly-MCP-server/badge" alt="Rootly server MCP server" />
+</a>
+
 [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=rootly&config=eyJjb21tYW5kIjoibnB4IC15IG1jcC1yZW1vdGUgaHR0cHM6Ly9tY3Aucm9vdGx5LmNvbS9zc2UgLS1oZWFkZXIgQXV0aG9yaXphdGlvbjoke1JPT1RMWV9BVVRIX0hFQURFUn0iLCJlbnYiOnsiUk9PVExZX0FVVEhfSEVBREVSIjoiQmVhcmVyIDxZT1VSX1JPT1RMWV9BUElfVE9LRU4%2BIn19)
 
 ![Demo GIF](rootly-mcp-server-demo.gif)
