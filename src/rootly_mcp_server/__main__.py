@@ -1,172 +1,46 @@
+#!/usr/bin/env python3
 """
-Command-line interface for starting the Rootly MCP server.
+Rootly MCP Server - Main entry point
+
+This module provides the main entry point for the Rootly MCP Server.
 """
 
-import argparse
-import logging
+import asyncio
 import os
 import sys
-from pathlib import Path
+from typing import Optional, List
 
-from .server import RootlyMCPServer
-
-from starlette.requests import Request
-from starlette.responses import PlainTextResponse
-
-
-def parse_args():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Start the Rootly MCP server for API integration."
-    )
-    parser.add_argument(
-        "--swagger-path",
-        type=str,
-        help="Path to the Swagger JSON file. If not provided, will look for swagger.json in the current directory and parent directories.",
-    )
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        default="INFO",
-        help="Set the logging level. Default: INFO",
-    )
-    parser.add_argument(
-        "--name",
-        type=str,
-        default="Rootly",
-        help="Name of the MCP server. Default: Rootly",
-    )
-    parser.add_argument(
-        "--transport",
-        type=str,
-        choices=["stdio", "sse"],
-        default="stdio",
-        help="Transport protocol to use. Default: stdio",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug mode (equivalent to --log-level DEBUG)",
-    )
-    parser.add_argument(
-        "--host",
-        type=str,
-        default="127.0.0.1",
-        help="Host to bind the server to. Default: 127.0.0.1",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="Port to bind the server to. Default: 8000",
-    )
-    parser.add_argument(
-        "--hosted",
-        action="store_true",
-        help="Run as a remotely hosted MCP server (default is local)",
-    )
-    return parser.parse_args()
-
-
-def setup_logging(log_level, debug=False, hosted=False):
-    """Set up logging configuration."""
-    if debug or os.getenv("DEBUG", "").lower() in ("true", "1", "yes"):
-        log_level = "DEBUG"
-
-    numeric_level = getattr(logging, log_level.upper(), None)
-    if not isinstance(numeric_level, int):
-        raise ValueError(f"Invalid log level: {log_level}")
-
-    # Configure root logger
-    logging.basicConfig(
-        level=numeric_level,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stderr)
-        ],  # Log to stderr for stdio transport
-    )
-
-    # Set specific logger levels
-    logging.getLogger("rootly_mcp_server").setLevel(numeric_level)
-    if not hosted:
-        logging.getLogger("rootly_mcp_server.server").setLevel(
-            logging.WARNING
-        )  # Reduce server-specific logs
-
-    # Always set MCP logger to ERROR level to fix Cline UI issue
-    # This prevents INFO logs from causing problems with Cline tool display
-    logging.getLogger("mcp").setLevel(logging.ERROR)
-
-    # Log the configuration
-    logger = logging.getLogger(__name__)
-    logger.info(f"Logging configured with level: {log_level}")
-    logger.debug(f"Python version: {sys.version}")
-    logger.debug(f"Current directory: {Path.cwd()}")
-    logger.debug(
-        f"Environment variables: {', '.join([f'{k}={v[:3]}...' if k.endswith('TOKEN') else f'{k}={v}' for k, v in os.environ.items() if k.startswith('ROOTLY_') or k in ['DEBUG']])}"
-    )
-
-
-def check_api_token():
-    """Check if the Rootly API token is set."""
-    logger = logging.getLogger(__name__)
-
-    api_token = os.environ.get("ROOTLY_API_TOKEN")
-    if not api_token:
-        logger.error("ROOTLY_API_TOKEN environment variable is not set.")
-        print(
-            "Error: ROOTLY_API_TOKEN environment variable is not set.", file=sys.stderr
-        )
-        print(
-            "Please set it with: export ROOTLY_API_TOKEN='your-api-token-here'",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    else:
-        logger.info("ROOTLY_API_TOKEN is set")
-        # Log the first few characters of the token for debugging
-        logger.debug(f"Token starts with: {api_token[:5]}...")
+from .server import create_rootly_mcp_server
 
 
 def main():
-    """Entry point for the Rootly MCP server."""
-    args = parse_args()
-    setup_logging(args.log_level, args.debug, args.hosted)
-
-    logger = logging.getLogger(__name__)
-    logger.info("Starting Rootly MCP Server")
-
-    if not args.hosted:
-        check_api_token()
-
+    """Main entry point for the Rootly MCP Server."""
+    
+    # Get configuration from environment variables
+    swagger_path = os.getenv("ROOTLY_SWAGGER_PATH")
+    server_name = os.getenv("ROOTLY_SERVER_NAME", "Rootly")
+    hosted = os.getenv("ROOTLY_HOSTED", "false").lower() in ("true", "1", "yes")
+    
+    # Parse allowed paths from environment variable
+    allowed_paths = None
+    allowed_paths_env = os.getenv("ROOTLY_ALLOWED_PATHS")
+    if allowed_paths_env:
+        allowed_paths = [path.strip() for path in allowed_paths_env.split(",")]
+    
+    # Create the server
     try:
-        logger.info(f"Initializing server with name: {args.name}")
-
-        kwargs = {}
-        if args.transport in ("sse", "streamable-http"):
-            kwargs["host"] = args.host
-            kwargs["port"] = args.port
-
-        server = RootlyMCPServer(
-            swagger_path=args.swagger_path, name=args.name, hosted=args.hosted, **kwargs
+        server = create_rootly_mcp_server(
+            swagger_path=swagger_path,
+            name=server_name,
+            allowed_paths=allowed_paths,
+            hosted=hosted,
         )
-
-        if args.hosted:
-
-            @server.custom_route("/healthz", methods=["GET"])
-            def health_check(request: Request) -> PlainTextResponse:
-                return PlainTextResponse("OK")
-
-        logger.info(f"Running server with transport: {args.transport}...")
-        server.run(transport=args.transport)
-    except FileNotFoundError as e:
-        logger.error(f"File not found: {e}")
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        
+        # Run the server
+        server.run()
+        
     except Exception as e:
-        logger.error(f"Failed to start server: {e}", exc_info=True)
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"Error starting Rootly MCP Server: {e}", file=sys.stderr)
         sys.exit(1)
 
 
