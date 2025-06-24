@@ -1,6 +1,6 @@
 # Rootly MCP Server
 
-An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) that you can plug into your favorite MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
+An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overview) that integrates seamlessly with MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
 
 [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=rootly&config=eyJjb21tYW5kIjoibnB4IC15IG1jcC1yZW1vdGUgaHR0cHM6Ly9tY3Aucm9vdGx5LmNvbS9zc2UgLS1oZWFkZXIgQXV0aG9yaXphdGlvbjoke1JPT1RMWV9BVVRIX0hFQURFUn0iLCJlbnYiOnsiUk9PVExZX0FVVEhfSEVBREVSIjoiQmVhcmVyIDxZT1VSX1JPT1RMWV9BUElfVE9LRU4%2BIn19)
 
@@ -15,11 +15,11 @@ An MCP server for [Rootly API](https://docs.rootly.com/api-reference/overview) t
   ```
 - [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F)
 
-## Run it in your IDE
+## Installation
 
-Install with our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repo.
+Install via our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repository.
 
-To set it up in your favorite MCP-compatible editor (we tested it with Cursor and Windsurf), here is the config :
+Configure your MCP-compatible editor (tested with Cursor and Windsurf) with the following:
 
 ```json
 {
@@ -35,7 +35,7 @@ To set it up in your favorite MCP-compatible editor (we tested it with Cursor an
 }
 ```
 
-If you want to customize `allowed_paths` to access more Rootly API paths, clone the package and use this config.
+To customize `allowed_paths` and access additional Rootly API paths, clone the repository and use this configuration:
 
 ```json
 {
@@ -58,11 +58,9 @@ If you want to customize `allowed_paths` to access more Rootly API paths, clone 
 
 ## Features
 
-This server dynamically generates MCP resources based on Rootly's OpenAPI (Swagger) specification:
-
-- Dynamically generated MCP tools based on Rootly's OpenAPI specification
-- Default pagination (10 items) for incident endpoints to prevent context window overflow
-- Limits the number of API paths exposed to the AI agent
+- **Dynamic Tool Generation**: Automatically creates MCP resources from Rootly's OpenAPI (Swagger) specification
+- **Smart Pagination**: Defaults to 10 items per request for incident endpoints to prevent context window overflow
+- **API Filtering**: Limits exposed API endpoints for security and performance
 
 ### Whitelisted Endpoints
 
@@ -99,54 +97,59 @@ By default, the following Rootly API endpoints are exposed to the AI agent (see 
 /v1/status_pages/{status_page_id}
 ```
 
-We limited the number of API paths exposed for 2 reasons:
+### Why Path Limiting?
 
-- Context size: because [Rootly's API](https://docs.rootly.com/api-reference/overview) is very rich in paths, AI agents can get overwhelmed and not perform simple actions properly.
-- Security: if you want to limit the type of information or actions that users can access through the MCP server
+We limit exposed API paths for two key reasons:
 
-If you want to make more paths available, edit the variable `allowed_paths` in `src/rootly_mcp_server/server.py`.
+1. **Context Management**: Rootly's comprehensive API can overwhelm AI agents, affecting their ability to perform simple tasks effectively
+2. **Security**: Control which information and actions are accessible through the MCP server
 
-## About the Rootly AI Labs
+To expose additional paths, modify the `allowed_paths` variable in `src/rootly_mcp_server/server.py`.
 
-This project was developed by the [Rootly AI Labs](https://labs.rootly.ai/). The AI Labs is building the future of system reliability and operational excellence. We operate as an open-source incubator, sharing ideas, experimenting, and rapidly prototyping. We're committed to ensuring our research benefits the entire community.
+## About Rootly AI Labs
+
+This project was developed by [Rootly AI Labs](https://labs.rootly.ai/), where we're building the future of system reliability and operational excellence. As an open-source incubator, we share ideas, experiment, and rapidly prototype solutions that benefit the entire community.
 ![Rootly AI logo](https://github.com/Rootly-AI-Labs/EventOrOutage/raw/main/rootly-ai.png)
 
 ## Developer Setup & Troubleshooting
 
-### 1. Install dependencies with `uv`
+### Prerequisites
+- Python 3.12 or higher
+- [`uv`](https://github.com/astral-sh/uv) for dependency management
 
-This project uses [`uv`](https://github.com/astral-sh/uv) for fast dependency management. To install all dependencies from your `pyproject.toml`:
+### 1. Set Up Virtual Environment
+
+Create and activate a virtual environment:
+
+```bash
+uv venv .venv
+source .venv/bin/activate  # Always activate before running scripts
+```
+
+### 2. Install Dependencies
+
+Install all project dependencies:
 
 ```bash
 uv pip install .
 ```
 
-### 2. Using a virtual environment
-
-It is recommended to use a virtual environment for development:
-
+To add new dependencies during development:
 ```bash
-uv venv .venv
-source .venv/bin/activate
+uv pip install <package>
 ```
 
-### 3. Running the test client
+### 3. Verify Installation
 
-To run the test client and verify your setup:
+Run the test client to ensure everything is configured correctly:
 
 ```bash
 python test_mcp_client.py
 ```
 
-### 5. General tips
+### Connect to Hosted MCP Server
 
-- Always activate your virtual environment before running scripts.
-- If you add new dependencies, use `uv pip install <package>` to keep your environment up to date.
-- If you encounter issues, check your Python version and ensure it matches the project's requirements.
-
-### 6. Connecting to Our MCP Server
-
-You can configure your client to connect directly to our hosted MCP server:
+Alternatively, connect directly to our hosted MCP server:
 
 ```json
 {
