@@ -21,12 +21,40 @@ Install via our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or b
 
 Configure your MCP-compatible editor (tested with Cursor and Windsurf) with the following:
 
+### With uv
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "uv",
+      "args": [
+        "tool",
+        "run",
+        "--from",
+        "rootly-mcp-server",
+        "rootly-mcp-server",
+      ],      
+      "env": {
+        "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+### With uv-tool-uvx
+
 ```json
 {
   "mcpServers": {
     "rootly": {
       "command": "uvx",
-      "args": ["--from", "rootly-mcp-server", "rootly-mcp-server"],
+      "args": [
+        "--from",
+        "rootly-mcp-server",
+        "rootly-mcp-server",
+      ],      
       "env": {
         "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
       }
