@@ -16,7 +16,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Annotated,
 from enum import Enum
 
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType
+
 from fastmcp.server.dependencies import get_http_request
 from starlette.requests import Request
 from pydantic import BaseModel, Field
@@ -76,6 +76,7 @@ def create_rootly_mcp_server(
     name: str = "Rootly",
     allowed_paths: Optional[List[str]] = None,
     hosted: bool = False,
+    base_url: Optional[str] = None,
 ) -> FastMCP:
     """
     Create a Rootly MCP Server using FastMCP's OpenAPI integration.
@@ -85,6 +86,7 @@ def create_rootly_mcp_server(
         name: Name of the MCP server.
         allowed_paths: List of API paths to include. If None, includes default paths.
         hosted: Whether the server is hosted (affects authentication).
+        base_url: Base URL for Rootly API. If None, uses ROOTLY_BASE_URL env var or default.
 
     Returns:
         A FastMCP server instance.
@@ -145,29 +147,29 @@ def create_rootly_mcp_server(
     filtered_spec = _filter_openapi_spec(swagger_spec, allowed_paths_v1)
     logger.info(f"Filtered spec to {len(filtered_spec.get('paths', {}))} allowed paths")
 
+    # Determine the base URL
+    if base_url is None:
+        base_url = os.getenv("ROOTLY_BASE_URL", "https://api.rootly.com")
+    
+    logger.info(f"Using Rootly API base URL: {base_url}")
+
     # Create the authenticated HTTP client
     try:
         http_client = AuthenticatedHTTPXClient(
-            base_url="https://api.rootly.com",
+            base_url=base_url,
             hosted=hosted
         )
     except Exception as e:
         logger.warning(f"Failed to create authenticated client: {e}")
         # Create a mock client for testing
-        http_client = httpx.AsyncClient(base_url="https://api.rootly.com")
-
-    # Create route maps to customize the behavior
-    route_maps = [
-        # All routes become tools (this is actually the default, but being explicit)
-        RouteMap(mcp_type=MCPType.TOOL),
-    ]
+        http_client = httpx.AsyncClient(base_url=base_url)
 
     # Create the MCP server using OpenAPI integration
+    # By default, all routes become tools which is what we want
     mcp = FastMCP.from_openapi(
         openapi_spec=filtered_spec,
         client=http_client,
         name=name,
-        route_maps=route_maps,
         timeout=30.0,
         tags={"rootly", "incident-management"},
     )
@@ -195,7 +197,7 @@ def create_rootly_mcp_server(
         return json.dumps(endpoints, indent=2)
 
     @mcp.tool()
-    def search_incidents_paginated(
+    async def search_incidents_paginated(
         query: Annotated[str, Field(description="Search query to filter incidents by title/summary")] = "",
         page_size: Annotated[int, Field(description="Number of results per page (max: 100)", ge=1, le=100)] = 100,
         page_number: Annotated[int, Field(description="Page number to retrieve", ge=1)] = 1,
@@ -205,28 +207,25 @@ def create_rootly_mcp_server(
         
         This tool provides better pagination handling than the standard API endpoint.
         """
-        import asyncio
+        params = {
+            "page[size]": min(page_size, 100),
+            "page[number]": page_number,
+        }
+        if query:
+            params["filter[search]"] = query
         
-        async def _search_incidents():
-            params = {
-                "page[size]": min(page_size, 100),
-                "page[number]": page_number,
-            }
-            if query:
-                params["filter[search]"] = query
-            
-            try:
-                response = await http_client.get("/v1/incidents", params=params)
+        try:
+            async with http_client as client:
+                response = await client.get("/v1/incidents", params=params)
                 response.raise_for_status()
-                return response.json()
-            except Exception as e:
-                return {"error": str(e)}
+                result = response.json()
+        except Exception as e:
+            result = {"error": str(e)}
         
-        result = asyncio.run(_search_incidents())
         return json.dumps(result, indent=2)
 
     @mcp.tool()
-    def get_all_incidents_matching(
+    async def get_all_incidents_matching(
         query: Annotated[str, Field(description="Search query to filter incidents by title/summary")] = "",
         max_results: Annotated[int, Field(description="Maximum number of results to return", ge=1, le=1000)] = 500,
     ) -> str:
@@ -235,62 +234,62 @@ def create_rootly_mcp_server(
         
         This tool automatically handles pagination to fetch multiple pages of results.
         """
-        import asyncio
+        all_incidents = []
+        page_number = 1
+        page_size = 100
         
-        async def _get_all_incidents():
-            all_incidents = []
-            page_number = 1
-            page_size = 100
-            
-            while len(all_incidents) < max_results:
-                params = {
-                    "page[size]": page_size,
-                    "page[number]": page_number,
-                }
-                if query:
-                    params["filter[search]"] = query
-                
-                try:
-                    response = await http_client.get("/v1/incidents", params=params)
-                    response.raise_for_status()
-                    response_data = response.json()
+        try:
+            async with http_client as client:
+                while len(all_incidents) < max_results:
+                    params = {
+                        "page[size]": page_size,
+                        "page[number]": page_number,
+                    }
+                    if query:
+                        params["filter[search]"] = query
                     
-                    if "data" in response_data:
-                        incidents = response_data["data"]
-                        if not incidents:  # No more results
-                            break
-                        all_incidents.extend(incidents)
+                    try:
+                        response = await client.get("/v1/incidents", params=params)
+                        response.raise_for_status()
+                        response_data = response.json()
                         
-                        # Check if we have more pages
-                        meta = response_data.get("meta", {})
-                        current_page = meta.get("current_page", page_number)
-                        total_pages = meta.get("total_pages", 1)
-                        
-                        if current_page >= total_pages:
-                            break  # No more pages
+                        if "data" in response_data:
+                            incidents = response_data["data"]
+                            if not incidents:  # No more results
+                                break
+                            all_incidents.extend(incidents)
                             
-                        page_number += 1
-                    else:
-                        break  # Unexpected response format
-                        
-                except Exception as e:
-                    logger.error(f"Error fetching incidents page {page_number}: {e}")
-                    break
-            
-            # Limit to max_results
-            if len(all_incidents) > max_results:
-                all_incidents = all_incidents[:max_results]
-            
-            return {
-                "data": all_incidents,
-                "meta": {
-                    "total_fetched": len(all_incidents),
-                    "max_results": max_results,
-                    "query": query
+                            # Check if we have more pages
+                            meta = response_data.get("meta", {})
+                            current_page = meta.get("current_page", page_number)
+                            total_pages = meta.get("total_pages", 1)
+                            
+                            if current_page >= total_pages:
+                                break  # No more pages
+                                
+                            page_number += 1
+                        else:
+                            break  # Unexpected response format
+                            
+                    except Exception as e:
+                        logger.error(f"Error fetching incidents page {page_number}: {e}")
+                        break
+                
+                # Limit to max_results
+                if len(all_incidents) > max_results:
+                    all_incidents = all_incidents[:max_results]
+                
+                result = {
+                    "data": all_incidents,
+                    "meta": {
+                        "total_fetched": len(all_incidents),
+                        "max_results": max_results,
+                        "query": query
+                    }
                 }
-            }
+        except Exception as e:
+            result = {"error": str(e)}
         
-        result = asyncio.run(_get_all_incidents())
         return json.dumps(result, indent=2)
 
     # Log server creation (tool count will be shown when tools are accessed)
@@ -387,14 +386,14 @@ def _fetch_swagger_from_url(url: str = SWAGGER_URL) -> Dict[str, Any]:
 
 def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict[str, Any]:
     """
-    Filter an OpenAPI specification to only include specified paths.
+    Filter an OpenAPI specification to only include specified paths and clean up schema references.
 
     Args:
         spec: The original OpenAPI specification.
         allowed_paths: List of paths to include.
 
     Returns:
-        A filtered OpenAPI specification.
+        A filtered OpenAPI specification with cleaned schema references.
     """
     filtered_spec = spec.copy()
     
@@ -408,7 +407,82 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
     
     filtered_spec["paths"] = filtered_paths
     
+    # Clean up schema references that might be broken
+    # Remove problematic schema references from request bodies and parameters
+    for path, path_item in filtered_paths.items():
+        for method, operation in path_item.items():
+            if method.lower() not in ["get", "post", "put", "delete", "patch"]:
+                continue
+                
+            # Clean request body schemas
+            if "requestBody" in operation:
+                request_body = operation["requestBody"]
+                if "content" in request_body:
+                    for content_type, content_info in request_body["content"].items():
+                        if "schema" in content_info:
+                            schema = content_info["schema"]
+                            # Remove problematic $ref references
+                            if "$ref" in schema and "incident_trigger_params" in schema["$ref"]:
+                                # Replace with a generic object schema
+                                content_info["schema"] = {
+                                    "type": "object",
+                                    "description": "Request parameters for this endpoint",
+                                    "additionalProperties": True
+                                }
+            
+            # Clean parameter schemas
+            if "parameters" in operation:
+                for param in operation["parameters"]:
+                    if "schema" in param and "$ref" in param["schema"]:
+                        ref_path = param["schema"]["$ref"]
+                        if "incident_trigger_params" in ref_path:
+                            # Replace with a simple string schema
+                            param["schema"] = {
+                                "type": "string",
+                                "description": param.get("description", "Parameter value")
+                            }
+    
+    # Also clean up any remaining broken references in components
+    if "components" in filtered_spec and "schemas" in filtered_spec["components"]:
+        schemas = filtered_spec["components"]["schemas"]
+        # Remove or fix any schemas that reference missing components
+        schemas_to_remove = []
+        for schema_name, schema_def in schemas.items():
+            if isinstance(schema_def, dict) and _has_broken_references(schema_def):
+                schemas_to_remove.append(schema_name)
+        
+        for schema_name in schemas_to_remove:
+            logger.warning(f"Removing schema with broken references: {schema_name}")
+            del schemas[schema_name]
+    
     return filtered_spec
+
+
+def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
+    """Check if a schema definition has broken references."""
+    if "$ref" in schema_def:
+        ref_path = schema_def["$ref"]
+        # List of known broken references in the Rootly API spec
+        broken_refs = [
+            "incident_trigger_params",
+            "new_workflow", 
+            "update_workflow",
+            "workflow"
+        ]
+        if any(broken_ref in ref_path for broken_ref in broken_refs):
+            return True
+    
+    # Recursively check nested schemas
+    for key, value in schema_def.items():
+        if isinstance(value, dict):
+            if _has_broken_references(value):
+                return True
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict) and _has_broken_references(item):
+                    return True
+    
+    return False
 
 
 # Legacy class for backward compatibility

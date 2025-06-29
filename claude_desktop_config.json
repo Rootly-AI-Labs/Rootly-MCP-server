@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "uv",
+      "args": ["run", "rootly-mcp-server"],
+      "cwd": "/Users/rajathdb/Rootly-MCP-server",
+      "env": {
+        "ROOTLY_API_TOKEN": "your_token_here"
+      }
+    }
+  }
+} 

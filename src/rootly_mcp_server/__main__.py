@@ -5,21 +5,21 @@ Rootly MCP Server - Main entry point
 This module provides the main entry point for the Rootly MCP Server.
 """
 
-import asyncio
 import os
 import sys
 from typing import Optional, List
 
-from .server import create_rootly_mcp_server
+from rootly_mcp_server.server import create_rootly_mcp_server
 
 
-def main():
-    """Main entry point for the Rootly MCP Server."""
-    
+# Create the server instance following FastMCP conventions
+def get_server():
+    """Get a configured Rootly MCP server instance."""
     # Get configuration from environment variables
     swagger_path = os.getenv("ROOTLY_SWAGGER_PATH")
     server_name = os.getenv("ROOTLY_SERVER_NAME", "Rootly")
     hosted = os.getenv("ROOTLY_HOSTED", "false").lower() in ("true", "1", "yes")
+    base_url = os.getenv("ROOTLY_BASE_URL")
     
     # Parse allowed paths from environment variable
     allowed_paths = None
@@ -27,17 +27,25 @@ def main():
     if allowed_paths_env:
         allowed_paths = [path.strip() for path in allowed_paths_env.split(",")]
     
-    # Create the server
+    # Create and return the server
+    return create_rootly_mcp_server(
+        swagger_path=swagger_path,
+        name=server_name,
+        allowed_paths=allowed_paths,
+        hosted=hosted,
+        base_url=base_url,
+    )
+
+
+# Create the server instance for FastMCP CLI (follows quickstart pattern)
+mcp = get_server()
+
+
+def main():
+    """Main entry point for the Rootly MCP Server."""
     try:
-        server = create_rootly_mcp_server(
-            swagger_path=swagger_path,
-            name=server_name,
-            allowed_paths=allowed_paths,
-            hosted=hosted,
-        )
-        
         # Run the server
-        server.run()
+        mcp.run()
         
     except Exception as e:
         print(f"Error starting Rootly MCP Server: {e}", file=sys.stderr)
