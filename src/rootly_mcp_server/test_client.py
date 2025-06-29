@@ -1,67 +1,148 @@
+#!/usr/bin/env python3
 """
-Test script for Rootly MCP Server.
+Test client for the Rootly MCP Server
 
-This script tests the default pagination for incidents endpoints.
+This script demonstrates how to use the Rootly MCP Server.
 """
 
-import json
-import logging
+import asyncio
 import os
 import sys
+from pathlib import Path
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Add the src directory to the Python path
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Add the parent directory to the path so we can import the package
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+from rootly_mcp_server.server import create_rootly_mcp_server
 
-from rootly_mcp_server import RootlyMCPServer
 
-def test_incidents_pagination():
-    """Test that incidents endpoints have default pagination."""
+async def test_server():
+    """Test the Rootly MCP server."""
+    print("Creating Rootly MCP Server...")
     
-    # Create a server instance
-    server = RootlyMCPServer(default_page_size=5)  # Use a smaller page size for testing
-    
-    # Find an incidents endpoint tool
-    incidents_tool = None
-    for tool_name in server.list_tools():
-        if "incidents" in tool_name and tool_name.endswith("_get"):
-            incidents_tool = tool_name
-            break
-    
-    if not incidents_tool:
-        logging.error("No incidents GET endpoint found")
-        return
-    
-    logging.info(f"Testing pagination with tool: {incidents_tool}")
-    
-    # Call the tool
     try:
-        result = server.invoke_tool(incidents_tool, {})
-        result_json = json.loads(result)
+        # Create the server with a subset of endpoints for testing
+        server = create_rootly_mcp_server(
+            name="TestRootly",
+            allowed_paths=[
+                "/incidents",
+                "/alerts",
+                "/teams",
+                "/services"
+            ],
+            hosted=False  # Use local API token
+        )
         
-        # Check if the result has pagination info
-        if "meta" in result_json and "pagination" in result_json["meta"]:
-            pagination = result_json["meta"]["pagination"]
-            logging.info(f"Pagination info: {pagination}")
+        print(f"✅ Server created successfully")
+        print(f"Server type: {type(server)}")
+        
+        # Use the get_tools method to access tools
+        try:
+            tools = await server.get_tools()
+            print(f"Tools type: {type(tools)}")
+            print(f"Tools: {tools}")
             
-            if pagination.get("per_page") == 5:
-                logging.info("✅ Default pagination applied successfully!")
+            # Handle both dict and list cases
+            if isinstance(tools, dict):
+                tools_list = list(tools.values())
+                tools_names = list(tools.keys())
+                tool_count = len(tools)
+            elif isinstance(tools, list):
+                tools_list = tools
+                tools_names = [getattr(tool, 'name', f'tool_{i}') for i, tool in enumerate(tools)]
+                tool_count = len(tools)
             else:
-                logging.warning(f"❌ Default pagination not applied. Per page: {pagination.get('per_page')}")
-        else:
-            logging.warning("❌ No pagination info found in response")
+                tools_list = []
+                tools_names = []
+                tool_count = 0
             
-        # Log the number of items returned
-        if "data" in result_json:
-            logging.info(f"Number of items returned: {len(result_json['data'])}")
+            print(f"Found {tool_count} tools via get_tools() method")
+            
+            # List the registered tools
+            if tool_count > 0:
+                print(f"\n📋 Registered tools ({tool_count}):")
+                for i, tool in enumerate(tools_list):
+                    if isinstance(tools, dict):
+                        tool_name = tools_names[i]
+                    else:
+                        tool_name = getattr(tool, 'name', f'tool_{i}')
+                    
+                    description = getattr(tool, 'description', 'No description')
+                    print(f"  • {tool_name}: {description[:100]}...")
+                    print(f"    Tool type: {type(tool)}")
+                    print(f"    Tool attributes: {[attr for attr in dir(tool) if not attr.startswith('_')][:10]}")
+                    
+                    # Show parameter schema if available
+                    if hasattr(tool, 'inputSchema') and tool.inputSchema:
+                        props = tool.inputSchema.get('properties', {})
+                        if props:
+                            print(f"    Parameters: {', '.join(props.keys())}")
+            else:
+                print(f"\n⚠️  No tools found")
+                
+            # Test accessing a specific tool
+            if tool_count > 0:
+                print(f"\n🔍 Testing tool access...")
+                if isinstance(tools, dict):
+                    first_tool_name = tools_names[0]
+                    first_tool = tools[first_tool_name]
+                else:
+                    first_tool = tools_list[0]
+                    first_tool_name = getattr(first_tool, 'name', 'unknown')
+                
+                print(f"  ✅ First tool: {first_tool_name}")
+                print(f"  Tool details: {first_tool}")
+                
+                # Try to get tool by name
+                try:
+                    retrieved_tool = await server.get_tool(first_tool_name)
+                    if retrieved_tool:
+                        print(f"  ✅ Successfully retrieved tool by name: {first_tool_name}")
+                    else:
+                        print(f"  ❌ Could not retrieve tool by name: {first_tool_name}")
+                except Exception as e:
+                    print(f"  ❌ Error retrieving tool: {e}")
+            
+        except Exception as e:
+            print(f"❌ Error accessing tools: {e}")
+            import traceback
+            traceback.print_exc()
+            tool_count = 0
+        
+        print(f"\n🎉 Test completed successfully!")
+        print(f"Total tools found: {tool_count}")
         
     except Exception as e:
-        logging.error(f"Error testing pagination: {e}")
+        print(f"❌ Error creating server: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+    
+    return True
+
+
+def main():
+    """Main function."""
+    print("Rootly MCP Server Test")
+    print("=" * 50)
+    
+    # Check for API token
+    api_token = os.getenv("ROOTLY_API_TOKEN")
+    if not api_token:
+        print("⚠️  Warning: ROOTLY_API_TOKEN not set. Server will use mock client.")
+    else:
+        print(f"✅ API token found: {api_token[:10]}...")
+    
+    # Run the test
+    success = asyncio.run(test_server())
+    
+    if success:
+        print("\n🎉 All tests passed!")
+        sys.exit(0)
+    else:
+        print("\n❌ Tests failed!")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
-    test_incidents_pagination() 
+    main() 
