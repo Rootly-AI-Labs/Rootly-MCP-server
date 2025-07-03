@@ -31,6 +31,7 @@ def create_rootly_mcp_server():
         base_url="https://api.rootly.com",
         headers={
             "Authorization": f"Bearer {ROOTLY_API_TOKEN}",
+            "Content-Type": "application/vnd.api+json",
             "User-Agent": "Rootly-FastMCP-Server/1.0"
         },
         timeout=30.0
