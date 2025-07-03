@@ -11,6 +11,7 @@ from fastmcp import FastMCP
 from fastmcp.server.openapi import RouteMap, MCPType
 import os
 import logging
+from rootly_openapi_loader import load_rootly_openapi_spec
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -24,31 +25,21 @@ def create_rootly_mcp_server():
     if not ROOTLY_API_TOKEN:
         raise ValueError("ROOTLY_API_TOKEN environment variable is required")
     
-    # Rootly's official OpenAPI specification URL
-    SWAGGER_URL = "https://rootly-heroku.s3.amazonaws.com/swagger/v1/swagger.json"
-    
     logger.info("Creating authenticated HTTP client...")
     # Create authenticated HTTP client
     client = httpx.AsyncClient(
         base_url="https://api.rootly.com",
         headers={
             "Authorization": f"Bearer {ROOTLY_API_TOKEN}",
-            "Content-Type": "application/json",
             "User-Agent": "Rootly-FastMCP-Server/1.0"
         },
         timeout=30.0
     )
     
-    logger.info(f"Fetching OpenAPI spec from {SWAGGER_URL}...")
-    # Fetch OpenAPI spec directly from Rootly
-    try:
-        response = httpx.get(SWAGGER_URL, timeout=30.0)
-        response.raise_for_status()
-        openapi_spec = response.json()
-        logger.info("✅ Successfully fetched OpenAPI specification")
-    except Exception as e:
-        logger.error(f"❌ Failed to fetch OpenAPI spec: {e}")
-        raise
+    logger.info("Loading OpenAPI specification...")
+    # Load OpenAPI spec with smart fallback logic
+    openapi_spec = load_rootly_openapi_spec()
+    logger.info("✅ Successfully loaded OpenAPI specification")
     
     logger.info("Fixing OpenAPI spec for FastMCP compatibility...")
     # Fix array types for FastMCP compatibility
@@ -131,6 +122,8 @@ def create_rootly_mcp_server():
     logger.info("🚀 Selected Rootly API endpoints are now available as MCP tools for evaluation")
     
     return mcp
+
+
 
 def main():
     """Main entry point."""
