@@ -1,6 +1,6 @@
 [project]
 name = "rootly-mcp-server"
-version = "1.0.0"
+version = "2.0.0"
 description = "A Model Context Protocol server for Rootly APIs using OpenAPI spec"
 readme = "README.md"
 requires-python = ">=3.12"

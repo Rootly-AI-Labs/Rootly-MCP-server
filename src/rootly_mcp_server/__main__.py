@@ -65,6 +65,12 @@ def parse_args():
         action="store_true",
         help="Enable hosted mode for remote MCP server",
     )
+    # Backward compatibility: support deprecated --host argument
+    parser.add_argument(
+        "--host",
+        action="store_true",
+        help="(Deprecated) Use --hosted instead. Enable hosted mode for remote MCP server",
+    )
     return parser.parse_args()
 
 
@@ -149,6 +155,12 @@ def main():
     logger = logging.getLogger(__name__)
     logger.info("Starting Rootly MCP Server")
     
+    # Handle backward compatibility for --host argument
+    hosted_mode = args.hosted
+    if args.host:
+        logger.warning("--host argument is deprecated, use --hosted instead")
+        hosted_mode = True
+    
     check_api_token()
     
     try:
@@ -162,7 +174,7 @@ def main():
             swagger_path=args.swagger_path,
             name=args.name,
             allowed_paths=allowed_paths,
-            hosted=args.hosted,
+            hosted=hosted_mode,
             base_url=args.base_url,
         )
         
