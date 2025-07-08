@@ -1,6 +1,6 @@
 [project]
 name = "rootly-mcp-server"
-version = "1.0.0"
+version = "2.0.0"
 description = "A Model Context Protocol server for Rootly APIs using OpenAPI spec"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,6 +20,7 @@ dependencies = [
     # and run `uv sync` to update the lockfile.
     "fastmcp==2.4.0",
     "requests>=2.28.0", # For API calls
+    "httpx>=0.24.0",    # For async HTTP client
     "pydantic>=2.0.0",  # For data validation
 ]
 
