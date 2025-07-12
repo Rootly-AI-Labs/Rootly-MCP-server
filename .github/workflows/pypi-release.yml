@@ -17,10 +17,9 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install uv and build tools
+      - name: Install build tools
         run: |
-          pip install uv
-          uv pip install build twine
+          pip install build twine
 
       - name: Build package
         run: |
