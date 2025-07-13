@@ -19,8 +19,7 @@ jobs:
 
       - name: Install uv and build tools
         run: |
-          pip install uv
-          uv pip install build twine
+          pip install build twine
 
       - name: Build package
         run: |
