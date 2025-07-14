@@ -173,7 +173,7 @@ def main():
         server = create_rootly_mcp_server(
             swagger_path=args.swagger_path,
             name=args.name,
-            allowed_paths=allowed_paths,
+            custom_allowed_paths=allowed_paths,
             hosted=hosted_mode,
             base_url=args.base_url,
         )
