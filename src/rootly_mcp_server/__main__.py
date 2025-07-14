@@ -137,7 +137,7 @@ def get_server():
     return create_rootly_mcp_server(
         swagger_path=swagger_path,
         name=server_name,
-        allowed_paths=allowed_paths,
+        custom_allowed_paths=allowed_paths,
         hosted=hosted,
         base_url=base_url,
     )
