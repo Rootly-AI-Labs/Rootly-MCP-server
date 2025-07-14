@@ -26,8 +26,79 @@ def create_rootly_mcp_server():
         raise ValueError("ROOTLY_API_TOKEN environment variable is required")
     
     logger.info("Creating authenticated HTTP client...")
-    # Create authenticated HTTP client
-    client = httpx.AsyncClient(
+    # Create a custom HTTP client wrapper that ensures string responses
+    class StringifyingClient:
+        def __init__(self, base_url: str, headers: dict, timeout: float):
+            self._client = httpx.AsyncClient(
+                base_url=base_url,
+                headers=headers,
+                timeout=timeout
+            )
+        
+        async def __aenter__(self):
+            await self._client.__aenter__()
+            return self
+        
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            await self._client.__aexit__(exc_type, exc_val, exc_tb)
+        
+        async def request(self, method: str, url: str, **kwargs):
+            """Override request to return responses that FastMCP can handle."""
+            response = await self._client.request(method, url, **kwargs)
+            
+            # Create a response that returns the raw text instead of structured JSON
+            class TextResponse:
+                def __init__(self, original_response):
+                    self.status_code = original_response.status_code
+                    self.headers = original_response.headers
+                    self.url = original_response.url
+                    self.request = original_response.request
+                    self._original = original_response
+                    
+                    # Pre-compute the text response
+                    if original_response.status_code == 200:
+                        try:
+                            import json
+                            data = original_response.json()
+                            self._text_response = json.dumps(data, indent=2)
+                        except Exception:
+                            self._text_response = original_response.text or "No content"
+                    else:
+                        self._text_response = f"Error: HTTP {original_response.status_code} - {original_response.text}"
+                
+                def json(self):
+                    """Return the original JSON data for structured_content."""
+                    try:
+                        # Return the original JSON data so FastMCP can handle structured_content
+                        return self._original.json()
+                    except Exception:
+                        # If JSON parsing fails, return a wrapper structure
+                        return {"result": self._text_response}
+                
+                @property
+                def text(self):
+                    """Return the formatted JSON as text."""
+                    return self._text_response
+                
+                @property
+                def content(self):
+                    return self._text_response.encode('utf-8')
+                
+                def raise_for_status(self):
+                    """Delegate to original response."""
+                    return self._original.raise_for_status()
+                
+                def __getattr__(self, name):
+                    """Delegate any missing attributes to original response."""
+                    return getattr(self._original, name)
+            
+            return TextResponse(response)
+        
+        def __getattr__(self, name):
+            return getattr(self._client, name)
+    
+    # Create authenticated HTTP client with string conversion
+    client = StringifyingClient(
         base_url="https://api.rootly.com",
         headers={
             "Authorization": f"Bearer {ROOTLY_API_TOKEN}",
@@ -67,100 +138,89 @@ def create_rootly_mcp_server():
     
     # Define custom route maps for filtering specific endpoints
     route_maps = [
-        # Core incident management
+        # Core incident management - list endpoints
         RouteMap(
             pattern=r"^/v1/incidents$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"incidents", "core"}
+            mcp_tags={"incidents", "core", "list"}
         ),
+        # Incident detail endpoints  
         RouteMap(
-            pattern=r"^/v1/incidents/\{incident_id\}/alerts$",
+            pattern=r"^/v1/incidents/\{.*\}$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"incidents", "alerts", "relationship"}
+            mcp_tags={"incidents", "detail"}
         ),
+        # Incident relationships
         RouteMap(
-            pattern=r"^/v1/incidents/\{incident_id\}/action_items$",
+            pattern=r"^/v1/incidents/\{.*\}/.*$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"incidents", "action-items", "relationship"}
+            mcp_tags={"incidents", "relationships"}
         ),
         
         # Alert management
         RouteMap(
             pattern=r"^/v1/alerts$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"alerts", "core"}
+            mcp_tags={"alerts", "core", "list"}
         ),
         RouteMap(
-            pattern=r"^/v1/alerts/\{alert_id\}$",
+            pattern=r"^/v1/alerts/\{.*\}$",
             mcp_type=MCPType.TOOL,
             mcp_tags={"alerts", "detail"}
         ),
         
-        # Configuration entities
+        # Users - both list and detail
         RouteMap(
-            pattern=r"^/v1/severities(\{severity_id\})?$",
+            pattern=r"^/v1/users$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"configuration", "severities"}
+            mcp_tags={"users", "list"}
         ),
         RouteMap(
-            pattern=r"^/v1/incident_types(\{incident_type_id\})?$",
+            pattern=r"^/v1/users/me$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"configuration", "incident-types"}
+            mcp_tags={"users", "current"}
         ),
         RouteMap(
-            pattern=r"^/v1/functionalities(\{functionality_id\})?$",
+            pattern=r"^/v1/users/\{.*\}$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"configuration", "functionalities"}
-        ),
-        
-        # Organization
-        RouteMap(
-            pattern=r"^/v1/teams(\{team_id\})?$",
-            mcp_type=MCPType.TOOL,
-            mcp_tags={"organization", "teams"}
-        ),
-        RouteMap(
-            pattern=r"^/v1/users(\{user_id\}|/me)?$",
-            mcp_type=MCPType.TOOL,
-            mcp_tags={"organization", "users"}
+            mcp_tags={"users", "detail"}
         ),
         
-        # Infrastructure
+        # Teams
         RouteMap(
-            pattern=r"^/v1/services(\{service_id\})?$",
+            pattern=r"^/v1/teams$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"infrastructure", "services"}
+            mcp_tags={"teams", "list"}
         ),
         RouteMap(
-            pattern=r"^/v1/environments(\{environment_id\})?$",
+            pattern=r"^/v1/teams/\{.*\}$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"infrastructure", "environments"}
-        ),
-        
-        # Action items
-        RouteMap(
-            pattern=r"^/v1/incident_action_items(\{incident_action_item_id\})?$",
-            mcp_type=MCPType.TOOL,
-            mcp_tags={"action-items", "management"}
+            mcp_tags={"teams", "detail"}
         ),
         
-        # Workflows
+        # Services
         RouteMap(
-            pattern=r"^/v1/workflows(\{workflow_id\})?$",
+            pattern=r"^/v1/services$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"automation", "workflows"}
+            mcp_tags={"services", "list"}
         ),
         RouteMap(
-            pattern=r"^/v1/workflow_runs(\{workflow_run_id\})?$",
+            pattern=r"^/v1/services/\{.*\}$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"automation", "workflow-runs"}
+            mcp_tags={"services", "detail"}
         ),
         
-        # Status pages
+        # Configuration entities - list patterns
         RouteMap(
-            pattern=r"^/v1/status_pages(\{status_page_id\})?$",
+            pattern=r"^/v1/(severities|incident_types|environments)$",
             mcp_type=MCPType.TOOL,
-            mcp_tags={"communication", "status-pages"}
+            mcp_tags={"configuration", "list"}
+        ),
+        # Configuration entities - detail patterns  
+        RouteMap(
+            pattern=r"^/v1/(severities|incident_types|environments)/\{.*\}$",
+            mcp_type=MCPType.TOOL,
+            mcp_tags={"configuration", "detail"}
         ),
         
         # Exclude everything else
@@ -170,14 +230,29 @@ def create_rootly_mcp_server():
         )
     ]
     
-    # Create MCP server with custom route maps
+    # Custom response handler to ensure proper MCP output format
+    def ensure_mcp_response(route, component):
+        """Ensure all responses work with FastMCP's structured content system."""
+        # Set output schema to handle structured JSON data
+        component.output_schema = {
+            "type": "object",
+            "description": "Rootly API response data",
+            "additionalProperties": True
+        }
+        
+        # Add description 
+        if hasattr(component, 'description'):
+            component.description = f"🔧 {component.description or 'Rootly API endpoint'}"
+    
+    # Create MCP server with custom route maps and response handling
     mcp = FastMCP.from_openapi(
         openapi_spec=openapi_spec,
         client=client,
         name="Rootly API Server (RouteMap Filtered)",
         timeout=30.0,
         tags={"rootly", "incident-management", "evaluation"},
-        route_maps=route_maps
+        route_maps=route_maps,
+        mcp_component_fn=ensure_mcp_response
     )
     
     logger.info(f"✅ Created MCP server with RouteMap filtering successfully")

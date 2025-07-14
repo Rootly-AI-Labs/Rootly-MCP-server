@@ -18,10 +18,11 @@ def load_rootly_openapi_spec() -> dict:
     Load Rootly OpenAPI spec with smart fallback logic.
     
     Loading priority:
-    1. Check current directory for rootly_openapi.json
-    2. Check parent directories for rootly_openapi.json
-    3. Check for swagger.json files  
-    4. Only as last resort, fetch from URL and cache locally
+    1. Check for Claude-compatible swagger_claude_fixed.json
+    2. Check current directory for rootly_openapi.json
+    3. Check parent directories for rootly_openapi.json
+    4. Check for swagger.json files  
+    5. Only as last resort, fetch from URL and cache locally
     
     Returns:
         dict: The OpenAPI specification
@@ -31,7 +32,19 @@ def load_rootly_openapi_spec() -> dict:
     """
     current_dir = Path.cwd()
     
-    # Check for rootly_openapi.json in current directory and parents
+    # Priority 1: Check for Claude-compatible swagger file first
+    for check_dir in [current_dir] + list(current_dir.parents):
+        spec_file = check_dir / "swagger_claude_fixed.json"
+        if spec_file.is_file():
+            logger.info(f"Found Claude-compatible OpenAPI spec at {spec_file}")
+            try:
+                with open(spec_file, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Failed to load {spec_file}: {e}")
+                continue
+    
+    # Priority 2: Check for rootly_openapi.json in current directory and parents
     for check_dir in [current_dir] + list(current_dir.parents):
         spec_file = check_dir / "rootly_openapi.json"
         if spec_file.is_file():
@@ -43,7 +56,7 @@ def load_rootly_openapi_spec() -> dict:
                 logger.warning(f"Failed to load {spec_file}: {e}")
                 continue
     
-    # Check for swagger.json in current directory and parents
+    # Priority 3: Check for swagger.json in current directory and parents
     for check_dir in [current_dir] + list(current_dir.parents):
         spec_file = check_dir / "swagger.json"
         if spec_file.is_file():
