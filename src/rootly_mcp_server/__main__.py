@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 from typing import Optional, List
 
-from rootly_mcp_server.server import create_rootly_mcp_server
+from .routemap_server import create_rootly_mcp_server
 
 
 def parse_args():
