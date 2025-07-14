@@ -11,13 +11,11 @@ from fastmcp import FastMCP
 from fastmcp.server.openapi import RouteMap, MCPType
 import os
 import logging
-import sys
 from pathlib import Path
 from typing import Optional, List
 
 # Import the shared OpenAPI loader
-sys.path.append(str(Path(__file__).parent.parent.parent))
-from rootly_openapi_loader import load_rootly_openapi_spec
+from .rootly_openapi_loader import load_rootly_openapi_spec
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -26,7 +24,7 @@ logger = logging.getLogger(__name__)
 def create_rootly_mcp_server(
     swagger_path: Optional[str] = None,
     name: str = "Rootly API Server (RouteMap Filtered)",
-    allowed_paths: Optional[List[str]] = None,
+    custom_allowed_paths: Optional[List[str]] = None,
     hosted: bool = False,
     base_url: Optional[str] = None,
 ):
@@ -75,105 +73,73 @@ def create_rootly_mcp_server(
     fix_array_types(openapi_spec)
     logger.info("✅ Fixed OpenAPI spec compatibility issues")
     
-    logger.info("Creating FastMCP server with RouteMap filtering...")
+    logger.info("Creating FastMCP server with pre-filtered OpenAPI spec...")
     
-    # Define custom route maps for filtering specific endpoints
-    route_maps = [
-        # Core incident management
-        RouteMap(
-            pattern=r"^/v1/incidents$",
-            mcp_type=MCPType.TOOL
-        ),
-        RouteMap(
-            pattern=r"^/v1/incidents/\{incident_id\}/alerts$",
-            mcp_type=MCPType.TOOL
-        ),
-        RouteMap(
-            pattern=r"^/v1/incidents/\{incident_id\}/action_items$",
-            mcp_type=MCPType.TOOL
-        ),
-        
-        # Alert management
-        RouteMap(
-            pattern=r"^/v1/alerts$",
-            mcp_type=MCPType.TOOL
-        ),
-        RouteMap(
-            pattern=r"^/v1/alerts/\{id\}$",
-            mcp_type=MCPType.TOOL
-        ),
-        
-        # Configuration entities
-        RouteMap(
-            pattern=r"^/v1/severities(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        RouteMap(
-            pattern=r"^/v1/incident_types(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        RouteMap(
-            pattern=r"^/v1/functionalities(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        
-        # Organization
-        RouteMap(
-            pattern=r"^/v1/teams(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        RouteMap(
-            pattern=r"^/v1/users(\{id\}|/me)?$",
-            mcp_type=MCPType.TOOL
-        ),
-        
-        # Infrastructure
-        RouteMap(
-            pattern=r"^/v1/services(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        RouteMap(
-            pattern=r"^/v1/environments(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        
-        # Action items
-        RouteMap(
-            pattern=r"^/v1/incident_action_items(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        
-        # Workflows
-        RouteMap(
-            pattern=r"^/v1/workflows(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        RouteMap(
-            pattern=r"^/v1/workflow_runs(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        
-        # Status pages
-        RouteMap(
-            pattern=r"^/v1/status_pages(\{id\})?$",
-            mcp_type=MCPType.TOOL
-        ),
-        
-        # Exclude everything else
-        RouteMap(
-            pattern=r".*",
-            mcp_type=MCPType.EXCLUDE
-        )
-    ]
+    # Define the specific endpoints we want to include
+    if custom_allowed_paths:
+        allowed_paths = set(custom_allowed_paths)
+    else:
+        allowed_paths = {
+            # Core incident management
+            "/v1/incidents",
+            "/v1/incidents/{incident_id}/alerts", 
+            "/v1/incidents/{incident_id}/action_items",
+            
+            # Alert management  
+            "/v1/alerts",
+            "/v1/alerts/{id}",
+            
+            # Configuration entities
+            "/v1/severities",
+            "/v1/severities/{id}",
+            "/v1/incident_types", 
+            "/v1/incident_types/{id}",
+            "/v1/functionalities",
+            "/v1/functionalities/{id}",
+            
+            # Organization
+            "/v1/teams",
+            "/v1/teams/{id}",
+            "/v1/users",
+            "/v1/users/me", 
+            "/v1/users/{id}",
+            
+            # Infrastructure
+            "/v1/services",
+            "/v1/services/{id}",
+            "/v1/environments",
+            "/v1/environments/{id}",
+            
+            # Action items
+            "/v1/action_items",
+            "/v1/action_items/{id}",
+            
+            # Workflows
+            "/v1/workflows",
+            "/v1/workflows/{id}",
+            
+            # Status pages
+            "/v1/status-pages",
+            "/v1/status-pages/{id}"
+        }
     
-    # Create MCP server with custom route maps
+    # Filter the OpenAPI spec to only include allowed paths
+    original_paths = openapi_spec.get("paths", {})
+    filtered_paths = {path: spec for path, spec in original_paths.items() if path in allowed_paths}
+    
+    logger.info(f"📊 Filtered OpenAPI spec from {len(original_paths)} paths to {len(filtered_paths)} paths")
+    logger.info(f"🔍 Allowed paths: {sorted(allowed_paths)}")
+    logger.info(f"✅ Filtered paths: {sorted(filtered_paths.keys())}")
+    
+    openapi_spec["paths"] = filtered_paths
+    
+    # Create MCP server without route maps for now to test basic functionality  
     mcp = FastMCP.from_openapi(
         openapi_spec=openapi_spec,
         client=client,
         name=name,
         timeout=30.0,
-        tags={"rootly", "incident-management", "evaluation"},
-        route_maps=route_maps
+        tags={"rootly", "incident-management", "evaluation"}
     )
     
     logger.info(f"✅ Created MCP server with RouteMap filtering successfully")
