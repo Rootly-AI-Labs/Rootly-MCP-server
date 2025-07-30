@@ -430,9 +430,17 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                                     "additionalProperties": True
                                 }
             
-            # Clean parameter schemas
+            # Clean parameter schemas and sanitize parameter names
             if "parameters" in operation:
                 for param in operation["parameters"]:
+                    # Sanitize parameter names to match MCP pattern ^[a-zA-Z0-9_.-]{1,64}$
+                    if "name" in param:
+                        original_name = param["name"]
+                        sanitized_name = _sanitize_parameter_name(original_name)
+                        if sanitized_name != original_name:
+                            logger.debug(f"Sanitized parameter name: '{original_name}' -> '{sanitized_name}'")
+                            param["name"] = sanitized_name
+                    
                     if "schema" in param and "$ref" in param["schema"]:
                         ref_path = param["schema"]["$ref"]
                         if "incident_trigger_params" in ref_path:
@@ -456,6 +464,33 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
             del schemas[schema_name]
     
     return filtered_spec
+
+
+def _sanitize_parameter_name(name: str) -> str:
+    """
+    Sanitize parameter names to match MCP property key pattern ^[a-zA-Z0-9_.-]{1,64}$.
+    
+    Args:
+        name: Original parameter name
+        
+    Returns:
+        Sanitized parameter name
+    """
+    # Replace square brackets with underscores
+    sanitized = re.sub(r'\[([^\]]+)\]', r'_\1', name)
+    
+    # Replace any remaining invalid characters with underscores
+    sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '_', sanitized)
+    
+    # Ensure the name doesn't exceed 64 characters
+    if len(sanitized) > 64:
+        sanitized = sanitized[:64]
+    
+    # Ensure the name is not empty
+    if not sanitized:
+        sanitized = "param"
+    
+    return sanitized
 
 
 def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
