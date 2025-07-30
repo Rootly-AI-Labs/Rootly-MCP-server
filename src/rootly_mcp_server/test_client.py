@@ -93,15 +93,17 @@ async def test_server():
                 print(f"  ✅ First tool: {first_tool_name}")
                 print(f"  Tool details: {first_tool}")
                 
-                # Try to get tool by name
+                # Try to get tools and find the specific tool
                 try:
-                    retrieved_tool = await server.get_tool(first_tool_name)
-                    if retrieved_tool:
+                    all_tools = await server.get_tools()
+                    if first_tool_name in all_tools:
+                        retrieved_tool = all_tools[first_tool_name]
                         print(f"  ✅ Successfully retrieved tool by name: {first_tool_name}")
+                        print(f"  Retrieved tool type: {type(retrieved_tool)}")
                     else:
-                        print(f"  ❌ Could not retrieve tool by name: {first_tool_name}")
+                        print(f"  ❌ Could not find tool by name: {first_tool_name}")
                 except Exception as e:
-                    print(f"  ❌ Error retrieving tool: {e}")
+                    print(f"  ❌ Error retrieving tools: {e}")
             
         except Exception as e:
             print(f"❌ Error accessing tools: {e}")
