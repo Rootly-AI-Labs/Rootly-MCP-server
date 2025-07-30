@@ -172,7 +172,7 @@ uv pip install <package>
 Run the test client to ensure everything is configured correctly:
 
 ```bash
-python test_mcp_client.py
+python src/rootly_mcp_server/test_client.py
 ```
 
 ### Connect to Hosted MCP Server
