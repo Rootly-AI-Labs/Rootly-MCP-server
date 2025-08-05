@@ -84,6 +84,30 @@ To customize `allowed_paths` and access additional Rootly API paths, clone the r
 }
 ```
 
+### Connect to Hosted MCP Server
+
+Alternatively, connect directly to our hosted MCP server:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.rootly.com/sse",
+        "--header",
+        "Authorization:${ROOTLY_AUTH_HEADER}"
+      ],
+      "env": {
+        "ROOTLY_AUTH_HEADER": "Bearer <YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+
 ## Features
 
 - **Dynamic Tool Generation**: Automatically creates MCP resources from Rootly's OpenAPI (Swagger) specification
@@ -175,26 +199,3 @@ Run the test client to ensure everything is configured correctly:
 python src/rootly_mcp_server/test_client.py
 ```
 
-### Connect to Hosted MCP Server
-
-Alternatively, connect directly to our hosted MCP server:
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "https://mcp.rootly.com/sse",
-        "--header",
-        "Authorization:${ROOTLY_AUTH_HEADER}"
-      ],
-      "env": {
-        "ROOTLY_AUTH_HEADER": "Bearer <YOUR_ROOTLY_API_TOKEN>"
-      }
-    }
-  }
-}
-```
