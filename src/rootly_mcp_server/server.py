@@ -486,8 +486,8 @@ def _sanitize_parameter_name(name: str) -> str:
     if len(sanitized) > 64:
         sanitized = sanitized[:64]
     
-    # Ensure the name is not empty
-    if not sanitized:
+    # Ensure the name is not empty or just underscores
+    if not sanitized or sanitized.replace('_', '') == '':
         sanitized = "param"
     
     return sanitized

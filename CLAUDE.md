@@ -16,8 +16,14 @@ source .venv/bin/activate
 
 ### Testing and Quality
 ```bash
+# Run unit tests
+pytest tests/ -v
+
 # Run test client to verify setup
 python test_mcp_client.py
+
+# Run tests with coverage (if coverage installed)
+pytest tests/ --cov=src/rootly_mcp_server --cov-report=html
 
 # Linting and type checking (if you add dev dependencies)
 ruff check src/
