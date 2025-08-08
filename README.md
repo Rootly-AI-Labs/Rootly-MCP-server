@@ -1,5 +1,9 @@
 # Rootly MCP Server
 
+[![CI](https://github.com/Rootly-AI-Labs/Rootly-MCP-server/workflows/CI/badge.svg)](https://github.com/Rootly-AI-Labs/Rootly-MCP-server/actions)
+[![Tests](https://github.com/Rootly-AI-Labs/Rootly-MCP-server/workflows/Tests/badge.svg)](https://github.com/Rootly-AI-Labs/Rootly-MCP-server/actions)
+[![codecov](https://codecov.io/gh/Rootly-AI-Labs/Rootly-MCP-server/branch/main/graph/badge.svg)](https://codecov.io/gh/Rootly-AI-Labs/Rootly-MCP-server)
+
 An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overview) that integrates seamlessly with MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
 
 [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=rootly&config=eyJjb21tYW5kIjoibnB4IC15IG1jcC1yZW1vdGUgaHR0cHM6Ly9tY3Aucm9vdGx5LmNvbS9zc2UgLS1oZWFkZXIgQXV0aG9yaXphdGlvbjoke1JPT1RMWV9BVVRIX0hFQURFUn0iLCJlbnYiOnsiUk9PVExZX0FVVEhfSEVBREVSIjoiQmVhcmVyIDxZT1VSX1JPT1RMWV9BUElfVE9LRU4%2BIn19)
