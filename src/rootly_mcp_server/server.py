@@ -9,6 +9,7 @@ import json
 import os
 import re
 import logging
+from copy import deepcopy
 from pathlib import Path
 import requests
 import httpx
@@ -22,6 +23,7 @@ from starlette.requests import Request
 from pydantic import BaseModel, Field
 
 from .client import RootlyClient
+from .utils import sanitize_parameter_name, sanitize_parameters_in_spec
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -31,27 +33,28 @@ SWAGGER_URL = "https://rootly-heroku.s3.amazonaws.com/swagger/v1/swagger.json"
 
 
 class AuthenticatedHTTPXClient:
-    """An HTTPX client wrapper that handles Rootly API authentication."""
-    
-    def __init__(self, base_url: str = "https://api.rootly.com", hosted: bool = False):
+    """An HTTPX client wrapper that handles Rootly API authentication and parameter transformation."""
+
+    def __init__(self, base_url: str = "https://api.rootly.com", hosted: bool = False, parameter_mapping: Optional[Dict[str, str]] = None):
         self.base_url = base_url
         self.hosted = hosted
         self._api_token = None
-        
+        self.parameter_mapping = parameter_mapping or {}
+
         if not self.hosted:
             self._api_token = self._get_api_token()
-        
+
         # Create the HTTPX client
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
-            
+
         self.client = httpx.AsyncClient(
             base_url=base_url,
             headers=headers,
             timeout=30.0
         )
-    
+
     def _get_api_token(self) -> Optional[str]:
         """Get the API token from environment variables."""
         api_token = os.getenv("ROOTLY_API_TOKEN")
@@ -59,13 +62,56 @@ class AuthenticatedHTTPXClient:
             logger.warning("ROOTLY_API_TOKEN environment variable is not set")
             return None
         return api_token
-    
+
+    def _transform_params(self, params: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Transform sanitized parameter names back to original names."""
+        if not params or not self.parameter_mapping:
+            return params
+
+        transformed = {}
+        for key, value in params.items():
+            # Use the original name if we have a mapping, otherwise keep the sanitized name
+            original_key = self.parameter_mapping.get(key, key)
+            transformed[original_key] = value
+            if original_key != key:
+                logger.debug(f"Transformed parameter: '{key}' -> '{original_key}'")
+        return transformed
+
+    async def request(self, method: str, url: str, **kwargs):
+        """Override request to transform parameters."""
+        # Transform query parameters
+        if 'params' in kwargs:
+            kwargs['params'] = self._transform_params(kwargs['params'])
+
+        # Call the underlying client's request method
+        return await self.client.request(method, url, **kwargs)
+
+    async def get(self, url: str, **kwargs):
+        """Proxy to request with GET method."""
+        return await self.request('GET', url, **kwargs)
+
+    async def post(self, url: str, **kwargs):
+        """Proxy to request with POST method."""
+        return await self.request('POST', url, **kwargs)
+
+    async def put(self, url: str, **kwargs):
+        """Proxy to request with PUT method."""
+        return await self.request('PUT', url, **kwargs)
+
+    async def patch(self, url: str, **kwargs):
+        """Proxy to request with PATCH method."""
+        return await self.request('PATCH', url, **kwargs)
+
+    async def delete(self, url: str, **kwargs):
+        """Proxy to request with DELETE method."""
+        return await self.request('DELETE', url, **kwargs)
+
     async def __aenter__(self):
-        return self.client
-    
+        return self
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.client.aclose()
-    
+
     def __getattr__(self, name):
         # Delegate all other attributes to the underlying client
         return getattr(self.client, name)
@@ -130,7 +176,7 @@ def create_rootly_mcp_server(
             "/status_pages",
             "/status_pages/{status_page_id}",
         ]
-    
+
     # Add /v1 prefix to paths if not present
     allowed_paths_v1 = [
         f"/v1{path}" if not path.startswith("/v1") else path
@@ -147,17 +193,22 @@ def create_rootly_mcp_server(
     filtered_spec = _filter_openapi_spec(swagger_spec, allowed_paths_v1)
     logger.info(f"Filtered spec to {len(filtered_spec.get('paths', {}))} allowed paths")
 
+    # Sanitize all parameter names in the filtered spec to be MCP-compliant
+    parameter_mapping = sanitize_parameters_in_spec(filtered_spec)
+    logger.info(f"Sanitized parameter names for MCP compatibility (mapped {len(parameter_mapping)} parameters)")
+
     # Determine the base URL
     if base_url is None:
         base_url = os.getenv("ROOTLY_BASE_URL", "https://api.rootly.com")
-    
+
     logger.info(f"Using Rootly API base URL: {base_url}")
 
-    # Create the authenticated HTTP client
+    # Create the authenticated HTTP client with parameter mapping
     try:
         http_client = AuthenticatedHTTPXClient(
             base_url=base_url,
-            hosted=hosted
+            hosted=hosted,
+            parameter_mapping=parameter_mapping
         )
     except Exception as e:
         logger.warning(f"Failed to create authenticated client: {e}")
@@ -186,7 +237,7 @@ def create_rootly_mcp_server(
 
                 summary = operation.get("summary", "")
                 description = operation.get("description", "")
-                
+
                 endpoints.append({
                     "path": path,
                     "method": method.upper(),
@@ -204,7 +255,7 @@ def create_rootly_mcp_server(
     ) -> str:
         """
         Search incidents with enhanced pagination control.
-        
+
         This tool provides better pagination handling than the standard API endpoint.
         """
         params = {
@@ -213,7 +264,7 @@ def create_rootly_mcp_server(
         }
         if query:
             params["filter[search]"] = query
-        
+
         try:
             async with http_client as client:
                 response = await client.get("/v1/incidents", params=params)
@@ -221,7 +272,7 @@ def create_rootly_mcp_server(
                 result = response.json()
         except Exception as e:
             result = {"error": str(e)}
-        
+
         return json.dumps(result, indent=2)
 
     @mcp.tool()
@@ -231,13 +282,13 @@ def create_rootly_mcp_server(
     ) -> str:
         """
         Get all incidents matching a query by automatically fetching multiple pages.
-        
+
         This tool automatically handles pagination to fetch multiple pages of results.
         """
         all_incidents = []
         page_number = 1
         page_size = 100
-        
+
         try:
             async with http_client as client:
                 while len(all_incidents) < max_results:
@@ -247,38 +298,38 @@ def create_rootly_mcp_server(
                     }
                     if query:
                         params["filter[search]"] = query
-                    
+
                     try:
                         response = await client.get("/v1/incidents", params=params)
                         response.raise_for_status()
                         response_data = response.json()
-                        
+
                         if "data" in response_data:
                             incidents = response_data["data"]
                             if not incidents:  # No more results
                                 break
                             all_incidents.extend(incidents)
-                            
+
                             # Check if we have more pages
                             meta = response_data.get("meta", {})
                             current_page = meta.get("current_page", page_number)
                             total_pages = meta.get("total_pages", 1)
-                            
+
                             if current_page >= total_pages:
                                 break  # No more pages
-                                
+
                             page_number += 1
                         else:
                             break  # Unexpected response format
-                            
+
                     except Exception as e:
                         logger.error(f"Error fetching incidents page {page_number}: {e}")
                         break
-                
+
                 # Limit to max_results
                 if len(all_incidents) > max_results:
                     all_incidents = all_incidents[:max_results]
-                
+
                 result = {
                     "data": all_incidents,
                     "meta": {
@@ -289,7 +340,7 @@ def create_rootly_mcp_server(
                 }
         except Exception as e:
             result = {"error": str(e)}
-        
+
         return json.dumps(result, indent=2)
 
     # Log server creation (tool count will be shown when tools are accessed)
@@ -395,25 +446,26 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
     Returns:
         A filtered OpenAPI specification with cleaned schema references.
     """
-    filtered_spec = spec.copy()
-    
+    # Use deepcopy to ensure all nested structures are properly copied
+    filtered_spec = deepcopy(spec)
+
     # Filter paths
-    original_paths = spec.get("paths", {})
+    original_paths = filtered_spec.get("paths", {})
     filtered_paths = {
         path: path_item
         for path, path_item in original_paths.items()
         if path in allowed_paths
     }
-    
+
     filtered_spec["paths"] = filtered_paths
-    
+
     # Clean up schema references that might be broken
     # Remove problematic schema references from request bodies and parameters
     for path, path_item in filtered_paths.items():
         for method, operation in path_item.items():
             if method.lower() not in ["get", "post", "put", "delete", "patch"]:
                 continue
-                
+
             # Clean request body schemas
             if "requestBody" in operation:
                 request_body = operation["requestBody"]
@@ -429,18 +481,23 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                                     "description": "Request parameters for this endpoint",
                                     "additionalProperties": True
                                 }
-            
-            # Clean parameter schemas and sanitize parameter names
+
+            # Remove response schemas to avoid validation issues
+            # FastMCP will still return the data, just without strict validation
+            if "responses" in operation:
+                for status_code, response in operation["responses"].items():
+                    if "content" in response:
+                        for content_type, content_info in response["content"].items():
+                            if "schema" in content_info:
+                                # Replace with a simple schema that accepts any response
+                                content_info["schema"] = {
+                                    "type": "object",
+                                    "additionalProperties": True
+                                }
+
+            # Clean parameter schemas (parameter names are already sanitized)
             if "parameters" in operation:
                 for param in operation["parameters"]:
-                    # Sanitize parameter names to match MCP pattern ^[a-zA-Z0-9_.-]{1,64}$
-                    if "name" in param:
-                        original_name = param["name"]
-                        sanitized_name = _sanitize_parameter_name(original_name)
-                        if sanitized_name != original_name:
-                            logger.debug(f"Sanitized parameter name: '{original_name}' -> '{sanitized_name}'")
-                            param["name"] = sanitized_name
-                    
                     if "schema" in param and "$ref" in param["schema"]:
                         ref_path = param["schema"]["$ref"]
                         if "incident_trigger_params" in ref_path:
@@ -449,7 +506,7 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                                 "type": "string",
                                 "description": param.get("description", "Parameter value")
                             }
-    
+
     # Also clean up any remaining broken references in components
     if "components" in filtered_spec and "schemas" in filtered_spec["components"]:
         schemas = filtered_spec["components"]["schemas"]
@@ -458,39 +515,12 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
         for schema_name, schema_def in schemas.items():
             if isinstance(schema_def, dict) and _has_broken_references(schema_def):
                 schemas_to_remove.append(schema_name)
-        
+
         for schema_name in schemas_to_remove:
             logger.warning(f"Removing schema with broken references: {schema_name}")
             del schemas[schema_name]
-    
+
     return filtered_spec
-
-
-def _sanitize_parameter_name(name: str) -> str:
-    """
-    Sanitize parameter names to match MCP property key pattern ^[a-zA-Z0-9_.-]{1,64}$.
-    
-    Args:
-        name: Original parameter name
-        
-    Returns:
-        Sanitized parameter name
-    """
-    # Replace square brackets with underscores
-    sanitized = re.sub(r'\[([^\]]+)\]', r'_\1', name)
-    
-    # Replace any remaining invalid characters with underscores
-    sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '_', sanitized)
-    
-    # Ensure the name doesn't exceed 64 characters
-    if len(sanitized) > 64:
-        sanitized = sanitized[:64]
-    
-    # Ensure the name is not empty
-    if not sanitized:
-        sanitized = "param"
-    
-    return sanitized
 
 
 def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
@@ -500,13 +530,13 @@ def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
         # List of known broken references in the Rootly API spec
         broken_refs = [
             "incident_trigger_params",
-            "new_workflow", 
+            "new_workflow",
             "update_workflow",
             "workflow"
         ]
         if any(broken_ref in ref_path for broken_ref in broken_refs):
             return True
-    
+
     # Recursively check nested schemas
     for key, value in schema_def.items():
         if isinstance(value, dict):
@@ -516,7 +546,7 @@ def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
             for item in value:
                 if isinstance(item, dict) and _has_broken_references(item):
                     return True
-    
+
     return False
 
 
@@ -524,10 +554,10 @@ def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
 class RootlyMCPServer(FastMCP):
     """
     Legacy Rootly MCP Server class for backward compatibility.
-    
+
     This class is deprecated. Use create_rootly_mcp_server() instead.
     """
-    
+
     def __init__(
         self,
         swagger_path: Optional[str] = None,
@@ -541,7 +571,7 @@ class RootlyMCPServer(FastMCP):
         logger.warning(
             "RootlyMCPServer class is deprecated. Use create_rootly_mcp_server() function instead."
         )
-        
+
         # Create the server using the new function
         server = create_rootly_mcp_server(
             swagger_path=swagger_path,
@@ -549,7 +579,7 @@ class RootlyMCPServer(FastMCP):
             allowed_paths=allowed_paths,
             hosted=hosted
         )
-        
+
         # Copy the server's state to this instance
         super().__init__(name, *args, **kwargs)
         # For compatibility, store reference to the new server
