@@ -10,8 +10,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional, List
-
 from .server import create_rootly_mcp_server
 
 

@@ -7,23 +7,18 @@ the Rootly API's OpenAPI (Swagger) specification using FastMCP's OpenAPI integra
 
 import json
 import os
-import re
 import logging
 from copy import deepcopy
 from pathlib import Path
 import requests
 import httpx
-from typing import Any, Dict, List, Optional, Tuple, Union, Callable, Annotated, Literal
-from enum import Enum
+from typing import Any, Dict, List, Optional, Annotated
 
 from fastmcp import FastMCP
 
-from fastmcp.server.dependencies import get_http_request
-from starlette.requests import Request
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from .client import RootlyClient
-from .utils import sanitize_parameter_name, sanitize_parameters_in_spec
+from .utils import sanitize_parameters_in_spec
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -344,7 +339,7 @@ def create_rootly_mcp_server(
         return json.dumps(result, indent=2)
 
     # Log server creation (tool count will be shown when tools are accessed)
-    logger.info(f"Created Rootly MCP Server successfully")
+    logger.info("Created Rootly MCP Server successfully")
     return mcp
 
 

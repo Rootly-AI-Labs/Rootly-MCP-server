@@ -33,7 +33,7 @@ async def test_server():
             hosted=False  # Use local API token
         )
         
-        print(f"✅ Server created successfully")
+        print("✅ Server created successfully")
         print(f"Server type: {type(server)}")
         
         # Use the get_tools method to access tools
@@ -78,11 +78,11 @@ async def test_server():
                         if props:
                             print(f"    Parameters: {', '.join(props.keys())}")
             else:
-                print(f"\n⚠️  No tools found")
+                print("\n⚠️  No tools found")
                 
             # Test accessing a specific tool
             if tool_count > 0:
-                print(f"\n🔍 Testing tool access...")
+                print("\n🔍 Testing tool access...")
                 if isinstance(tools, dict):
                     first_tool_name = tools_names[0]
                     first_tool = tools[first_tool_name]
@@ -111,7 +111,7 @@ async def test_server():
             traceback.print_exc()
             tool_count = 0
         
-        print(f"\n🎉 Test completed successfully!")
+        print("\n🎉 Test completed successfully!")
         print(f"Total tools found: {tool_count}")
         
     except Exception as e:

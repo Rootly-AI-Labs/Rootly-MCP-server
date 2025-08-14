@@ -6,7 +6,7 @@ import os
 import json
 import logging
 import requests
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -123,7 +123,7 @@ class RootlyClient:
                 try:
                     error_response["status_code"] = e.response.status_code
                     error_response["response_text"] = e.response.text
-                except:
+                except Exception:
                     pass
 
             return json.dumps(error_response, indent=2)
