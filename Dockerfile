@@ -23,6 +23,7 @@ EXPOSE 8000
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV ROOTLY_MCP_DOCKER_RUNTIME=true
 
 # Run the application
 CMD ["rootly-mcp-server", "--transport", "sse", "--log-level", "INFO", "--host", "0.0.0.0", "--port", "8000", "--hosted"]

@@ -11,37 +11,72 @@ from fastmcp import FastMCP
 from fastmcp.server.openapi import RouteMap, MCPType
 import os
 import logging
+from importlib.metadata import version, PackageNotFoundError
 from rootly_openapi_loader import load_rootly_openapi_spec
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Package name for version tracking
+PACKAGE_NAME = "rootly-mcp-server"
+
+def _is_running_in_docker() -> bool:
+    """Check if the process is running inside a Docker container.
+
+    Returns:
+        bool: True if running in Docker, False otherwise
+    """
+    return os.environ.get("ROOTLY_MCP_DOCKER_RUNTIME") == "true"
+
+
+def _get_user_agent() -> str:
+    """Get the user agent string for API requests.
+
+    Returns:
+        str: User agent string in format '{PACKAGE_NAME}/{version} (Python)' or '{PACKAGE_NAME}/{version} (Python; Docker)'
+    """
+    try:
+        package_version = version(PACKAGE_NAME)
+        base_agent = f"{PACKAGE_NAME}/{package_version}"
+    except PackageNotFoundError:
+        logger.debug(f"Failed to get package version for {PACKAGE_NAME}")
+        base_agent = f"{PACKAGE_NAME}/development"
+
+    env_info = ["Python"]
+    if _is_running_in_docker():
+        env_info.append("Docker")
+        logger.info("Running in Docker container")
+
+    user_agent = f"{base_agent} ({'; '.join(env_info)})"
+    logger.debug(f"User-Agent: {user_agent}")
+    return user_agent
+
+
 def create_rootly_mcp_server():
     """Create and configure the Rootly MCP server."""
-    
+
     # Get Rootly API token from environment
     ROOTLY_API_TOKEN = os.getenv("ROOTLY_API_TOKEN")
     if not ROOTLY_API_TOKEN:
         raise ValueError("ROOTLY_API_TOKEN environment variable is required")
-    
+
     logger.info("Creating authenticated HTTP client...")
-    # Create authenticated HTTP client
+    # Create authenticated HTTP client with enhanced User-Agent for metrics tracking
     client = httpx.AsyncClient(
         base_url="https://api.rootly.com",
         headers={
             "Authorization": f"Bearer {ROOTLY_API_TOKEN}",
             "Content-Type": "application/vnd.api+json",
-            "User-Agent": "Rootly-FastMCP-Server/1.0"
+            "User-Agent": _get_user_agent()  # Include runtime environment info
         },
         timeout=30.0
     )
-    
     logger.info("Loading OpenAPI specification...")
     # Load OpenAPI spec with smart fallback logic
     openapi_spec = load_rootly_openapi_spec()
     logger.info("✅ Successfully loaded OpenAPI specification")
-    
+
     logger.info("Fixing OpenAPI spec for FastMCP compatibility...")
     # Fix array types for FastMCP compatibility
     def fix_array_types(obj):
@@ -59,20 +94,19 @@ def create_rootly_mcp_server():
         elif isinstance(obj, list):
             for item in obj:
                 fix_array_types(item)
-    
     fix_array_types(openapi_spec)
     logger.info("✅ Fixed OpenAPI spec compatibility issues")
-    
+
     logger.info("Filtering OpenAPI spec to include only allowed endpoints...")
     # Define allowed endpoints for evaluation
     ALLOWED_ENDPOINTS = {
         "/v1/incidents",
-        "/v1/incidents/{incident_id}/alerts", 
+        "/v1/incidents/{incident_id}/alerts",
         "/v1/alerts",
         "/v1/alerts/{alert_id}",
         "/v1/severities",
         "/v1/severities/{severity_id}",
-        "/v1/teams", 
+        "/v1/teams",
         "/v1/teams/{team_id}",
         "/v1/services",
         "/v1/services/{service_id}",
@@ -85,7 +119,7 @@ def create_rootly_mcp_server():
         "/v1/incidents/{incident_id}/action_items",
         "/v1/workflows",
         "/v1/workflows/{workflow_id}",
-        "/v1/workflow_runs", 
+        "/v1/workflow_runs",
         "/v1/workflow_runs/{workflow_run_id}",
         "/v1/environments",
         "/v1/environments/{environment_id}",
@@ -95,7 +129,7 @@ def create_rootly_mcp_server():
         "/v1/status_pages",
         "/v1/status_pages/{status_page_id}"
     }
-    
+
     # Filter the OpenAPI spec to only include allowed paths
     if "paths" in openapi_spec:
         filtered_paths = {}
@@ -105,10 +139,9 @@ def create_rootly_mcp_server():
                 logger.info(f"✅ Included endpoint: {path}")
             else:
                 logger.debug(f"⚪ Excluded endpoint: {path}")
-        
+
         openapi_spec["paths"] = filtered_paths
         logger.info(f"🔍 Filtered to {len(filtered_paths)} allowed endpoints out of {len(openapi_spec.get('paths', {}))} total")
-    
     logger.info("Creating FastMCP server with filtered endpoints...")
     # Create MCP server with filtered OpenAPI spec
     mcp = FastMCP.from_openapi(
@@ -118,10 +151,10 @@ def create_rootly_mcp_server():
         timeout=30.0,
         tags={"rootly", "incident-management", "evaluation"}
     )
-    
+
     logger.info(f"✅ Created MCP server with filtered endpoints successfully")
     logger.info("🚀 Selected Rootly API endpoints are now available as MCP tools for evaluation")
-    
+
     return mcp
 
 
@@ -130,14 +163,20 @@ def main():
     """Main entry point."""
     try:
         logger.info("🚀 Starting Rootly FastMCP Server...")
+
+        # Log deployment environment for monitoring
+        if _is_running_in_docker():
+            logger.info("📦 Deployment: Docker Container")
+        else:
+            logger.info("💻 Deployment: Local/Native")
+
         mcp = create_rootly_mcp_server()
-        
+
         logger.info("🌐 Server starting on stdio transport...")
         logger.info("Ready for MCP client connections!")
-        
+
         # Run the MCP server
         mcp.run()
-        
     except KeyboardInterrupt:
         logger.info("🛑 Server stopped by user")
     except Exception as e:
@@ -145,4 +184,4 @@ def main():
         raise
 
 if __name__ == "__main__":
-    main() 
+    main()
