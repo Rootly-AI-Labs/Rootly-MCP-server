@@ -176,7 +176,7 @@ def create_rootly_mcp_server(
         route_maps=route_maps
     )
     
-    logger.info(f"✅ Created MCP server with RouteMap filtering successfully")
+    logger.info("✅ Created MCP server with RouteMap filtering successfully")
     logger.info("🚀 Selected Rootly API endpoints are now available as MCP tools")
     
     return mcp
