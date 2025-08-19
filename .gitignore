@@ -188,3 +188,7 @@ swagger.json
 # Test outputs and temporary files
 test_output/
 *.tmp
+
+# Markdown files (exclude all except README)
+*.md
+!README.md
