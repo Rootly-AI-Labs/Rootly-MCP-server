@@ -36,8 +36,8 @@ class AuthenticatedHTTPXClient:
         self._api_token = None
         self.parameter_mapping = parameter_mapping or {}
 
-        if not self.hosted:
-            self._api_token = self._get_api_token()
+        # Always get API token regardless of hosted mode
+        self._api_token = self._get_api_token()
 
         # Create the HTTPX client
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
