@@ -35,12 +35,10 @@ class AuthenticatedHTTPXClient:
         self.hosted = hosted
         self._api_token = None
         self.parameter_mapping = parameter_mapping or {}
-
-        # Always get API token regardless of hosted mode
         self._api_token = self._get_api_token()
 
         # Create the HTTPX client
-        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        headers = {"Content-Type": "application/vnd.api+json", "Accept": "application/vnd.api+json"}
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
 
@@ -105,7 +103,7 @@ class AuthenticatedHTTPXClient:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.client.aclose()
+        pass
 
     def __getattr__(self, name):
         # Delegate all other attributes to the underlying client
@@ -135,7 +133,6 @@ def create_rootly_mcp_server(
     # Set default allowed paths if none provided
     if allowed_paths is None:
         allowed_paths = [
-            "/incidents",
             "/incidents/{incident_id}/alerts",
             "/alerts",
             "/alerts/{alert_id}",
@@ -199,16 +196,12 @@ def create_rootly_mcp_server(
     logger.info(f"Using Rootly API base URL: {base_url}")
 
     # Create the authenticated HTTP client with parameter mapping
-    try:
-        http_client = AuthenticatedHTTPXClient(
-            base_url=base_url,
-            hosted=hosted,
-            parameter_mapping=parameter_mapping
-        )
-    except Exception as e:
-        logger.warning(f"Failed to create authenticated client: {e}")
-        # Create a mock client for testing
-        http_client = httpx.AsyncClient(base_url=base_url)
+
+    http_client = AuthenticatedHTTPXClient(
+        base_url=base_url,
+        hosted=hosted,
+        parameter_mapping=parameter_mapping
+    )
 
     # Create the MCP server using OpenAPI integration
     # By default, all routes become tools which is what we want
@@ -222,7 +215,7 @@ def create_rootly_mcp_server(
 
     # Add some custom tools for enhanced functionality
     @mcp.tool()
-    def list_endpoints() -> str:
+    def list_endpoints() -> list:
         """List all available Rootly API endpoints with their descriptions."""
         endpoints = []
         for path, path_item in filtered_spec.get("paths", {}).items():
@@ -240,103 +233,149 @@ def create_rootly_mcp_server(
                     "description": description,
                 })
 
-        return json.dumps(endpoints, indent=2)
+        return endpoints
 
     @mcp.tool()
     async def search_incidents_paginated(
         query: Annotated[str, Field(description="Search query to filter incidents by title/summary")] = "",
-        page_size: Annotated[int, Field(description="Number of results per page (max: 100)", ge=1, le=100)] = 100,
+        page_size: Annotated[int, Field(description="Number of results per page (max: 20)", ge=1, le=20)] = 10,
         page_number: Annotated[int, Field(description="Page number to retrieve", ge=1)] = 1,
-    ) -> str:
+    ) -> dict:
         """
         Search incidents with enhanced pagination control.
 
         This tool provides better pagination handling than the standard API endpoint.
         """
         params = {
-            "page[size]": min(page_size, 100),
+            "page[size]": min(page_size, 20),
             "page[number]": page_number,
+            "include": "",
         }
         if query:
             params["filter[search]"] = query
 
         try:
-            async with http_client as client:
-                response = await client.get("/v1/incidents", params=params)
-                response.raise_for_status()
-                result = response.json()
+            response = await http_client.get("/v1/incidents", params=params)
+            response.raise_for_status()
+            response_data = response.json()
+            
+            if "data" in response_data:
+                simplified_incidents = []
+                for incident in response_data["data"]:
+                    simplified = {
+                        "id": incident["id"],
+                        "type": incident["type"],
+                        "attributes": {
+                            "title": incident["attributes"].get("title"),
+                            "status": incident["attributes"].get("status"),
+                            "summary": incident["attributes"].get("summary"),
+                            "sequential_id": incident["attributes"].get("sequential_id"),
+                            "url": incident["attributes"].get("url"),
+                            "created_at": incident["attributes"].get("created_at"),
+                            "updated_at": incident["attributes"].get("updated_at")
+                        }
+                    }
+                    simplified_incidents.append(simplified)
+                
+                result = {
+                    "data": simplified_incidents,
+                    "meta": response_data.get("meta", {}),
+                    "links": response_data.get("links", {})
+                }
+            else:
+                result = response_data
+                
         except Exception as e:
             result = {"error": str(e)}
 
-        return json.dumps(result, indent=2)
+        return result
 
     @mcp.tool()
     async def get_all_incidents_matching(
         query: Annotated[str, Field(description="Search query to filter incidents by title/summary")] = "",
-        max_results: Annotated[int, Field(description="Maximum number of results to return", ge=1, le=1000)] = 500,
-    ) -> str:
+        max_results: Annotated[int, Field(description="Maximum number of results to return", ge=1, le=20)] = 10,
+    ) -> dict:
         """
         Get all incidents matching a query by automatically fetching multiple pages.
-
-        This tool automatically handles pagination to fetch multiple pages of results.
-        """
         all_incidents = []
         page_number = 1
-        page_size = 100
+        page_size = min(max_results, 10)  # Reasonable page size for efficient API calls
 
         try:
-            async with http_client as client:
-                while len(all_incidents) < max_results:
-                    params = {
-                        "page[size]": page_size,
-                        "page[number]": page_number,
-                    }
-                    if query:
-                        params["filter[search]"] = query
+            while len(all_incidents) < max_results:
+                params = {
+                    "page[size]": page_size,
+                    "page[number]": page_number,
+                    "include": "",
+                }
+                if query:
+                    params["filter[search]"] = query
 
-                    try:
-                        response = await client.get("/v1/incidents", params=params)
-                        response.raise_for_status()
-                        response_data = response.json()
+                try:
+                    response = await http_client.get("/v1/incidents", params=params)
+                    response.raise_for_status()
+                    response_data = response.json()
 
-                        if "data" in response_data:
-                            incidents = response_data["data"]
-                            if not incidents:  # No more results
-                                break
-                            all_incidents.extend(incidents)
+                    if "data" in response_data:
+                        incidents = response_data["data"]
+                        if not incidents:
+                            break
+                        
+                                    simplified_incidents = []
+                        for incident in incidents:
+                            simplified = {
+                                "id": incident["id"],
+                                "type": incident["type"],
+                                "attributes": {
+                                    "title": incident["attributes"].get("title"),
+                                    "status": incident["attributes"].get("status"),
+                                    "summary": incident["attributes"].get("summary"),
+                                    "sequential_id": incident["attributes"].get("sequential_id"),
+                                    "url": incident["attributes"].get("url"),
+                                    "created_at": incident["attributes"].get("created_at"),
+                                    "updated_at": incident["attributes"].get("updated_at")
+                                }
+                            }
+                            simplified_incidents.append(simplified)
+                        
+                        all_incidents.extend(simplified_incidents)
 
-                            # Check if we have more pages
-                            meta = response_data.get("meta", {})
-                            current_page = meta.get("current_page", page_number)
-                            total_pages = meta.get("total_pages", 1)
+                        # Check if we have more pages
+                        meta = response_data.get("meta", {})
+                        current_page = meta.get("current_page", page_number)
+                        total_pages = meta.get("total_pages", 1)
 
-                            if current_page >= total_pages:
-                                break  # No more pages
+                        if current_page >= total_pages:
+                            break
 
-                            page_number += 1
-                        else:
-                            break  # Unexpected response format
-
-                    except Exception as e:
-                        logger.error(f"Error fetching incidents page {page_number}: {e}")
+                        page_number += 1
+                    else:
                         break
 
-                # Limit to max_results
-                if len(all_incidents) > max_results:
-                    all_incidents = all_incidents[:max_results]
+                except Exception as e:
+                    logger.error(f"Error fetching incidents page {page_number}: {e}")
+                    break
 
-                result = {
-                    "data": all_incidents,
-                    "meta": {
-                        "total_fetched": len(all_incidents),
-                        "max_results": max_results,
-                        "query": query
-                    }
+            # Limit to max_results
+            if len(all_incidents) > max_results:
+                all_incidents = all_incidents[:max_results]
+
+            result = {
+                "data": all_incidents,
+                "meta": {
+                    "total_fetched": len(all_incidents),
+                    "max_results": max_results,
+                    "query": query,
+                    "pages_fetched": page_number - 1,
+                    "page_size": page_size
                 }
+            }
         except Exception as e:
+            logger.error(f"get_all_incidents_matching error: {e}")
             result = {"error": str(e)}
-
-        return json.dumps(result, indent=2)
+        
+        logger.info(f"get_all_incidents_matching returning {len(result.get('data', []))} incidents")
+        return result
 
     # Log server creation (tool count will be shown when tools are accessed)
     logger.info("Created Rootly MCP Server successfully")
