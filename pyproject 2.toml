@@ -1,0 +1,58 @@
+[project]
+name = "rootly-mcp-server"
+version = "2.0.1"
+description = "A Model Context Protocol server for Rootly APIs using OpenAPI spec"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [{ name = "Rootly AI Labs", email = "support@rootly.com" }]
+keywords = ["rootly", "mcp", "llm", "automation", "incidents"]
+license = "Apache-2.0"
+license-files = ["LICEN[CS]E*"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Build Tools",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "fastmcp>=2.9.0",
+    "requests>=2.28.0", # For API calls
+    "httpx>=0.24.0",    # For async HTTP client
+    "pydantic>=2.0.0",  # For data validation
+]
+
+[project.urls]
+Homepage = "https://github.com/Rootly-AI-Labs/Rootly-MCP-server"
+Issues = "https://github.com/Rootly-AI-Labs/Rootly-MCP-server/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rootly_mcp_server"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build.targets.wheel.include]
+"src/rootly_mcp_server/data" = "rootly_mcp_server/data"
+
+[project.scripts]
+rootly-mcp-server = "rootly_mcp_server.__main__:main"
+
+[project.optional-dependencies]
+dev = ["black>=23.0.0", "isort>=5.0.0"]
+
+[tool.uv]
+dev-dependencies = ["pyright>=1.1.389", "ruff>=0.7.3", "pytest>=8.0.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
