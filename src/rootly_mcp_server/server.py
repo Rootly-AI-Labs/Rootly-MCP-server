@@ -297,6 +297,7 @@ def create_rootly_mcp_server(
     ) -> dict:
         """
         Get all incidents matching a query by automatically fetching multiple pages.
+        """
         all_incidents = []
         page_number = 1
         page_size = min(max_results, 10)  # Reasonable page size for efficient API calls
@@ -321,7 +322,7 @@ def create_rootly_mcp_server(
                         if not incidents:
                             break
                         
-                                    simplified_incidents = []
+                        simplified_incidents = []
                         for incident in incidents:
                             simplified = {
                                 "id": incident["id"],
