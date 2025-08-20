@@ -243,19 +243,24 @@ def create_rootly_mcp_server(
 
         return endpoints
 
-    @mcp.tool()
-    async def debug_headers() -> dict:
-        """Debug tool to check what headers are being passed from the MCP client."""
-        try:
-            from fastmcp.server.dependencies import get_http_headers
-            headers = get_http_headers(include_all=True)
-            return {
-                "all_headers": dict(headers),
-                "authorization": headers.get("authorization", ""),
-                "has_auth": bool(headers.get("authorization", "")),
-            }
-        except Exception as e:
-            return {"error": str(e), "type": type(e).__name__}
+    async def make_authenticated_request(method: str, url: str, **kwargs):
+        """Make an authenticated request, extracting token from MCP headers in hosted mode."""
+        # In hosted mode, get token from MCP request headers
+        if hosted:
+            try:
+                from fastmcp.server.dependencies import get_http_headers
+                request_headers = get_http_headers()
+                auth_header = request_headers.get("authorization", "")
+                if auth_header:
+                    # Add authorization header to the request
+                    if "headers" not in kwargs:
+                        kwargs["headers"] = {}
+                    kwargs["headers"]["Authorization"] = auth_header
+            except Exception:
+                pass  # Fallback to default client behavior
+        
+        # Make the request using the underlying httpx client
+        return await http_client.client.request(method, url, **kwargs)
 
     @mcp.tool()
     async def search_incidents_paginated(
@@ -277,7 +282,7 @@ def create_rootly_mcp_server(
             params["filter[search]"] = query
 
         try:
-            response = await http_client.get("/v1/incidents", params=params)
+            response = await make_authenticated_request("GET", "/v1/incidents", params=params)
             response.raise_for_status()
             response_data = response.json()
             
@@ -335,7 +340,7 @@ def create_rootly_mcp_server(
                     params["filter[search]"] = query
 
                 try:
-                    response = await http_client.get("/v1/incidents", params=params)
+                    response = await make_authenticated_request("GET", "/v1/incidents", params=params)
                     response.raise_for_status()
                     response_data = response.json()
 
