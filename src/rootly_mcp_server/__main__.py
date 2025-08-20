@@ -159,7 +159,9 @@ def main():
         logger.warning("--host argument is deprecated, use --hosted instead")
         hosted_mode = True
     
-    check_api_token()
+    # Only check API token if not in hosted mode
+    if not hosted_mode:
+        check_api_token()
     
     try:
         # Parse allowed paths from command line argument
