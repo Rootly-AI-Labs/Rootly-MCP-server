@@ -244,6 +244,20 @@ def create_rootly_mcp_server(
         return endpoints
 
     @mcp.tool()
+    async def debug_headers() -> dict:
+        """Debug tool to check what headers are being passed from the MCP client."""
+        try:
+            from fastmcp.server.dependencies import get_http_headers
+            headers = get_http_headers(include_all=True)
+            return {
+                "all_headers": dict(headers),
+                "authorization": headers.get("authorization", ""),
+                "has_auth": bool(headers.get("authorization", "")),
+            }
+        except Exception as e:
+            return {"error": str(e), "type": type(e).__name__}
+
+    @mcp.tool()
     async def search_incidents_paginated(
         query: Annotated[str, Field(description="Search query to filter incidents by title/summary")] = "",
         page_size: Annotated[int, Field(description="Number of results per page (max: 20)", ge=1, le=20)] = 10,
