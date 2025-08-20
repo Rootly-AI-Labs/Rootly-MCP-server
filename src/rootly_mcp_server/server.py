@@ -353,7 +353,6 @@ def create_rootly_mcp_server(
                         break
 
                 except Exception as e:
-                    logger.error(f"Error fetching incidents page {page_number}: {e}")
                     break
 
             # Limit to max_results
@@ -371,10 +370,8 @@ def create_rootly_mcp_server(
                 }
             }
         except Exception as e:
-            logger.error(f"get_all_incidents_matching error: {e}")
             result = {"error": str(e)}
         
-        logger.info(f"get_all_incidents_matching returning {len(result.get('data', []))} incidents")
         return result
 
     # Log server creation (tool count will be shown when tools are accessed)
