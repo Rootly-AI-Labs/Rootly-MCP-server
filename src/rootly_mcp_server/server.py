@@ -35,7 +35,9 @@ class AuthenticatedHTTPXClient:
         self.hosted = hosted
         self._api_token = None
         self.parameter_mapping = parameter_mapping or {}
-        self._api_token = self._get_api_token()
+
+        if not self.hosted:
+            self._api_token = self._get_api_token()
 
         # Create the HTTPX client
         headers = {"Content-Type": "application/vnd.api+json", "Accept": "application/vnd.api+json"}
