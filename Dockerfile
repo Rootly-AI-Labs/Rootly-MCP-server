@@ -23,6 +23,8 @@ EXPOSE 8000
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+ENV FASTMCP_HOST=0.0.0.0
+ENV FASTMCP_PORT=8000
 
 # Run the application
-CMD ["rootly-mcp-server", "--transport", "sse", "--log-level", "INFO", "--host", "0.0.0.0", "--port", "8000", "--hosted"]
+CMD ["rootly-mcp-server", "--transport", "sse", "--log-level", "INFO", "--hosted"]
