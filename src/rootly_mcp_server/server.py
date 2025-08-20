@@ -214,7 +214,13 @@ def create_rootly_mcp_server(
         timeout=30.0,
         tags={"rootly", "incident-management"},
     )
-
+    
+    @mcp.custom_route("/healthz", methods=["GET"])
+    @mcp.custom_route("/health", methods=["GET"])
+    async def health_check(request):
+        from starlette.responses import PlainTextResponse
+        return PlainTextResponse("OK")
+    
     # Add some custom tools for enhanced functionality
     @mcp.tool()
     def list_endpoints() -> list:
