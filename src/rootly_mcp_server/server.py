@@ -78,14 +78,21 @@ class AuthenticatedHTTPXClient:
             self._api_token = self._get_api_token()
 
         # Create the HTTPX client
-        headers = {"Content-Type": "application/vnd.api+json", "Accept": "application/vnd.api+json"}
+        headers = {
+            "Content-Type": "application/vnd.api+json", 
+            "Accept": "application/vnd.api+json",
+            "Accept-Encoding": "gzip, deflate, br"  # Explicitly handle encodings
+        }
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
 
         self.client = httpx.AsyncClient(
             base_url=base_url,
             headers=headers,
-            timeout=30.0
+            timeout=30.0,
+            follow_redirects=True,
+            # Ensure proper handling of compressed responses
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
         )
 
     def _get_api_token(self) -> Optional[str]:
@@ -125,26 +132,49 @@ class AuthenticatedHTTPXClient:
             
             # Try to decode response content with error handling
             try:
-                # First try to get text content with UTF-8
-                content = response.text
-                # Validate it's proper JSON if content type suggests JSON
+                # Force httpx to decompress the response properly
+                response.read()  # This ensures content is fully loaded and decompressed
+                
+                # Check if content is valid
+                if not response.content:
+                    logger.warning(f"Empty response content for {method} {url}")
+                    return response
+                
+                # Try to access text content to validate encoding
+                text_content = response.text
+                
+                # Validate JSON if content type suggests it
                 if 'json' in response.headers.get('content-type', '').lower():
-                    response.json()  # This will raise if not valid JSON
+                    json_data = response.json()  # This will raise if not valid JSON
+                    logger.debug(f"Successfully parsed JSON response for {method} {url}")
+                
                 return response
+                
             except UnicodeDecodeError as e:
                 logger.error(f"Unicode decode error for {method} {url}: {e}")
                 logger.error(f"Response headers: {dict(response.headers)}")
                 logger.error(f"Response status: {response.status_code}")
-                # Try to decode with different encoding
-                try:
-                    content = response.content.decode('latin1')
-                    logger.warning(f"Decoded response with latin1 encoding")
-                    return response
-                except Exception:
-                    raise Exception(f"Failed to decode response: {e}")
+                logger.error(f"Content encoding: {response.headers.get('content-encoding', 'none')}")
+                logger.error(f"Raw content (first 100 bytes): {response.content[:100]}")
+                
+                # Try manual decompression if gzipped
+                if response.headers.get('content-encoding') == 'gzip':
+                    try:
+                        import gzip
+                        decompressed = gzip.decompress(response.content)
+                        logger.warning(f"Manually decompressed gzip content")
+                        # Create a new response object with decompressed content
+                        response._content = decompressed
+                        return response
+                    except Exception as gzip_error:
+                        logger.error(f"Manual gzip decompression failed: {gzip_error}")
+                
+                raise Exception(f"Failed to decode response: {e}")
+                
             except Exception as json_error:
                 logger.error(f"JSON decode error for {method} {url}: {json_error}")
-                logger.error(f"Response content preview: {response.content[:100]}")
+                logger.error(f"Response content preview: {response.content[:100] if response.content else 'No content'}")
+                logger.error(f"Response encoding: {response.encoding}")
                 raise Exception(f"Invalid JSON response: {json_error}")
                 
         except Exception as e:
@@ -178,8 +208,19 @@ class AuthenticatedHTTPXClient:
         pass
 
     def __getattr__(self, name):
-        # Delegate all other attributes to the underlying client
+        # Delegate all other attributes to the underlying client, except for request methods
+        if name in ['request', 'get', 'post', 'put', 'patch', 'delete']:
+            # Use our overridden methods instead
+            return getattr(self, name)
         return getattr(self.client, name)
+    
+    @property 
+    def base_url(self):
+        return self.client.base_url
+        
+    @property
+    def headers(self):
+        return self.client.headers
 
 
 def create_rootly_mcp_server(
