@@ -468,7 +468,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
         logger.info(f"Using provided Swagger path: {swagger_path}")
         if not os.path.isfile(swagger_path):
             raise FileNotFoundError(f"Swagger file not found at {swagger_path}")
-        with open(swagger_path, "r") as f:
+        with open(swagger_path, "r", encoding="utf-8") as f:
             return json.load(f)
     else:
         # First, check in the package data directory
@@ -476,7 +476,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
             package_data_path = Path(__file__).parent / "data" / "swagger.json"
             if package_data_path.is_file():
                 logger.info(f"Found Swagger file in package data: {package_data_path}")
-                with open(package_data_path, "r") as f:
+                with open(package_data_path, "r", encoding="utf-8") as f:
                     return json.load(f)
         except Exception as e:
             logger.debug(f"Could not load Swagger file from package data: {e}")
@@ -489,7 +489,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
         swagger_path = current_dir / "swagger.json"
         if swagger_path.is_file():
             logger.info(f"Found Swagger file at {swagger_path}")
-            with open(swagger_path, "r") as f:
+            with open(swagger_path, "r", encoding="utf-8") as f:
                 return json.load(f)
 
         # Check parent directories
@@ -497,7 +497,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
             swagger_path = parent / "swagger.json"
             if swagger_path.is_file():
                 logger.info(f"Found Swagger file at {swagger_path}")
-                with open(swagger_path, "r") as f:
+                with open(swagger_path, "r", encoding="utf-8") as f:
                     return json.load(f)
 
         # If the file wasn't found, fetch it from the URL and save it
@@ -508,7 +508,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
         swagger_path = current_dir / "swagger.json"
         logger.info(f"Saving Swagger file to {swagger_path}")
         try:
-            with open(swagger_path, "w") as f:
+            with open(swagger_path, "w", encoding="utf-8") as f:
                 json.dump(swagger_spec, f)
             logger.info(f"Saved Swagger file to {swagger_path}")
         except Exception as e:
