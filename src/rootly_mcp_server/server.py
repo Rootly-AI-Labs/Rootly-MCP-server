@@ -19,6 +19,7 @@ from fastmcp import FastMCP
 from pydantic import Field
 
 from .utils import sanitize_parameters_in_spec
+from .smart_utils import TextSimilarityAnalyzer, SolutionExtractor
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -82,6 +83,39 @@ class MCPError:
 
 # Default Swagger URL
 SWAGGER_URL = "https://rootly-heroku.s3.amazonaws.com/swagger/v1/swagger.json"
+
+# Default allowed API paths
+def _generate_recommendation(solution_data: dict) -> str:
+    """Generate a high-level recommendation based on solution analysis."""
+    solutions = solution_data.get("solutions", [])
+    avg_time = solution_data.get("average_resolution_time")
+    
+    if not solutions:
+        return "No similar incidents found. This may be a novel issue requiring escalation."
+    
+    recommendation_parts = []
+    
+    # Time expectation
+    if avg_time:
+        if avg_time < 1:
+            recommendation_parts.append("Similar incidents typically resolve quickly (< 1 hour).")
+        elif avg_time > 4:
+            recommendation_parts.append("Similar incidents typically require more time (> 4 hours).")
+    
+    # Top solution
+    if solutions:
+        top_solution = solutions[0]
+        if top_solution.get("suggested_actions"):
+            actions = top_solution["suggested_actions"][:2]  # Top 2 actions
+            recommendation_parts.append(f"Consider trying: {', '.join(actions)}")
+    
+    # Pattern insights
+    patterns = solution_data.get("common_patterns", [])
+    if patterns:
+        recommendation_parts.append(f"Common patterns: {patterns[0]}")
+    
+    return " ".join(recommendation_parts) if recommendation_parts else "Review similar incidents above for resolution guidance."
+
 
 # Default allowed API paths
 DEFAULT_ALLOWED_PATHS = [
@@ -444,6 +478,179 @@ def create_rootly_mcp_server(
         except Exception as e:
             error_type, error_message = MCPError.categorize_error(e)
             return MCPError.tool_error(error_message, error_type)
+
+    # Initialize smart analysis tools
+    similarity_analyzer = TextSimilarityAnalyzer()
+    solution_extractor = SolutionExtractor()
+
+    @mcp.tool()
+    async def find_related_incidents(
+        incident_id: str,
+        similarity_threshold: Annotated[float, Field(description="Minimum similarity score (0.0-1.0)", ge=0.0, le=1.0)] = 0.3,
+        max_results: Annotated[int, Field(description="Maximum number of related incidents to return", ge=1, le=20)] = 5
+    ) -> dict:
+        """Find historically similar incidents to help with context and resolution strategies."""
+        try:
+            # Get the target incident details
+            target_response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
+            target_response.raise_for_status()
+            target_incident_data = target_response.json()
+            target_incident = target_incident_data.get("data", {})
+            
+            if not target_incident:
+                return MCPError.tool_error("Incident not found", "not_found")
+            
+            # Get historical incidents for comparison (resolved incidents from last 6 months)
+            historical_response = await make_authenticated_request("GET", "/v1/incidents", params={
+                "page[size]": 100,  # Get more incidents for better matching
+                "page[number]": 1,
+                "filter[status]": "resolved",  # Only look at resolved incidents
+                "include": ""
+            })
+            historical_response.raise_for_status()
+            historical_data = historical_response.json()
+            historical_incidents = historical_data.get("data", [])
+            
+            # Filter out the target incident itself
+            historical_incidents = [inc for inc in historical_incidents if str(inc.get('id')) != str(incident_id)]
+            
+            if not historical_incidents:
+                return {
+                    "related_incidents": [],
+                    "message": "No historical incidents found for comparison",
+                    "target_incident": {
+                        "id": incident_id,
+                        "title": target_incident.get("attributes", {}).get("title", "")
+                    }
+                }
+            
+            # Calculate similarities
+            similar_incidents = similarity_analyzer.calculate_similarity(historical_incidents, target_incident)
+            
+            # Filter by threshold and limit results
+            filtered_incidents = [
+                inc for inc in similar_incidents 
+                if inc.similarity_score >= similarity_threshold
+            ][:max_results]
+            
+            # Format response
+            related_incidents = []
+            for incident in filtered_incidents:
+                related_incidents.append({
+                    "incident_id": incident.incident_id,
+                    "title": incident.title,
+                    "similarity_score": round(incident.similarity_score, 3),
+                    "matched_services": incident.matched_services,
+                    "matched_keywords": incident.matched_keywords,
+                    "resolution_summary": incident.resolution_summary,
+                    "resolution_time_hours": incident.resolution_time_hours
+                })
+            
+            return {
+                "target_incident": {
+                    "id": incident_id,
+                    "title": target_incident.get("attributes", {}).get("title", "")
+                },
+                "related_incidents": related_incidents,
+                "total_found": len(filtered_incidents),
+                "similarity_threshold": similarity_threshold,
+                "analysis_summary": f"Found {len(filtered_incidents)} similar incidents out of {len(historical_incidents)} historical incidents"
+            }
+            
+        except Exception as e:
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(f"Failed to find related incidents: {error_message}", error_type)
+
+    @mcp.tool()
+    async def suggest_solutions(
+        incident_id: str = "",
+        incident_title: str = "",
+        incident_description: str = "",
+        max_solutions: Annotated[int, Field(description="Maximum number of solution suggestions", ge=1, le=10)] = 3
+    ) -> dict:
+        """Suggest solutions based on similar resolved incidents. Provide either incident_id OR title/description."""
+        try:
+            target_incident = {}
+            
+            if incident_id:
+                # Get incident details by ID
+                response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
+                response.raise_for_status()
+                incident_data = response.json()
+                target_incident = incident_data.get("data", {})
+                
+                if not target_incident:
+                    return MCPError.tool_error("Incident not found", "not_found")
+                    
+            elif incident_title or incident_description:
+                # Create synthetic incident for analysis
+                target_incident = {
+                    "id": "synthetic",
+                    "attributes": {
+                        "title": incident_title,
+                        "summary": incident_description,
+                        "description": incident_description
+                    }
+                }
+            else:
+                return MCPError.tool_error("Must provide either incident_id or incident_title/description", "validation_error")
+            
+            # Get resolved incidents for solution mining
+            historical_response = await make_authenticated_request("GET", "/v1/incidents", params={
+                "page[size]": 150,  # Get more incidents for better solution matching
+                "page[number]": 1,
+                "filter[status]": "resolved",
+                "include": ""
+            })
+            historical_response.raise_for_status()
+            historical_data = historical_response.json()
+            historical_incidents = historical_data.get("data", [])
+            
+            # Filter out target incident if it exists
+            if incident_id:
+                historical_incidents = [inc for inc in historical_incidents if str(inc.get('id')) != str(incident_id)]
+            
+            if not historical_incidents:
+                return {
+                    "solutions": [],
+                    "message": "No historical resolved incidents found for solution mining"
+                }
+            
+            # Find similar incidents
+            similar_incidents = similarity_analyzer.calculate_similarity(historical_incidents, target_incident)
+            
+            # Filter to reasonably similar incidents (lower threshold for solution suggestions)
+            relevant_incidents = [inc for inc in similar_incidents if inc.similarity_score >= 0.2][:max_solutions * 2]
+            
+            if not relevant_incidents:
+                return {
+                    "solutions": [],
+                    "message": "No sufficiently similar incidents found for solution suggestions",
+                    "suggestion": "This appears to be a unique incident. Consider escalating or consulting documentation."
+                }
+            
+            # Extract solutions
+            solution_data = solution_extractor.extract_solutions(relevant_incidents)
+            
+            # Format response
+            return {
+                "target_incident": {
+                    "id": incident_id or "synthetic",
+                    "title": target_incident.get("attributes", {}).get("title", incident_title),
+                    "description": target_incident.get("attributes", {}).get("summary", incident_description)
+                },
+                "solutions": solution_data["solutions"][:max_solutions],
+                "insights": {
+                    "common_patterns": solution_data["common_patterns"],
+                    "average_resolution_time_hours": solution_data["average_resolution_time"],
+                    "total_similar_incidents": solution_data["total_similar_incidents"]
+                },
+                "recommendation": _generate_recommendation(solution_data)
+            }
+            
+        except Exception as e:
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(f"Failed to suggest solutions: {error_message}", error_type)
 
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
