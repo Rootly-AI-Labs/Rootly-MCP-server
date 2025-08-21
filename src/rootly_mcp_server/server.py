@@ -69,7 +69,7 @@ class AuthenticatedHTTPXClient:
     """An HTTPX client wrapper that handles Rootly API authentication and parameter transformation."""
 
     def __init__(self, base_url: str = "https://api.rootly.com", hosted: bool = False, parameter_mapping: Optional[Dict[str, str]] = None):
-        self.base_url = base_url
+        self._base_url = base_url
         self.hosted = hosted
         self._api_token = None
         self.parameter_mapping = parameter_mapping or {}
@@ -216,7 +216,7 @@ class AuthenticatedHTTPXClient:
     
     @property 
     def base_url(self):
-        return self.client.base_url
+        return self._base_url
         
     @property
     def headers(self):
@@ -353,8 +353,8 @@ def create_rootly_mcp_server(
             except Exception:
                 pass  # Fallback to default client behavior
         
-        # Make the request using the underlying httpx client
-        return await http_client.client.request(method, url, **kwargs)
+        # Use our custom client with proper error handling instead of bypassing it
+        return await http_client.request(method, url, **kwargs)
 
     @mcp.tool()
     async def search_incidents(
