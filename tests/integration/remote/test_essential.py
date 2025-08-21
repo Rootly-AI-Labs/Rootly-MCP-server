@@ -1,8 +1,8 @@
 """
-Essential remote server tests for Rootly MCP Server.
+Essential container server tests for Rootly MCP Server.
 
-These tests validate the core functionality that users depend on when connecting
-to the REAL hosted MCP server at https://mcp.rootly.com/sse.
+These tests validate the core functionality by testing against a Docker container
+running the MCP server, simulating the production environment.
 
 Tests require ROOTLY_API_TOKEN environment variable to be set.
 """
@@ -14,20 +14,21 @@ import asyncio
 import httpx
 
 
-class RealRemoteClient:
-    """Real remote client for testing actual hosted MCP server functionality."""
+class ContainerClient:
+    """Container client for testing Docker-containerized MCP server functionality."""
     
-    def __init__(self, url: str):
-        self.url = url
+    def __init__(self, url: str | None = None):
+        # Use environment variable or default to localhost for container testing
+        self.url = url or os.getenv("MCP_SERVER_URL", "http://localhost:8000")
         self.authenticated = False
         self._token = None
         self.client = httpx.AsyncClient(timeout=30.0)
     
     async def health_check(self):
-        """Test remote server health endpoint."""
+        """Test container server health endpoint."""
         try:
-            # Try basic HTTP connection to the server
-            response = await self.client.get(self.url.replace("/sse", "/health"))
+            # Try basic HTTP connection to the container
+            response = await self.client.get(f"{self.url}/health")
             if response.status_code == 200:
                 return {"status": "healthy", "timestamp": time.time()}
             else:
@@ -174,33 +175,34 @@ class RealRemoteClient:
 
 @pytest.mark.remote
 @pytest.mark.integration
-class TestRemoteServerEssentials:
-    """Test only the critical remote server functionality that users depend on."""
+class TestContainerServerEssentials:
+    """Test only the critical container server functionality that users depend on."""
     
     @pytest.fixture
-    async def remote_client(self):
-        """Provide a real remote client for testing the actual hosted server."""
-        client = RealRemoteClient("https://mcp.rootly.com/sse")
+    async def container_client(self):
+        """Provide a container client for testing the Docker containerized server."""
+        client = ContainerClient()  # Uses MCP_SERVER_URL env var or localhost:8000
         yield client
         await client.close()
     
-    async def test_remote_server_connectivity(self, remote_client, api_token):
-        """Test 1/5: Verify remote server/API is reachable."""
-        # Test that we can reach the remote infrastructure
-        health = await remote_client.health_check()
+    async def test_container_server_connectivity(self, container_client, api_token):
+        """Test 1/5: Verify container server is reachable."""
+        # Test that we can reach the container infrastructure
+        health = await container_client.health_check()
         
         # Server should be reachable (even if no specific health endpoint)
         assert "status" in health
         if health["status"] == "unhealthy":
-            pytest.skip(f"Remote server unreachable: {health.get('error')}")
+            pytest.skip(f"Container server unreachable: {health.get('error')}")
         
         # Verify the URL is correct
-        assert remote_client.url == "https://mcp.rootly.com/sse"
+        expected_url = os.getenv("MCP_SERVER_URL", "http://localhost:8000")
+        assert container_client.url == expected_url
 
-    async def test_remote_authentication(self, remote_client, api_token):
+    async def test_container_authentication(self, container_client, api_token):
         """Test 2/5: Verify authentication works with real Bearer token."""
         # Test successful authentication against real Rootly API
-        result = await remote_client.authenticate(bearer_token=api_token)
+        result = await container_client.authenticate(bearer_token=api_token)
         
         if not result["authenticated"]:
             pytest.skip(f"Authentication failed: {result.get('error')} - this may be expected with test tokens")
@@ -208,26 +210,26 @@ class TestRemoteServerEssentials:
         assert result["authenticated"] is True
         
         # Verify client state is updated
-        assert remote_client.authenticated is True
-        assert remote_client._token == api_token
+        assert container_client.authenticated is True
+        assert container_client._token == api_token
 
-    async def test_remote_authentication_failure(self, remote_client):
+    async def test_remote_authentication_failure(self, container_client):
         """Test authentication failure with invalid token."""
         # Test failed authentication
-        result = await remote_client.authenticate(bearer_token="invalid_token")
+        result = await container_client.authenticate(bearer_token="invalid_token")
         
         assert result["authenticated"] is False
         assert "error" in result
 
-    async def test_remote_tool_listing(self, remote_client, api_token):
+    async def test_remote_tool_listing(self, container_client, api_token):
         """Test 3/5: Verify tools are available on remote server."""
         # Authenticate first
-        auth_result = await remote_client.authenticate(bearer_token=api_token)
+        auth_result = await container_client.authenticate(bearer_token=api_token)
         if not auth_result["authenticated"]:
             pytest.skip(f"Authentication failed: {auth_result.get('error')} - this may be expected with test tokens")
         
         # Get tools list
-        tools = await remote_client.list_tools()
+        tools = await container_client.list_tools()
         tool_names = [t["name"] for t in tools]
         
         # Verify minimum expected tools are present
@@ -241,21 +243,21 @@ class TestRemoteServerEssentials:
         for tool in expected_tools:
             assert tool in tool_names, f"Expected tool {tool} not found"
 
-    async def test_remote_tool_listing_unauthenticated(self, remote_client):
+    async def test_remote_tool_listing_unauthenticated(self, container_client):
         """Test that tool listing requires authentication."""
         # Try to get tools without authentication
         with pytest.raises(Exception, match="Not authenticated"):
-            await remote_client.list_tools()
+            await container_client.list_tools()
 
-    async def test_remote_search_incidents_execution(self, remote_client, api_token):
+    async def test_remote_search_incidents_execution(self, container_client, api_token):
         """Test 4/5: Verify core functionality works with real API."""
         # Authenticate first
-        auth_result = await remote_client.authenticate(bearer_token=api_token)
+        auth_result = await container_client.authenticate(bearer_token=api_token)
         if not auth_result["authenticated"]:
             pytest.skip(f"Authentication failed: {auth_result.get('error')}")
         
         # Execute search_incidents tool (makes real API call)
-        result = await remote_client.call_tool("search_incidents", {
+        result = await container_client.call_tool("search_incidents", {
             "query": "",
             "max_results": 3
         })
@@ -278,23 +280,23 @@ class TestRemoteServerEssentials:
                 assert "type" in first_item, "Data items missing 'type' field"
                 assert "attributes" in first_item, "Data items missing 'attributes' field"
 
-    async def test_remote_tool_execution_unauthenticated(self, remote_client):
+    async def test_remote_tool_execution_unauthenticated(self, container_client):
         """Test that tool execution requires authentication."""
         # Try to execute tool without authentication
         with pytest.raises(Exception, match="Not authenticated"):
-            await remote_client.call_tool("search_incidents", {})
+            await container_client.call_tool("search_incidents", {})
 
     @pytest.mark.timeout(30)
-    async def test_remote_response_time(self, remote_client, api_token):
+    async def test_remote_response_time(self, container_client, api_token):
         """Test 5/5: Verify remote server responds within reasonable time."""
         # Authenticate first
-        auth_result = await remote_client.authenticate(bearer_token=api_token)
+        auth_result = await container_client.authenticate(bearer_token=api_token)
         if not auth_result["authenticated"]:
             pytest.skip(f"Authentication failed: {auth_result.get('error')} - this may be expected with test tokens")
         
         # Measure response time for tool listing
         start_time = time.time()
-        await remote_client.list_tools()
+        await container_client.list_tools()
         response_time = time.time() - start_time
         
         # Verify reasonable response time for users
@@ -302,23 +304,23 @@ class TestRemoteServerEssentials:
         
         # Also test tool execution response time
         start_time = time.time()
-        await remote_client.call_tool("search_incidents", {"max_results": 1})
+        await container_client.call_tool("search_incidents", {"max_results": 1})
         execution_time = time.time() - start_time
         
         assert execution_time < 15.0, f"Tool execution time {execution_time:.2f}s exceeds 15s limit"
 
-    async def test_remote_connection_cleanup(self, remote_client, api_token):
+    async def test_remote_connection_cleanup(self, container_client, api_token):
         """Test that connections can be properly closed."""
         # Authenticate and use connection
-        auth_result = await remote_client.authenticate(bearer_token=api_token)
+        auth_result = await container_client.authenticate(bearer_token=api_token)
         if auth_result["authenticated"]:
-            await remote_client.list_tools()
+            await container_client.list_tools()
         
         # Close connection
-        await remote_client.close()
+        await container_client.close()
         
         # Verify connection is closed
-        assert remote_client.authenticated is False
+        assert container_client.authenticated is False
 
 
 @pytest.mark.remote
@@ -327,20 +329,20 @@ class TestRemoteServerResilience:
     """Test remote server resilience and error handling."""
     
     @pytest.fixture
-    async def remote_client(self):
+    async def container_client(self):
         """Provide a real remote client for resilience testing.""" 
-        client = RealRemoteClient("https://mcp.rootly.com/sse")
+        client = ContainerClient()
         yield client
         await client.close()
 
-    async def test_remote_server_handles_malformed_requests(self, remote_client, api_token):
+    async def test_remote_server_handles_malformed_requests(self, container_client, api_token):
         """Test that remote server handles malformed requests gracefully."""
-        auth_result = await remote_client.authenticate(bearer_token=api_token)
+        auth_result = await container_client.authenticate(bearer_token=api_token)
         if not auth_result["authenticated"]:
             pytest.skip(f"Authentication failed: {auth_result.get('error')}")
         
         # Test with invalid tool arguments
-        result = await remote_client.call_tool("search_incidents", {
+        result = await container_client.call_tool("search_incidents", {
             "invalid_param": "invalid_value"
         })
         
@@ -348,15 +350,15 @@ class TestRemoteServerResilience:
         assert isinstance(result, dict)
         assert "status" in result
 
-    async def test_remote_server_concurrent_requests(self, remote_client, api_token):
+    async def test_remote_server_concurrent_requests(self, container_client, api_token):
         """Test remote server can handle concurrent requests."""
-        auth_result = await remote_client.authenticate(bearer_token=api_token)
+        auth_result = await container_client.authenticate(bearer_token=api_token)
         if not auth_result["authenticated"]:
             pytest.skip(f"Authentication failed: {auth_result.get('error')}")
         
         # Create multiple concurrent requests
         tasks = [
-            remote_client.call_tool("search_incidents", {"max_results": 1})
+            container_client.call_tool("search_incidents", {"max_results": 1})
             for _ in range(3)
         ]
         

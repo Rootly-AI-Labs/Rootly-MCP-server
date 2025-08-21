@@ -29,25 +29,43 @@ jobs:
       with:
         file: ./coverage.xml
 
-  remote-tests:
+  container-tests:
     runs-on: ubuntu-latest
     needs: local-tests
-    if: github.ref == 'refs/heads/main'  # Only on main branch
     steps:
     - uses: actions/checkout@v4
     - uses: astral-sh/setup-uv@v3
     - run: uv python install 3.12 && uv sync --dev
     
-    # Wait for deployment (includes buffer)
-    - name: Wait for remote deployment
-      run: |
-        echo "🚀 Waiting for remote server deployment..."
-        echo "Push time: $(date)"
-        echo "Deployment takes 5+ min, waiting 7 min for safety..."
-        sleep 420  # 7 minutes
+    # Build and run the Docker container
+    - name: Build Docker image
+      run: docker build -t rootly-mcp-server .
     
-    # Essential remote tests only
-    - name: Test remote server essentials
+    - name: Start MCP server container
       env:
         ROOTLY_API_TOKEN: ${{ secrets.ROOTLY_API_TOKEN }}
+      run: |
+        docker run -d \
+          --name rootly-mcp-server \
+          -p 8000:8000 \
+          -e ROOTLY_API_TOKEN="${ROOTLY_API_TOKEN}" \
+          rootly-mcp-server
+    
+    # Wait for container to be ready
+    - name: Wait for container startup
+      run: |
+        echo "⏳ Waiting for container to start..."
+        timeout 30s bash -c 'until curl -f http://localhost:8000/health || curl -f http://localhost:8000/; do sleep 2; done'
+        echo "✅ Container is ready!"
+    
+    # Test the containerized server
+    - name: Test containerized MCP server
+      env:
+        ROOTLY_API_TOKEN: ${{ secrets.ROOTLY_API_TOKEN }}
+        MCP_SERVER_URL: "http://localhost:8000"
       run: uv run pytest tests/integration/remote/test_essential.py -v --timeout=60
+    
+    # Cleanup
+    - name: Stop container
+      if: always()
+      run: docker stop rootly-mcp-server && docker rm rootly-mcp-server
