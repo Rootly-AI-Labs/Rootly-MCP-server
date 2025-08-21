@@ -17,9 +17,7 @@ An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overvie
 
 ## Installation
 
-Install via our [PyPi package](https://pypi.org/project/rootly-mcp-server/) or by cloning this repository.
-
-Configure your MCP-compatible editor (tested with Cursor and Windsurf) with the following:
+Configure your MCP-compatible editor (tested with Cursor) with one of the configurations below. The package will be automatically downloaded and installed when you first open your editor.
 
 ### With uv
 
@@ -43,7 +41,7 @@ Configure your MCP-compatible editor (tested with Cursor and Windsurf) with the 
 }
 ```
 
-### With uv-tool-uvx
+### With uvx
 
 ```json
 {
@@ -154,7 +152,7 @@ By default, the following Rootly API endpoints are exposed to the AI agent (see 
 We limit exposed API paths for two key reasons:
 
 1. **Context Management**: Rootly's comprehensive API can overwhelm AI agents, affecting their ability to perform simple tasks effectively
-2. **Security**: Control which information and actions are accessible through the MCP server
+2. **Security**: Controls which information and actions are accessible through the MCP server
 
 To expose additional paths, modify the `allowed_paths` variable in `src/rootly_mcp_server/server.py`.
 
