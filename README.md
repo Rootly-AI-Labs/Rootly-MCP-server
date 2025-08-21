@@ -191,9 +191,7 @@ uv pip install <package>
 
 ### 3. Verify Installation
 
-Run the test client to ensure everything is configured correctly:
+The server should now be ready to use with your MCP-compatible editor.
 
-```bash
-python src/rootly_mcp_server/test_client.py
-```
+**For developers:** Additional testing tools are available in the `tests/` directory.
 
