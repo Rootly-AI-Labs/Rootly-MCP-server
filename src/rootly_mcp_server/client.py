@@ -121,7 +121,7 @@ class RootlyClient:
             # Add response details if available
             if hasattr(e, "response") and e.response is not None:
                 try:
-                    error_response["status_code"] = e.response.status_code
+                    error_response["status_code"] = str(e.response.status_code)
                     error_response["response_text"] = e.response.text
                 except Exception:
                     pass

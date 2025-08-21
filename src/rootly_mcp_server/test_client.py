@@ -72,9 +72,15 @@ async def test_server():
                     print(f"    Tool type: {type(tool)}")
                     print(f"    Tool attributes: {[attr for attr in dir(tool) if not attr.startswith('_')][:10]}")
                     
-                    # Show parameter schema if available
-                    if hasattr(tool, 'inputSchema') and tool.inputSchema:
-                        props = tool.inputSchema.get('properties', {})
+                    # Show parameter schema if available (check multiple possible attribute names)
+                    schema = None
+                    for attr_name in ['input_schema', 'inputSchema', 'schema', 'parameters_schema']:
+                        if hasattr(tool, attr_name):
+                            schema = getattr(tool, attr_name)
+                            break
+                    
+                    if schema and isinstance(schema, dict):
+                        props = schema.get('properties', {})
                         if props:
                             print(f"    Parameters: {', '.join(props.keys())}")
             else:

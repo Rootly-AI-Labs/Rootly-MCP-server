@@ -230,7 +230,7 @@ def create_rootly_mcp_server(
     # By default, all routes become tools which is what we want
     mcp = FastMCP.from_openapi(
         openapi_spec=filtered_spec,
-        client=http_client,
+        client=http_client.client,
         name=name,
         timeout=30.0,
         tags={"rootly", "incident-management"},
@@ -422,18 +422,18 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
         current_dir = Path.cwd()
 
         # Check current directory first
-        swagger_path = current_dir / "swagger.json"
-        if swagger_path.is_file():
-            logger.info(f"Found Swagger file at {swagger_path}")
-            with open(swagger_path, "r", encoding="utf-8") as f:
+        local_swagger_path = current_dir / "swagger.json"
+        if local_swagger_path.is_file():
+            logger.info(f"Found Swagger file at {local_swagger_path}")
+            with open(local_swagger_path, "r", encoding="utf-8") as f:
                 return json.load(f)
 
         # Check parent directories
         for parent in current_dir.parents:
-            swagger_path = parent / "swagger.json"
-            if swagger_path.is_file():
-                logger.info(f"Found Swagger file at {swagger_path}")
-                with open(swagger_path, "r", encoding="utf-8") as f:
+            parent_swagger_path = parent / "swagger.json"
+            if parent_swagger_path.is_file():
+                logger.info(f"Found Swagger file at {parent_swagger_path}")
+                with open(parent_swagger_path, "r", encoding="utf-8") as f:
                     return json.load(f)
 
         # If the file wasn't found, fetch it from the URL and save it
@@ -441,12 +441,12 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
         swagger_spec = _fetch_swagger_from_url()
 
         # Save the fetched spec to the current directory
-        swagger_path = current_dir / "swagger.json"
-        logger.info(f"Saving Swagger file to {swagger_path}")
+        save_swagger_path = current_dir / "swagger.json"
+        logger.info(f"Saving Swagger file to {save_swagger_path}")
         try:
-            with open(swagger_path, "w", encoding="utf-8") as f:
+            with open(save_swagger_path, "w", encoding="utf-8") as f:
                 json.dump(swagger_spec, f)
-            logger.info(f"Saved Swagger file to {swagger_path}")
+            logger.info(f"Saved Swagger file to {save_swagger_path}")
         except Exception as e:
             logger.warning(f"Failed to save Swagger file: {e}")
 

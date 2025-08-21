@@ -8,7 +8,6 @@ Automatically fetches the latest OpenAPI spec from Rootly's Swagger endpoint.
 
 import httpx
 from fastmcp import FastMCP
-from fastmcp.server.openapi import RouteMap, MCPType
 import os
 import logging
 from rootly_openapi_loader import load_rootly_openapi_spec
@@ -119,7 +118,7 @@ def create_rootly_mcp_server():
         tags={"rootly", "incident-management", "evaluation"}
     )
     
-    logger.info(f"✅ Created MCP server with filtered endpoints successfully")
+    logger.info("✅ Created MCP server with filtered endpoints successfully")
     logger.info("🚀 Selected Rootly API endpoints are now available as MCP tools for evaluation")
     
     return mcp
