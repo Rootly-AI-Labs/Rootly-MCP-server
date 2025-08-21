@@ -10,8 +10,7 @@ Tests cover:
 
 import pytest
 import os
-from unittest.mock import Mock, patch, AsyncMock
-import httpx
+from unittest.mock import patch
 
 from rootly_mcp_server.server import AuthenticatedHTTPXClient
 

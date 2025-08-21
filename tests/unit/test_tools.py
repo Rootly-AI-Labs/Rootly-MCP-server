@@ -9,8 +9,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
-import json
+from unittest.mock import patch
 
 from rootly_mcp_server.server import create_rootly_mcp_server, DEFAULT_ALLOWED_PATHS
 

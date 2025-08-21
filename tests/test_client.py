@@ -33,7 +33,7 @@ async def test_search_incidents_limits():
         print("❌ search_incidents tool not found")
         return
     
-    print(f"✅ Found search_incidents tool")
+    print("✅ Found search_incidents tool")
     
     # Check the parameter schema for max_results
     if hasattr(search_tool, 'fn'):
@@ -82,7 +82,7 @@ async def test_search_incidents_limits():
             else:
                 # Fallback to direct call - validation might not trigger here
                 result = await search_tool.fn(query="test", max_results=15)
-                print(f"  ⚠️  Function accepted max_results=15 (validation may be bypassed)")
+                print("  ⚠️  Function accepted max_results=15 (validation may be bypassed)")
                 print(f"      Result count: {len(result.get('data', []))}")
                 return
         except Exception as e:

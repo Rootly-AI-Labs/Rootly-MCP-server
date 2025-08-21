@@ -11,7 +11,7 @@ This module provides fixtures for:
 import os
 import pytest
 from unittest.mock import Mock, patch
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 
 @pytest.fixture(scope="session")

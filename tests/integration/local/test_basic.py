@@ -7,7 +7,7 @@ works in local development mode.
 
 import pytest
 import os
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from rootly_mcp_server.server import create_rootly_mcp_server, AuthenticatedHTTPXClient
 

@@ -12,7 +12,6 @@ import pytest
 import json
 import os
 from unittest.mock import Mock, patch, mock_open
-from pathlib import Path
 
 from rootly_mcp_server.server import (
     create_rootly_mcp_server, 
@@ -86,7 +85,7 @@ class TestServerCreation:
             mock_load_spec.return_value = mock_spec
             
             swagger_path = "/path/to/swagger.json"
-            server = create_rootly_mcp_server(swagger_path=swagger_path)
+            create_rootly_mcp_server(swagger_path=swagger_path)
             
             mock_load_spec.assert_called_once_with(swagger_path)
 
