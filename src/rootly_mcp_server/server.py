@@ -130,52 +130,8 @@ class AuthenticatedHTTPXClient:
             # Check if response is successful
             response.raise_for_status()
             
-            # Try to decode response content with error handling
-            try:
-                # Force httpx to decompress the response properly
-                response.read()  # This ensures content is fully loaded and decompressed
-                
-                # Check if content is valid
-                if not response.content:
-                    logger.warning(f"Empty response content for {method} {url}")
-                    return response
-                
-                # Try to access text content to validate encoding
-                text_content = response.text
-                
-                # Validate JSON if content type suggests it
-                if 'json' in response.headers.get('content-type', '').lower():
-                    json_data = response.json()  # This will raise if not valid JSON
-                    logger.debug(f"Successfully parsed JSON response for {method} {url}")
-                
-                return response
-                
-            except UnicodeDecodeError as e:
-                logger.error(f"Unicode decode error for {method} {url}: {e}")
-                logger.error(f"Response headers: {dict(response.headers)}")
-                logger.error(f"Response status: {response.status_code}")
-                logger.error(f"Content encoding: {response.headers.get('content-encoding', 'none')}")
-                logger.error(f"Raw content (first 100 bytes): {response.content[:100]}")
-                
-                # Try manual decompression if gzipped
-                if response.headers.get('content-encoding') == 'gzip':
-                    try:
-                        import gzip
-                        decompressed = gzip.decompress(response.content)
-                        logger.warning(f"Manually decompressed gzip content")
-                        # Create a new response object with decompressed content
-                        response._content = decompressed
-                        return response
-                    except Exception as gzip_error:
-                        logger.error(f"Manual gzip decompression failed: {gzip_error}")
-                
-                raise Exception(f"Failed to decode response: {e}")
-                
-            except Exception as json_error:
-                logger.error(f"JSON decode error for {method} {url}: {json_error}")
-                logger.error(f"Response content preview: {response.content[:100] if response.content else 'No content'}")
-                logger.error(f"Response encoding: {response.encoding}")
-                raise Exception(f"Invalid JSON response: {json_error}")
+            # Let httpx handle decompression naturally
+            return response
                 
         except Exception as e:
             logger.error(f"Request failed for {method} {url}: {e}")
