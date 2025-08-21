@@ -243,42 +243,6 @@ def create_rootly_mcp_server(
         return PlainTextResponse("OK")
     
     # Add some custom tools for enhanced functionality
-    @mcp.tool()
-    async def debug_incidents() -> dict:
-        """Debug tool to inspect incidents endpoint response."""
-        try:
-            response = await make_authenticated_request("GET", "/v1/incidents", params={"page[size]": 1})
-            response.raise_for_status()
-            
-            return {
-                "status_code": response.status_code,
-                "headers": dict(response.headers),
-                "content_length": len(response.content) if response.content else 0,
-                "content_preview": response.content[:500].decode('utf-8', errors='ignore') if response.content else "No content",
-                "text_preview": response.text[:500] if hasattr(response, 'text') else "No text",
-                "encoding": response.encoding,
-                "content_type": response.headers.get('content-type', 'unknown')
-            }
-        except Exception as e:
-            return {"error": str(e), "error_type": type(e).__name__}
-
-    @mcp.tool()
-    async def debug_headers() -> dict:
-        """Debug tool to inspect request/response headers for troubleshooting."""
-        try:
-            response = await make_authenticated_request("GET", "/v1/teams", params={"page[size]": 1})
-            response.raise_for_status()
-            
-            return {
-                "request_headers": dict(response.request.headers) if response.request else {},
-                "response_headers": dict(response.headers),
-                "status_code": response.status_code,
-                "content_type": response.headers.get('content-type', 'unknown'),
-                "encoding": response.encoding,
-                "content_preview": str(response.content[:200]) if response.content else "No content"
-            }
-        except Exception as e:
-            return {"error": str(e), "error_type": type(e).__name__}
 
     @mcp.tool()
     def list_endpoints() -> list:
