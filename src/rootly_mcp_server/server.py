@@ -111,13 +111,45 @@ class AuthenticatedHTTPXClient:
         return transformed
 
     async def request(self, method: str, url: str, **kwargs):
-        """Override request to transform parameters."""
+        """Override request to transform parameters and handle encoding issues."""
         # Transform query parameters
         if 'params' in kwargs:
             kwargs['params'] = self._transform_params(kwargs['params'])
 
-        # Call the underlying client's request method
-        return await self.client.request(method, url, **kwargs)
+        try:
+            # Call the underlying client's request method
+            response = await self.client.request(method, url, **kwargs)
+            
+            # Check if response is successful
+            response.raise_for_status()
+            
+            # Try to decode response content with error handling
+            try:
+                # First try to get text content with UTF-8
+                content = response.text
+                # Validate it's proper JSON if content type suggests JSON
+                if 'json' in response.headers.get('content-type', '').lower():
+                    response.json()  # This will raise if not valid JSON
+                return response
+            except UnicodeDecodeError as e:
+                logger.error(f"Unicode decode error for {method} {url}: {e}")
+                logger.error(f"Response headers: {dict(response.headers)}")
+                logger.error(f"Response status: {response.status_code}")
+                # Try to decode with different encoding
+                try:
+                    content = response.content.decode('latin1')
+                    logger.warning(f"Decoded response with latin1 encoding")
+                    return response
+                except Exception:
+                    raise Exception(f"Failed to decode response: {e}")
+            except Exception as json_error:
+                logger.error(f"JSON decode error for {method} {url}: {json_error}")
+                logger.error(f"Response content preview: {response.content[:100]}")
+                raise Exception(f"Invalid JSON response: {json_error}")
+                
+        except Exception as e:
+            logger.error(f"Request failed for {method} {url}: {e}")
+            raise
 
     async def get(self, url: str, **kwargs):
         """Proxy to request with GET method."""
@@ -225,6 +257,24 @@ def create_rootly_mcp_server(
         return PlainTextResponse("OK")
     
     # Add some custom tools for enhanced functionality
+    @mcp.tool()
+    async def debug_headers() -> dict:
+        """Debug tool to inspect request/response headers for troubleshooting."""
+        try:
+            response = await make_authenticated_request("GET", "/v1/teams", params={"page[size]": 1})
+            response.raise_for_status()
+            
+            return {
+                "request_headers": dict(response.request.headers) if response.request else {},
+                "response_headers": dict(response.headers),
+                "status_code": response.status_code,
+                "content_type": response.headers.get('content-type', 'unknown'),
+                "encoding": response.encoding,
+                "content_preview": str(response.content[:200]) if response.content else "No content"
+            }
+        except Exception as e:
+            return {"error": str(e), "error_type": type(e).__name__}
+
     @mcp.tool()
     def list_endpoints() -> list:
         """List all available Rootly API endpoints with their descriptions."""
