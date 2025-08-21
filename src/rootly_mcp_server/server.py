@@ -77,11 +77,11 @@ class AuthenticatedHTTPXClient:
         if not self.hosted:
             self._api_token = self._get_api_token()
 
-        # Create the HTTPX client
+        # Create the HTTPX client  
         headers = {
             "Content-Type": "application/vnd.api+json", 
-            "Accept": "application/vnd.api+json",
-            "Accept-Encoding": "gzip, deflate, br"  # Explicitly handle encodings
+            "Accept": "application/vnd.api+json"
+            # Let httpx handle Accept-Encoding automatically with all supported formats
         }
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
