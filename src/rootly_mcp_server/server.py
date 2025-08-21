@@ -289,7 +289,7 @@ def create_rootly_mcp_server(
         query: Annotated[str, Field(description="Search query to filter incidents by title/summary")] = "",
         page_size: Annotated[int, Field(description="Number of results per page (max: 20)", ge=1, le=20)] = 10,
         page_number: Annotated[int, Field(description="Page number to retrieve (use 0 for all pages)", ge=0)] = 1,
-        max_results: Annotated[int, Field(description="Maximum total results when fetching all pages (ignored if page_number > 0)", ge=1, le=100)] = 20,
+        max_results: Annotated[int, Field(description="Maximum total results when fetching all pages (ignored if page_number > 0)", ge=1, le=10)] = 5,
     ) -> dict:
         """
         Search incidents with flexible pagination control.
