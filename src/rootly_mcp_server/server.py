@@ -336,7 +336,7 @@ def create_rootly_mcp_server(
         # Single page mode
         if page_number > 0:
             params = {
-                "page[size]": min(page_size, 20),
+                "page[size]": min(page_size, 5),  # Keep responses very small to avoid errors
                 "page[number]": page_number,
                 "include": "",
             }
@@ -353,10 +353,11 @@ def create_rootly_mcp_server(
         # Multi-page mode (page_number = 0)
         all_incidents = []
         current_page = 1
-        effective_page_size = min(page_size, 10)
+        effective_page_size = min(page_size, 5)  # Keep responses very small to avoid errors
+        max_pages = 10  # Safety limit to prevent infinite loops
 
         try:
-            while len(all_incidents) < max_results:
+            while len(all_incidents) < max_results and current_page <= max_pages:
                 params = {
                     "page[size]": effective_page_size,
                     "page[number]": current_page,
@@ -373,16 +374,23 @@ def create_rootly_mcp_server(
                     if "data" in response_data:
                         incidents = response_data["data"]
                         if not incidents:
+                            # No more incidents available
+                            break
+                        
+                        # Check if we got fewer incidents than requested (last page)
+                        if len(incidents) < effective_page_size:
+                            all_incidents.extend(incidents)
                             break
                         
                         all_incidents.extend(incidents)
 
-                        # Check if we have more pages
+                        # Check metadata if available
                         meta = response_data.get("meta", {})
                         current_page_meta = meta.get("current_page", current_page)
-                        total_pages = meta.get("total_pages", 1)
-
-                        if current_page_meta >= total_pages:
+                        total_pages = meta.get("total_pages")
+                        
+                        # If we have reliable metadata, use it
+                        if total_pages and current_page_meta >= total_pages:
                             break
 
                         current_page += 1
