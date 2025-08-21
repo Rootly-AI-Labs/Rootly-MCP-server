@@ -118,24 +118,13 @@ class AuthenticatedHTTPXClient:
         return transformed
 
     async def request(self, method: str, url: str, **kwargs):
-        """Override request to transform parameters and handle encoding issues."""
+        """Override request to transform parameters."""
         # Transform query parameters
         if 'params' in kwargs:
             kwargs['params'] = self._transform_params(kwargs['params'])
 
-        try:
-            # Call the underlying client's request method
-            response = await self.client.request(method, url, **kwargs)
-            
-            # Check if response is successful
-            response.raise_for_status()
-            
-            # Let httpx handle decompression naturally
-            return response
-                
-        except Exception as e:
-            logger.error(f"Request failed for {method} {url}: {e}")
-            raise
+        # Call the underlying client's request method and let it handle everything
+        return await self.client.request(method, url, **kwargs)
 
     async def get(self, url: str, **kwargs):
         """Proxy to request with GET method."""
