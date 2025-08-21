@@ -196,17 +196,20 @@ class TestSwaggerSpecLoading:
         """Test behavior when swagger file is not found."""
         mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}}
         
-        with patch("requests.get") as mock_get:
-            mock_response = Mock()
-            mock_response.json.return_value = mock_spec
-            mock_response.raise_for_status.return_value = None
-            mock_get.return_value = mock_response
-            
-            # Should fall back to URL loading for None path (not providing explicit path)
-            spec = _load_swagger_spec(None)
-            
-            assert spec == mock_spec
-            mock_get.assert_called_once()
+        # Mock all the path checking methods to return False
+        with patch("os.path.isfile", return_value=False):
+            with patch("pathlib.Path.is_file", return_value=False):
+                with patch("requests.get") as mock_get:
+                    mock_response = Mock()
+                    mock_response.json.return_value = mock_spec
+                    mock_response.raise_for_status.return_value = None
+                    mock_get.return_value = mock_response
+                    
+                    # Should fall back to URL loading when no local files found
+                    spec = _load_swagger_spec(None)
+                    
+                    assert spec == mock_spec
+                    mock_get.assert_called_once()
 
 
 @pytest.mark.unit
