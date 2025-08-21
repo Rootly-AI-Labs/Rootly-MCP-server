@@ -26,6 +26,44 @@ logger = logging.getLogger(__name__)
 # Default Swagger URL
 SWAGGER_URL = "https://rootly-heroku.s3.amazonaws.com/swagger/v1/swagger.json"
 
+# Default allowed API paths
+DEFAULT_ALLOWED_PATHS = [
+    "/incidents/{incident_id}/alerts",
+    "/alerts",
+    "/alerts/{alert_id}",
+    "/severities",
+    "/severities/{severity_id}",
+    "/teams",
+    "/teams/{team_id}",
+    "/services",
+    "/services/{service_id}",
+    "/functionalities",
+    "/functionalities/{functionality_id}",
+    # Incident types
+    "/incident_types",
+    "/incident_types/{incident_type_id}",
+    # Action items (all, by id, by incident)
+    "/incident_action_items",
+    "/incident_action_items/{incident_action_item_id}",
+    "/incidents/{incident_id}/action_items",
+    # Workflows
+    "/workflows",
+    "/workflows/{workflow_id}",
+    # Workflow runs
+    "/workflow_runs",
+    "/workflow_runs/{workflow_run_id}",
+    # Environments
+    "/environments",
+    "/environments/{environment_id}",
+    # Users
+    "/users",
+    "/users/{user_id}",
+    "/users/me",
+    # Status pages
+    "/status_pages",
+    "/status_pages/{status_page_id}",
+]
+
 
 class AuthenticatedHTTPXClient:
     """An HTTPX client wrapper that handles Rootly API authentication and parameter transformation."""
@@ -134,42 +172,7 @@ def create_rootly_mcp_server(
     """
     # Set default allowed paths if none provided
     if allowed_paths is None:
-        allowed_paths = [
-            "/incidents/{incident_id}/alerts",
-            "/alerts",
-            "/alerts/{alert_id}",
-            "/severities",
-            "/severities/{severity_id}",
-            "/teams",
-            "/teams/{team_id}",
-            "/services",
-            "/services/{service_id}",
-            "/functionalities",
-            "/functionalities/{functionality_id}",
-            # Incident types
-            "/incident_types",
-            "/incident_types/{incident_type_id}",
-            # Action items (all, by id, by incident)
-            "/incident_action_items",
-            "/incident_action_items/{incident_action_item_id}",
-            "/incidents/{incident_id}/action_items",
-            # Workflows
-            "/workflows",
-            "/workflows/{workflow_id}",
-            # Workflow runs
-            "/workflow_runs",
-            "/workflow_runs/{workflow_run_id}",
-            # Environments
-            "/environments",
-            "/environments/{environment_id}",
-            # Users
-            "/users",
-            "/users/{user_id}",
-            "/users/me",
-            # Status pages
-            "/status_pages",
-            "/status_pages/{status_page_id}",
-        ]
+        allowed_paths = DEFAULT_ALLOWED_PATHS
 
     # Add /v1 prefix to paths if not present
     allowed_paths_v1 = [
@@ -263,77 +266,45 @@ def create_rootly_mcp_server(
         return await http_client.client.request(method, url, **kwargs)
 
     @mcp.tool()
-    async def search_incidents_paginated(
+    async def search_incidents(
         query: Annotated[str, Field(description="Search query to filter incidents by title/summary")] = "",
         page_size: Annotated[int, Field(description="Number of results per page (max: 20)", ge=1, le=20)] = 10,
-        page_number: Annotated[int, Field(description="Page number to retrieve", ge=1)] = 1,
+        page_number: Annotated[int, Field(description="Page number to retrieve (use 0 for all pages)", ge=0)] = 1,
+        max_results: Annotated[int, Field(description="Maximum total results when fetching all pages (ignored if page_number > 0)", ge=1, le=100)] = 20,
     ) -> dict:
         """
-        Search incidents with enhanced pagination control.
+        Search incidents with flexible pagination control.
 
-        This tool provides better pagination handling than the standard API endpoint.
+        Use page_number=0 to fetch all matching results across multiple pages up to max_results.
+        Use page_number>0 to fetch a specific page.
         """
-        params = {
-            "page[size]": min(page_size, 20),
-            "page[number]": page_number,
-            "include": "",
-        }
-        if query:
-            params["filter[search]"] = query
+        # Single page mode
+        if page_number > 0:
+            params = {
+                "page[size]": min(page_size, 20),
+                "page[number]": page_number,
+                "include": "",
+            }
+            if query:
+                params["filter[search]"] = query
 
-        try:
-            response = await make_authenticated_request("GET", "/v1/incidents", params=params)
-            response.raise_for_status()
-            response_data = response.json()
-            
-            if "data" in response_data:
-                simplified_incidents = []
-                for incident in response_data["data"]:
-                    simplified = {
-                        "id": incident["id"],
-                        "type": incident["type"],
-                        "attributes": {
-                            "title": incident["attributes"].get("title"),
-                            "status": incident["attributes"].get("status"),
-                            "summary": incident["attributes"].get("summary"),
-                            "sequential_id": incident["attributes"].get("sequential_id"),
-                            "url": incident["attributes"].get("url"),
-                            "created_at": incident["attributes"].get("created_at"),
-                            "updated_at": incident["attributes"].get("updated_at")
-                        }
-                    }
-                    simplified_incidents.append(simplified)
-                
-                result = {
-                    "data": simplified_incidents,
-                    "meta": response_data.get("meta", {}),
-                    "links": response_data.get("links", {})
-                }
-            else:
-                result = response_data
-                
-        except Exception as e:
-            result = {"error": str(e)}
+            try:
+                response = await make_authenticated_request("GET", "/v1/incidents", params=params)
+                response.raise_for_status()
+                return response.json()
+            except Exception as e:
+                return {"error": str(e)}
 
-        return result
-
-    @mcp.tool()
-    async def get_all_incidents_matching(
-        query: Annotated[str, Field(description="Search query to filter incidents by title/summary")] = "",
-        max_results: Annotated[int, Field(description="Maximum number of results to return", ge=1, le=20)] = 10,
-    ) -> dict:
-        """
-        Get all incidents matching a query by automatically fetching multiple pages.
-        """
+        # Multi-page mode (page_number = 0)
         all_incidents = []
-        page_number = 1
-        page_size = min(max_results, 10)  # Reasonable page size for efficient API calls
+        current_page = 1
+        effective_page_size = min(page_size, 10)
 
         try:
             while len(all_incidents) < max_results:
                 params = {
-                    "page[size]": page_size,
-                    "page[number]": page_number,
+                    "page[size]": effective_page_size,
+                    "page[number]": current_page,
                     "include": "",
                 }
                 if query:
@@ -349,58 +320,42 @@ def create_rootly_mcp_server(
                         if not incidents:
                             break
                         
-                        simplified_incidents = []
-                        for incident in incidents:
-                            simplified = {
-                                "id": incident["id"],
-                                "type": incident["type"],
-                                "attributes": {
-                                    "title": incident["attributes"].get("title"),
-                                    "status": incident["attributes"].get("status"),
-                                    "summary": incident["attributes"].get("summary"),
-                                    "sequential_id": incident["attributes"].get("sequential_id"),
-                                    "url": incident["attributes"].get("url"),
-                                    "created_at": incident["attributes"].get("created_at"),
-                                    "updated_at": incident["attributes"].get("updated_at")
-                                }
-                            }
-                            simplified_incidents.append(simplified)
-                        
-                        all_incidents.extend(simplified_incidents)
+                        all_incidents.extend(incidents)
 
                         # Check if we have more pages
                         meta = response_data.get("meta", {})
-                        current_page = meta.get("current_page", page_number)
+                        current_page_meta = meta.get("current_page", current_page)
                         total_pages = meta.get("total_pages", 1)
 
-                        if current_page >= total_pages:
+                        if current_page_meta >= total_pages:
                             break
 
-                        page_number += 1
+                        current_page += 1
                     else:
                         break
 
                 except Exception as e:
+                    # Re-raise authentication or critical errors
+                    if "401" in str(e) or "Unauthorized" in str(e) or "authentication" in str(e).lower():
+                        raise e
                     break
 
             # Limit to max_results
             if len(all_incidents) > max_results:
                 all_incidents = all_incidents[:max_results]
 
-            result = {
+            return {
                 "data": all_incidents,
                 "meta": {
                     "total_fetched": len(all_incidents),
                     "max_results": max_results,
                     "query": query,
-                    "pages_fetched": page_number - 1,
-                    "page_size": page_size
+                    "pages_fetched": current_page - 1,
+                    "page_size": effective_page_size
                 }
             }
         except Exception as e:
-            result = {"error": str(e)}
-        
-        return result
+            return {"error": str(e)}
 
     # Log server creation (tool count will be shown when tools are accessed)
     logger.info("Created Rootly MCP Server successfully")
