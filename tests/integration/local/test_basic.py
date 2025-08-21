@@ -204,9 +204,9 @@ class TestLocalWithRealToken:
         token = os.getenv("ROOTLY_API_TOKEN")
         
         # Basic format validation
-        assert token.startswith("rootly_"), "Token should start with 'rootly_'"
-        assert len(token) > 20, "Token should be reasonably long"
-        assert "_" in token, "Token should contain underscores"
+        assert token is not None and token.startswith("rootly_"), "Token should start with 'rootly_'"
+        assert token is not None and len(token) > 20, "Token should be reasonably long"
+        assert token is not None and "_" in token, "Token should contain underscores"
 
     def test_client_initialization_with_real_token(self):
         """Test client initialization with real token."""

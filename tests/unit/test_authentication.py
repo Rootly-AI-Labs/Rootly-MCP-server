@@ -50,7 +50,7 @@ class TestLocalModeAuthentication:
             client = AuthenticatedHTTPXClient(hosted=False)
             
             assert client._api_token == valid_token
-            assert client._api_token.startswith("rootly_")
+            assert client._api_token is not None and client._api_token.startswith("rootly_")
 
     def test_local_mode_headers_configuration(self, mock_environment_token):
         """Test that local mode sets correct headers."""
@@ -201,7 +201,7 @@ class TestTokenHandling:
             with patch.dict(os.environ, {"ROOTLY_API_TOKEN": token}):
                 client = AuthenticatedHTTPXClient(hosted=False)
                 assert client._api_token == token
-                assert client._api_token.startswith("rootly_")
+                assert client._api_token is not None and client._api_token.startswith("rootly_")
 
 
 @pytest.mark.unit

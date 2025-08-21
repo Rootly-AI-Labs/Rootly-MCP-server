@@ -393,4 +393,4 @@ class TestRemoteServerEnvironmentSkipping:
         # If we're running remote tests, we should have a token
         if test_environment["has_token"]:
             token = os.getenv("ROOTLY_API_TOKEN")
-            assert token.startswith("rootly_"), "Token should start with 'rootly_'"
+            assert token is not None and token.startswith("rootly_"), "Token should start with 'rootly_'"

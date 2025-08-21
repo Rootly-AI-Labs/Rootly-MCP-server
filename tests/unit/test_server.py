@@ -142,7 +142,7 @@ class TestAuthenticatedHTTPXClient:
         token = client._get_api_token()
         
         assert token == mock_environment_token
-        assert token.startswith("rootly_")
+        assert token is not None and token.startswith("rootly_")
 
     @patch.dict(os.environ, {}, clear=True)
     def test_get_api_token_missing(self):

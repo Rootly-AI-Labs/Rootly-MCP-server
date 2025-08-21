@@ -11,7 +11,7 @@ This module provides fixtures for:
 import os
 import pytest
 from unittest.mock import Mock, patch
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 
 
 @pytest.fixture(scope="session")
@@ -25,7 +25,7 @@ def api_token() -> str:
     token = os.getenv("ROOTLY_API_TOKEN")
     if not token:
         pytest.skip("ROOTLY_API_TOKEN not set - skipping API tests")
-    return token
+    return token  # pytest.skip() never returns, so this is always a string
 
 
 @pytest.fixture(scope="session")
@@ -55,8 +55,8 @@ def mock_api_response():
     Returns a function that creates mock responses with common structure.
     """
     def create_response(
-        data: list = None, 
-        meta: dict = None, 
+        data: Optional[List] = None, 
+        meta: Optional[Dict] = None, 
         status_code: int = 200
     ) -> Dict[str, Any]:
         if data is None:

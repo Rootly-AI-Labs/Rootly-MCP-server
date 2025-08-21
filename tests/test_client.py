@@ -39,7 +39,7 @@ async def test_search_incidents_limits():
     if hasattr(search_tool, 'fn'):
         # Get function signature info
         import inspect
-        sig = inspect.signature(search_tool.fn)
+        sig = inspect.signature(search_tool.fn)  # type: ignore
         max_results_param = sig.parameters.get('max_results')
         
         if max_results_param and hasattr(max_results_param.annotation, '__metadata__'):
@@ -51,7 +51,7 @@ async def test_search_incidents_limits():
     # Test actual execution with different limits
     try:
         print("\n  Testing with empty query (should get recent incidents)...")
-        result = await search_tool.fn(query="", max_results=5)
+        result = await search_tool.fn(query="", max_results=5)  # type: ignore
         result_count = len(result.get('data', []))
         print(f"  ✅ Empty query test - got {result_count} results")
         
@@ -64,13 +64,13 @@ async def test_search_incidents_limits():
             print(f"    📋 First incident: {title[:50]}...")
         
         print("\n  Testing with max limit (10)...")
-        result = await search_tool.fn(query="", max_results=10)  
+        result = await search_tool.fn(query="", max_results=10)  # type: ignore  
         result_count = len(result.get('data', []))
         print(f"  ✅ Max limit test - got {result_count} results")
         
         # Also test pagination
         print("\n  Testing pagination (page_number=1)...")
-        result = await search_tool.fn(query="", page_number=1, page_size=3)
+        result = await search_tool.fn(query="", page_number=1, page_size=3)  # type: ignore
         result_count = len(result.get('data', []))
         print(f"  ✅ Pagination test - got {result_count} results (max 3 per page)")
         
@@ -78,10 +78,10 @@ async def test_search_incidents_limits():
         try:
             # Try to use the tool through the MCP framework validation
             if hasattr(search_tool, 'validate_call'):
-                result = await search_tool.validate_call(query="test", max_results=15)
+                result = await search_tool.validate_call(query="test", max_results=15)  # type: ignore
             else:
                 # Fallback to direct call - validation might not trigger here
-                result = await search_tool.fn(query="test", max_results=15)
+                result = await search_tool.fn(query="test", max_results=15)  # type: ignore
                 print("  ⚠️  Function accepted max_results=15 (validation may be bypassed)")
                 print(f"      Result count: {len(result.get('data', []))}")
                 return
