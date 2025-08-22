@@ -7,15 +7,14 @@ functions for implementing smart incident management features.
 
 import re
 import logging
-from typing import List, Dict, Tuple, Optional, Any
+from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Optional imports for ML functionality
 try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
-    import numpy as np
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
@@ -148,6 +147,13 @@ class TextSimilarityAnalyzer:
                                   target_text: str, target_services: List[str], 
                                   target_errors: List[str]) -> List[IncidentSimilarity]:
         """Use TF-IDF and cosine similarity for advanced text matching."""
+        if not ML_AVAILABLE:
+            return []
+            
+        # Import here to avoid issues with conditional imports
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+        
         # Prepare texts
         incident_texts = [self._combine_incident_text(inc) for inc in incidents]
         all_texts = incident_texts + [target_text]
@@ -317,7 +323,7 @@ class SolutionExtractor:
             r'clear(?:ed)?\s+(\w+(?:\s+\w+)*)',
             r'update(?:d)?\s+(\w+(?:\s+\w+)*)',
             r'fix(?:ed)?\s+(\w+(?:\s+\w+)*)',
-            r'rollback\s+(\w+(?:\s+\w+)*)',
+            r'roll(?:ed)?\s+back\s+(\w+(?:\s+\w+)*)',
             r'scale(?:d)?\s+(\w+(?:\s+\w+)*)',
             r'deploy(?:ed)?\s+(\w+(?:\s+\w+)*)',
         ]
@@ -325,7 +331,25 @@ class SolutionExtractor:
         for pattern in action_patterns:
             matches = re.findall(pattern, text_lower)
             for match in matches:
-                action = f"{pattern.split('(')[0].replace('(?:ed)?', '').replace('(?:d)?', '')} {match}".strip()
+                # Extract the base action word from the pattern
+                if 'roll' in pattern and 'back' in pattern:
+                    action = f"rollback {match}".strip()
+                elif 'restart' in pattern:
+                    action = f"restart {match}".strip()
+                elif 'clear' in pattern:
+                    action = f"clear {match}".strip()
+                elif 'update' in pattern:
+                    action = f"update {match}".strip()
+                elif 'fix' in pattern:
+                    action = f"fix {match}".strip()
+                elif 'scale' in pattern:
+                    action = f"scale {match}".strip()
+                elif 'deploy' in pattern:
+                    action = f"deploy {match}".strip()
+                else:
+                    # Fallback to original logic
+                    base_pattern = pattern.split('(')[0].replace('(?:ed)?', '').replace('(?:d)?', '')
+                    action = f"{base_pattern.replace(r'\s+', ' ')} {match}".strip()
                 actions.append(action)
         
         # Look for explicit steps

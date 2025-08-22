@@ -6,7 +6,7 @@ incident data scenarios.
 """
 
 import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+from unittest.mock import patch, AsyncMock
 from rootly_mcp_server.server import create_rootly_mcp_server
 
 
@@ -18,7 +18,7 @@ class TestSmartToolsIntegration:
         """Create server instance with smart tools enabled."""
         # Use local swagger to avoid external dependencies  
         server = create_rootly_mcp_server(
-            swagger_path="rootly_mcp_server/data/swagger.json",
+            swagger_path="src/rootly_mcp_server/data/swagger.json",
             name="TestRootly",
             hosted=False
         )
@@ -326,7 +326,7 @@ class TestSmartToolsIntegration:
     
     def test_solution_extraction_patterns(self):
         """Test solution extraction with various resolution text patterns."""
-        from src.rootly_mcp_server.smart_utils import SolutionExtractor
+        from rootly_mcp_server.smart_utils import SolutionExtractor
         
         extractor = SolutionExtractor()
         
@@ -350,7 +350,7 @@ class TestSmartToolsIntegration:
     
     def test_service_extraction_patterns(self):
         """Test service name extraction patterns."""
-        from src.rootly_mcp_server.smart_utils import TextSimilarityAnalyzer
+        from rootly_mcp_server.smart_utils import TextSimilarityAnalyzer
         
         analyzer = TextSimilarityAnalyzer()
         

@@ -5,7 +5,6 @@ Tests the text similarity analysis, solution extraction, and AI-powered
 incident analysis features.
 """
 
-import pytest
 from unittest.mock import patch, MagicMock
 from rootly_mcp_server.smart_utils import (
     TextSimilarityAnalyzer,
@@ -177,9 +176,9 @@ class TestTextSimilarityAnalyzer:
             }
         }
         
-        # Mock the TF-IDF components
-        with patch('rootly_mcp_server.smart_utils.TfidfVectorizer') as mock_vectorizer, \
-             patch('rootly_mcp_server.smart_utils.cosine_similarity') as mock_similarity:
+        # Mock the TF-IDF components - patch the sklearn module imports
+        with patch('sklearn.feature_extraction.text.TfidfVectorizer') as mock_vectorizer, \
+             patch('sklearn.metrics.pairwise.cosine_similarity') as mock_similarity:
             
             mock_vectorizer_instance = MagicMock()
             mock_vectorizer.return_value = mock_vectorizer_instance
