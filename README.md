@@ -111,6 +111,11 @@ Alternatively, connect directly to our hosted MCP server:
 - **Dynamic Tool Generation**: Automatically creates MCP resources from Rootly's OpenAPI (Swagger) specification
 - **Smart Pagination**: Defaults to 10 items per request for incident endpoints to prevent context window overflow
 - **API Filtering**: Limits exposed API endpoints for security and performance
+- **AI-Powered Incident Analysis**: Smart tools that learn from historical incident data
+  - **`find_related_incidents`**: Uses TF-IDF similarity analysis to find historically similar incidents
+  - **`suggest_solutions`**: Mines past incident resolutions to recommend actionable solutions
+- **MCP Resources**: Exposes incident and team data as structured resources for easy AI reference
+- **Intelligent Pattern Recognition**: Automatically identifies services, error types, and resolution patterns
 
 ### Whitelisted Endpoints
 
@@ -155,6 +160,45 @@ We limit exposed API paths for two key reasons:
 2. **Security**: Controls which information and actions are accessible through the MCP server
 
 To expose additional paths, modify the `allowed_paths` variable in `src/rootly_mcp_server/server.py`.
+
+### AI-Powered Smart Tools
+
+The MCP server includes intelligent tools that analyze historical incident data to provide actionable insights:
+
+#### `find_related_incidents`
+Finds historically similar incidents using machine learning text analysis:
+```
+find_related_incidents(incident_id="12345", similarity_threshold=0.3, max_results=5)
+```
+- **Input**: Incident ID, similarity threshold (0.0-1.0), max results
+- **Output**: Similar incidents with confidence scores, matched services, and resolution times
+- **Use Case**: Get context from past incidents to understand patterns and solutions
+
+#### `suggest_solutions` 
+Recommends solutions by analyzing how similar incidents were resolved:
+```
+suggest_solutions(incident_id="12345", max_solutions=3)
+# OR for new incidents:
+suggest_solutions(incident_title="Payment API errors", incident_description="Users getting 500 errors during checkout")
+```
+- **Input**: Either incident ID OR title/description text
+- **Output**: Actionable solution recommendations with confidence scores and time estimates  
+- **Use Case**: Get AI-powered suggestions based on successful past resolutions
+
+#### How It Works
+- **Text Similarity**: Uses TF-IDF vectorization and cosine similarity (scikit-learn)
+- **Service Detection**: Automatically identifies affected services from incident text
+- **Pattern Recognition**: Finds common error types, resolution patterns, and time estimates
+- **Fallback Mode**: Works without ML libraries using keyword-based similarity
+- **Solution Mining**: Extracts actionable steps from resolution summaries
+
+#### Data Requirements
+For optimal results, ensure your Rootly incidents have descriptive:
+- **Titles**: Clear, specific incident descriptions
+- **Summaries**: Detailed resolution steps when closing incidents
+- **Service Tags**: Proper service identification
+
+Example good resolution summary: `"Restarted auth-service, cleared Redis cache, and increased connection pool from 10 to 50"`
 
 ## About Rootly AI Labs
 
