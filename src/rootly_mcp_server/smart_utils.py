@@ -11,13 +11,12 @@ from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
 
-# Optional imports for ML functionality
-try:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from sklearn.metrics.pairwise import cosine_similarity
-    ML_AVAILABLE = True
-except ImportError:
-    ML_AVAILABLE = False
+# Check ML library availability
+import importlib.util
+ML_AVAILABLE = (
+    importlib.util.find_spec("sklearn.feature_extraction.text") is not None and
+    importlib.util.find_spec("sklearn.metrics.pairwise") is not None
+)
 
 logger = logging.getLogger(__name__)
 
