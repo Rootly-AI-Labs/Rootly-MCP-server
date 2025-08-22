@@ -43,7 +43,7 @@ class TextSimilarityAnalyzer:
         self.incident_vectors = None
         self.incident_metadata = {}
     
-    def preprocess_text(self, text: str) -> str:
+    def preprocess_text(self, text: Optional[str]) -> str:
         """Clean and normalize text for analysis."""
         if not text:
             return ""
