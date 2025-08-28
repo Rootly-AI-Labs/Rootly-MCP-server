@@ -13,7 +13,7 @@ Features:
 from .server import RootlyMCPServer
 from .client import RootlyClient
 
-__version__ = "2.0.1"
+__version__ = "2.0.12"
 __all__ = [
     'RootlyMCPServer',
     'RootlyClient',
