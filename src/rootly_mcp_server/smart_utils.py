@@ -13,10 +13,13 @@ from datetime import datetime
 
 # Check ML library availability
 import importlib.util
-ML_AVAILABLE = (
-    importlib.util.find_spec("sklearn.feature_extraction.text") is not None and
-    importlib.util.find_spec("sklearn.metrics.pairwise") is not None
-)
+try:
+    ML_AVAILABLE = (
+        importlib.util.find_spec("sklearn.feature_extraction.text") is not None and
+        importlib.util.find_spec("sklearn.metrics.pairwise") is not None
+    )
+except (ImportError, ModuleNotFoundError):
+    ML_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +78,23 @@ class TextSimilarityAnalyzer:
             r'\b(\w+)\.(?:service|api|app|com)\b',       # auth.service, api.com
         ]
         
+        # Known service names (exact matches)
+        known_services = [
+            'elasticsearch', 'elastic', 'kibana', 'redis', 'postgres', 'mysql', 
+            'mongodb', 'kafka', 'rabbitmq', 'nginx', 'apache', 'docker', 'kubernetes'
+        ]
+        
         text_lower = text.lower()
+        
+        # Extract pattern-based services
         for pattern in service_patterns:
             matches = re.findall(pattern, text_lower)
             services.extend(matches)
+        
+        # Extract known services (with word boundaries to avoid false positives)
+        for service in known_services:
+            if re.search(r'\b' + re.escape(service) + r'\b', text_lower):
+                services.append(service)
         
         # Remove duplicates while preserving order
         return list(dict.fromkeys(services))
@@ -128,18 +144,26 @@ class TextSimilarityAnalyzer:
         """Combine incident title, description, and other text fields."""
         text_parts = []
         
-        # Get text from incident attributes
+        # Get text from incident attributes (preferred)
         attributes = incident.get('attributes', {})
-        text_parts.append(attributes.get('title', ''))
-        text_parts.append(attributes.get('summary', ''))
-        text_parts.append(attributes.get('description', ''))
+        title = attributes.get('title', '')
+        summary = attributes.get('summary', '')
+        description = attributes.get('description', '')
         
-        # Also check root level for backward compatibility
-        text_parts.append(incident.get('title', ''))
-        text_parts.append(incident.get('summary', ''))
-        text_parts.append(incident.get('description', ''))
+        # Fallback to root level if attributes are empty
+        if not title:
+            title = incident.get('title', '')
+        if not summary:
+            summary = incident.get('summary', '')
+        if not description:
+            description = incident.get('description', '')
         
-        combined = ' '.join([part for part in text_parts if part])
+        # Add non-empty parts, avoiding duplication
+        for part in [title, summary, description]:
+            if part and part not in text_parts:
+                text_parts.append(part)
+        
+        combined = ' '.join(text_parts)
         return self.preprocess_text(combined)
     
     def _calculate_tfidf_similarity(self, incidents: List[Dict], target_incident: Dict, 
@@ -175,7 +199,15 @@ class TextSimilarityAnalyzer:
                 service_bonus = len(set(target_services) & set(incident_services)) * 0.1
                 error_bonus = len(set(target_errors) & set(incident_errors)) * 0.15
                 
-                final_score = min(1.0, similarities[i] + service_bonus + error_bonus)
+                # Exact match bonus for identical preprocessed text
+                exact_match_bonus = 0.0
+                if target_text and incident_texts[i] and target_text.strip() == incident_texts[i].strip():
+                    exact_match_bonus = 0.3  # Strong bonus for exact matches
+                
+                # Partial matching bonus using fuzzy keyword similarity
+                partial_bonus = self._calculate_partial_similarity_bonus(target_text, incident_texts[i])
+                
+                final_score = min(1.0, similarities[i] + service_bonus + error_bonus + exact_match_bonus + partial_bonus)
                 
                 results.append(IncidentSimilarity(
                     incident_id=str(incident.get('id', '')),
@@ -212,7 +244,15 @@ class TextSimilarityAnalyzer:
             service_bonus = len(set(target_services) & set(incident_services)) * 0.2
             error_bonus = len(set(target_errors) & set(incident_errors)) * 0.25
             
-            final_score = min(1.0, word_similarity + service_bonus + error_bonus)
+            # Exact match bonus for identical preprocessed text
+            exact_match_bonus = 0.0
+            if target_text and incident_text and target_text.strip() == incident_text.strip():
+                exact_match_bonus = 0.4  # Strong bonus for exact matches in keyword mode
+            
+            # Partial matching bonus using fuzzy keyword similarity
+            partial_bonus = self._calculate_partial_similarity_bonus(target_text, incident_text)
+            
+            final_score = min(1.0, word_similarity + service_bonus + error_bonus + exact_match_bonus + partial_bonus)
             
             if final_score > 0.15:  # Only include reasonable matches
                 results.append(IncidentSimilarity(
@@ -228,14 +268,94 @@ class TextSimilarityAnalyzer:
         return results
     
     def _extract_common_keywords(self, text1: str, text2: str) -> List[str]:
-        """Extract common meaningful keywords between two texts."""
+        """Extract common meaningful keywords between two texts with fuzzy matching."""
         words1 = set(text1.split())
         words2 = set(text2.split())
-        common = words1 & words2
         
-        # Filter out very short words and return top matches
-        meaningful = [word for word in common if len(word) > 2]
-        return meaningful[:5]
+        # Exact matches
+        exact_common = words1 & words2
+        
+        # Fuzzy matches for partial similarity
+        fuzzy_common = []
+        for word1 in words1:
+            if len(word1) > 3:  # Only check longer words
+                for word2 in words2:
+                    if len(word2) > 3 and word1 != word2:
+                        # Check if words share significant substring (fuzzy matching)
+                        if self._words_similar(word1, word2):
+                            fuzzy_common.append(f"{word1}~{word2}")
+        
+        # Combine exact and fuzzy matches
+        all_matches = list(exact_common) + fuzzy_common
+        meaningful = [word for word in all_matches if len(word.split('~')[0]) > 2]
+        return meaningful[:8]  # Increased to show more matches
+    
+    def _words_similar(self, word1: str, word2: str) -> bool:
+        """Check if two words are similar enough to be considered related."""
+        # Handle common variations
+        variations = {
+            'elastic': ['elasticsearch', 'elk'],
+            'payment': ['payments', 'pay', 'billing'],
+            'database': ['db', 'postgres', 'mysql', 'mongo'],
+            'timeout': ['timeouts', 'timed-out', 'timing-out'],
+            'service': ['services', 'svc', 'api', 'app'],
+            'error': ['errors', 'err', 'failure', 'failed', 'failing'],
+            'down': ['outage', 'offline', 'unavailable']
+        }
+        
+        # Check if words are variations of each other
+        for base, variants in variations.items():
+            if (word1 == base and word2 in variants) or (word2 == base and word1 in variants):
+                return True
+            if word1 in variants and word2 in variants:
+                return True
+        
+        # Check substring similarity (at least 70% overlap for longer words)
+        if len(word1) >= 5 and len(word2) >= 5:
+            shorter = min(word1, word2, key=len)
+            longer = max(word1, word2, key=len)
+            if shorter in longer and len(shorter) / len(longer) >= 0.7:
+                return True
+        
+        # Check if one word starts with the other (for prefixed services)
+        if len(word1) >= 4 and len(word2) >= 4:
+            if word1.startswith(word2) or word2.startswith(word1):
+                return True
+                
+        return False
+    
+    def _calculate_partial_similarity_bonus(self, text1: str, text2: str) -> float:
+        """Calculate bonus for partial/fuzzy keyword matches."""
+        if not text1 or not text2:
+            return 0.0
+            
+        words1 = set(text1.split())
+        words2 = set(text2.split())
+        
+        fuzzy_matches = 0
+        
+        # Count meaningful words that could be compared
+        meaningful_words1 = [w for w in words1 if len(w) > 3]
+        meaningful_words2 = [w for w in words2 if len(w) > 3]
+        
+        if not meaningful_words1 or not meaningful_words2:
+            return 0.0
+        
+        # Count fuzzy matches
+        for word1 in meaningful_words1:
+            for word2 in meaningful_words2:
+                if word1 != word2 and self._words_similar(word1, word2):
+                    fuzzy_matches += 1
+                    break  # Only count each target word once
+        
+        # Calculate bonus based on fuzzy match ratio
+        if fuzzy_matches > 0:
+            # Use the smaller meaningful word set as denominator for conservative bonus
+            total_possible_matches = min(len(meaningful_words1), len(meaningful_words2))
+            bonus_ratio = fuzzy_matches / total_possible_matches
+            return min(0.15, bonus_ratio * 0.3)  # Max 0.15 bonus for partial matches
+        
+        return 0.0
     
     def _calculate_resolution_time(self, incident: Dict) -> Optional[float]:
         """Calculate resolution time in hours if timestamps are available."""

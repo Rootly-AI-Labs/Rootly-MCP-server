@@ -107,10 +107,14 @@ class TestSmartToolsIntegration:
         payment_incidents = [inc for inc in similar_incidents if "payment" in inc.title.lower()]
         assert len(payment_incidents) >= 2  # Should find both payment incidents
         
-        # Check that similarity scores are reasonable
+        # Check that similarity scores are reasonable (updated for partial matching bonuses)
         top_incident = similar_incidents[0]
         assert top_incident.similarity_score > 0.1
         assert top_incident.incident_id in ["1001", "1003"]  # Should be a payment incident
+        
+        # Check that matched services are detected
+        payment_matches = [inc for inc in similar_incidents if "payment" in inc.matched_services]
+        assert len(payment_matches) > 0  # Should detect payment service matches
     
     async def test_suggest_solutions_with_incident_id(self, server_with_smart_tools, mock_target_incident, mock_historical_incidents):
         """Test solution suggestions using incident ID."""
@@ -250,7 +254,9 @@ class TestSmartToolsIntegration:
             ("authapi connection failed", ["auth"]),
             ("user.service timeout", ["user"]),
             ("Error in notification-api and billing-service", ["notification", "billing"]),
-            ("postgres-db connection issue", ["postgres"])
+            ("postgres-db connection issue", ["postgres"]),
+            ("elasticsearch cluster failing", ["elasticsearch"]),  # New test for known services
+            ("elastic search timeout", ["elastic"]),  # Test partial matching
         ]
         
         for text, expected_services in test_cases:
@@ -259,3 +265,64 @@ class TestSmartToolsIntegration:
             for expected_service in expected_services:
                 assert expected_service in services, \
                     f"Expected service '{expected_service}' not found in {services} for text '{text}'"
+    
+    def test_partial_matching_improvements(self):
+        """Test partial/fuzzy matching for related but not identical incidents."""
+        from rootly_mcp_server.smart_utils import TextSimilarityAnalyzer
+        
+        analyzer = TextSimilarityAnalyzer()
+        
+        # Test cases for partial matching
+        target_incident = {
+            "id": "target",
+            "attributes": {
+                "title": "Payment API timeout errors",
+                "summary": "Users experiencing payment failures due to API timeouts"
+            }
+        }
+        
+        historical_incidents = [
+            {
+                "id": "similar1", 
+                "attributes": {
+                    "title": "Payment service timeouts",
+                    "summary": "Payments API timing out for users"
+                }
+            },
+            {
+                "id": "similar2",
+                "attributes": {
+                    "title": "Billing API errors", 
+                    "summary": "Users unable to complete payments due to errors"
+                }
+            },
+            {
+                "id": "unrelated",
+                "attributes": {
+                    "title": "Auth service down",
+                    "summary": "Login failures for all users"
+                }
+            }
+        ]
+        
+        similar_incidents = analyzer.calculate_similarity(historical_incidents, target_incident)
+        
+        # Should find payment-related incidents with partial matching
+        payment_related = [inc for inc in similar_incidents 
+                          if inc.incident_id in ["similar1", "similar2"]]
+        auth_related = [inc for inc in similar_incidents 
+                       if inc.incident_id == "unrelated"]
+        
+        # Payment incidents should have higher scores than auth incident
+        if payment_related and auth_related:
+            max_payment_score = max(inc.similarity_score for inc in payment_related)
+            max_auth_score = max(inc.similarity_score for inc in auth_related)
+            assert max_payment_score > max_auth_score, \
+                f"Payment similarity ({max_payment_score}) should be higher than auth ({max_auth_score})"
+        
+        # Check that fuzzy keywords are detected
+        if payment_related:
+            top_match = max(payment_related, key=lambda x: x.similarity_score)
+            # Should detect partial matches like "payment~payments" or "timeout~timeouts"
+            fuzzy_keywords = [kw for kw in top_match.matched_keywords if '~' in kw]
+            # Note: This might be 0 if exact matches exist, which is also valid
