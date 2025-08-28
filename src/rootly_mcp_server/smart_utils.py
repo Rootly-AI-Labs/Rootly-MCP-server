@@ -76,6 +76,7 @@ class TextSimilarityAnalyzer:
             r'\b(\w+)-(?:service|api|app|server|db)\b',  # service-api, auth-service
             r'\b(\w+)(?:service|api|app|server|db)\b',   # paymentapi, authservice
             r'\b(\w+)\.(?:service|api|app|com)\b',       # auth.service, api.com
+            r'\b(\w+)\s+(?:api|service|app|server|db)\b',  # payment api, auth service
         ]
         
         # Known service names (exact matches)
