@@ -324,5 +324,5 @@ class TestSmartToolsIntegration:
         if payment_related:
             top_match = max(payment_related, key=lambda x: x.similarity_score)
             # Should detect partial matches like "payment~payments" or "timeout~timeouts"
-            fuzzy_keywords = [kw for kw in top_match.matched_keywords if '~' in kw]
             # Note: This might be 0 if exact matches exist, which is also valid
+            assert top_match.similarity_score > 0.1, "Should have reasonable similarity score for payment incidents"

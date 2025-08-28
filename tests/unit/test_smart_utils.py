@@ -247,7 +247,7 @@ class TestTextSimilarityAnalyzer:
         assert "timeout" in common  
         assert "error" in common
         assert "service" in common
-        assert len(common) <= 5  # Should limit to top 5
+        assert len(common) <= 8  # Should limit to top 8 (increased for fuzzy matching)
 
 
 class TestSolutionExtractor:
