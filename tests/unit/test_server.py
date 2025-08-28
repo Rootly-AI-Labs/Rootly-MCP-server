@@ -237,6 +237,19 @@ class TestOpenAPISpecFiltering:
         assert "/teams" in filtered_spec["paths"]
         assert "/forbidden" not in filtered_spec["paths"]
         
+        # Verify pagination parameters were added to /incidents endpoint
+        incidents_get = filtered_spec["paths"]["/incidents"]["get"]
+        assert "parameters" in incidents_get
+        param_names = [p["name"] for p in incidents_get["parameters"]]
+        assert "page[size]" in param_names
+        assert "page[number]" in param_names
+        
+        # Verify /teams endpoint does not get pagination (doesn't contain "incidents" or "alerts")
+        teams_get = filtered_spec["paths"]["/teams"]["get"]
+        if "parameters" in teams_get:
+            param_names = [p["name"] for p in teams_get["parameters"]]
+            assert "page[size]" not in param_names
+        
         # Verify other properties are preserved
         assert filtered_spec["openapi"] == original_spec["openapi"]
         assert filtered_spec["info"] == original_spec["info"]
@@ -276,6 +289,83 @@ class TestOpenAPISpecFiltering:
         assert "servers" in filtered_spec
         assert "components" in filtered_spec
         assert filtered_spec["servers"] == original_spec["servers"]
+        
+        # Verify pagination parameters were added to /incidents endpoint
+        incidents_get = filtered_spec["paths"]["/incidents"]["get"]
+        assert "parameters" in incidents_get
+        param_names = [p["name"] for p in incidents_get["parameters"]]
+        assert "page[size]" in param_names
+        assert "page[number]" in param_names
+
+    def test_filter_spec_adds_pagination_to_alerts(self):
+        """Test that pagination parameters are added to alerts endpoints."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/alerts": {"get": {"operationId": "listAlerts"}},
+                "/incidents/123/alerts": {"get": {"operationId": "listIncidentAlerts"}},
+                "/users": {"get": {"operationId": "listUsers"}},
+            },
+            "components": {"schemas": {}}
+        }
+        
+        allowed_paths = ["/alerts", "/incidents/123/alerts", "/users"]
+        filtered_spec = _filter_openapi_spec(original_spec, allowed_paths)
+        
+        # Verify pagination was added to alerts endpoints
+        alerts_get = filtered_spec["paths"]["/alerts"]["get"]
+        assert "parameters" in alerts_get
+        param_names = [p["name"] for p in alerts_get["parameters"]]
+        assert "page[size]" in param_names
+        assert "page[number]" in param_names
+        
+        incident_alerts_get = filtered_spec["paths"]["/incidents/123/alerts"]["get"]
+        assert "parameters" in incident_alerts_get
+        param_names = [p["name"] for p in incident_alerts_get["parameters"]]
+        assert "page[size]" in param_names
+        assert "page[number]" in param_names
+        
+        # Verify pagination was NOT added to /users (no "incident" or "alerts" in path)
+        users_get = filtered_spec["paths"]["/users"]["get"]
+        if "parameters" in users_get:
+            param_names = [p["name"] for p in users_get["parameters"]]
+            assert "page[size]" not in param_names
+
+    def test_filter_spec_adds_pagination_to_incident_types(self):
+        """Test that pagination parameters are added to incident-related endpoints."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/incident_types": {"get": {"operationId": "listIncidentTypes"}},
+                "/incident_action_items": {"get": {"operationId": "listIncidentActionItems"}},
+                "/services": {"get": {"operationId": "listServices"}},
+            },
+            "components": {"schemas": {}}
+        }
+        
+        allowed_paths = ["/incident_types", "/incident_action_items", "/services"]
+        filtered_spec = _filter_openapi_spec(original_spec, allowed_paths)
+        
+        # Verify pagination was added to incident-related endpoints
+        incident_types_get = filtered_spec["paths"]["/incident_types"]["get"]
+        assert "parameters" in incident_types_get
+        param_names = [p["name"] for p in incident_types_get["parameters"]]
+        assert "page[size]" in param_names
+        assert "page[number]" in param_names
+        
+        incident_action_items_get = filtered_spec["paths"]["/incident_action_items"]["get"]
+        assert "parameters" in incident_action_items_get
+        param_names = [p["name"] for p in incident_action_items_get["parameters"]]
+        assert "page[size]" in param_names
+        assert "page[number]" in param_names
+        
+        # Verify pagination was NOT added to /services (no "incident" or "alerts" in path)
+        services_get = filtered_spec["paths"]["/services"]["get"]
+        if "parameters" in services_get:
+            param_names = [p["name"] for p in services_get["parameters"]]
+            assert "page[size]" not in param_names
 
 
 @pytest.mark.unit

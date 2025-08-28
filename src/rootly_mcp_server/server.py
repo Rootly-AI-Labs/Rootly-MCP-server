@@ -391,7 +391,7 @@ def create_rootly_mcp_server(
         # Single page mode
         if page_number > 0:
             params = {
-                "page[size]": min(page_size, 5),  # Keep responses very small to avoid errors
+                "page[size]": page_size,  # Use requested page size (already limited to max 20)
                 "page[number]": page_number,
                 "include": "",
             }
@@ -409,7 +409,7 @@ def create_rootly_mcp_server(
         # Multi-page mode (page_number = 0)
         all_incidents = []
         current_page = 1
-        effective_page_size = min(page_size, 5)  # Keep responses very small to avoid errors
+        effective_page_size = page_size  # Use requested page size (already limited to max 20)
         max_pages = 10  # Safety limit to prevent infinite loops
 
         try:
@@ -921,6 +921,73 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                                 "type": "string",
                                 "description": param.get("description", "Parameter value")
                             }
+
+            # Add/modify pagination limits to alerts and incident-related endpoints to prevent infinite loops
+            if method.lower() == "get" and ("alerts" in path.lower() or "incident" in path.lower()):
+                if "parameters" not in operation:
+                    operation["parameters"] = []
+                
+                # Find existing pagination parameters and update them with limits
+                page_size_param = None
+                page_number_param = None
+                
+                for param in operation["parameters"]:
+                    if param.get("name") == "page[size]":
+                        page_size_param = param
+                    elif param.get("name") == "page[number]":
+                        page_number_param = param
+                
+                # Update or add page[size] parameter with limits
+                if page_size_param:
+                    # Update existing parameter with limits
+                    if "schema" not in page_size_param:
+                        page_size_param["schema"] = {}
+                    page_size_param["schema"].update({
+                        "type": "integer",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 20,
+                        "description": "Number of results per page (max: 20)"
+                    })
+                else:
+                    # Add new parameter
+                    operation["parameters"].append({
+                        "name": "page[size]",
+                        "in": "query",
+                        "required": False,
+                        "schema": {
+                            "type": "integer",
+                            "default": 10,
+                            "minimum": 1,
+                            "maximum": 20,
+                            "description": "Number of results per page (max: 20)"
+                        }
+                    })
+                
+                # Update or add page[number] parameter with defaults
+                if page_number_param:
+                    # Update existing parameter 
+                    if "schema" not in page_number_param:
+                        page_number_param["schema"] = {}
+                    page_number_param["schema"].update({
+                        "type": "integer",
+                        "default": 1,
+                        "minimum": 1,
+                        "description": "Page number to retrieve"
+                    })
+                else:
+                    # Add new parameter
+                    operation["parameters"].append({
+                        "name": "page[number]",
+                        "in": "query", 
+                        "required": False,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1,
+                            "minimum": 1,
+                            "description": "Page number to retrieve"
+                        }
+                    })
 
     # Also clean up any remaining broken references in components
     if "components" in filtered_spec and "schemas" in filtered_spec["components"]:
