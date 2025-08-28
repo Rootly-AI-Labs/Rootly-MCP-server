@@ -394,6 +394,7 @@ def create_rootly_mcp_server(
                 "page[size]": page_size,  # Use requested page size (already limited to max 20)
                 "page[number]": page_number,
                 "include": "",
+                "fields[incidents]": "id,title,summary,status,severity,created_at,updated_at,url,started_at",
             }
             if query:
                 params["filter[search]"] = query
@@ -418,6 +419,7 @@ def create_rootly_mcp_server(
                     "page[size]": effective_page_size,
                     "page[number]": current_page,
                     "include": "",
+                    "fields[incidents]": "id,title,summary,status,severity,created_at,updated_at,url,started_at",
                 }
                 if query:
                     params["filter[search]"] = query
