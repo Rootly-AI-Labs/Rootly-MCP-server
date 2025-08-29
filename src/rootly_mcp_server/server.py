@@ -990,6 +990,66 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                             "description": "Page number to retrieve"
                         }
                     })
+                
+                # Add sparse fieldsets for alerts endpoints to reduce payload size
+                if "alert" in path.lower():
+                    # Add fields[alerts] parameter with essential fields only - make it required with default
+                    operation["parameters"].append({
+                        "name": "fields[alerts]",
+                        "in": "query",
+                        "required": True,
+                        "schema": {
+                            "type": "string",
+                            "default": "id,summary,status,started_at,ended_at,short_id,alert_urgency_id,source,noise",
+                            "description": "Comma-separated list of alert fields to include (reduces payload size)"
+                        }
+                    })
+                
+                # Add include parameter for alerts endpoints to minimize relationships
+                if "alert" in path.lower():
+                    # Check if include parameter already exists
+                    include_param_exists = any(param.get("name") == "include" for param in operation["parameters"])
+                    if not include_param_exists:
+                        operation["parameters"].append({
+                            "name": "include",
+                            "in": "query",
+                            "required": True,
+                            "schema": {
+                                "type": "string",
+                                "default": "",
+                                "description": "Related resources to include (empty for minimal payload)"
+                            }
+                        })
+                
+                # Add sparse fieldsets for incidents endpoints to reduce payload size
+                if "incident" in path.lower():
+                    # Add fields[incidents] parameter with essential fields only - make it required with default
+                    operation["parameters"].append({
+                        "name": "fields[incidents]", 
+                        "in": "query",
+                        "required": True,
+                        "schema": {
+                            "type": "string",
+                            "default": "id,title,summary,status,severity,created_at,updated_at,url,started_at",
+                            "description": "Comma-separated list of incident fields to include (reduces payload size)"
+                        }
+                    })
+                
+                # Add include parameter for incidents endpoints to minimize relationships
+                if "incident" in path.lower():
+                    # Check if include parameter already exists
+                    include_param_exists = any(param.get("name") == "include" for param in operation["parameters"])
+                    if not include_param_exists:
+                        operation["parameters"].append({
+                            "name": "include",
+                            "in": "query",
+                            "required": True,
+                            "schema": {
+                                "type": "string", 
+                                "default": "",
+                                "description": "Related resources to include (empty for minimal payload)"
+                            }
+                        })
 
     # Also clean up any remaining broken references in components
     if "components" in filtered_spec and "schemas" in filtered_spec["components"]:
