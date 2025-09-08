@@ -1064,6 +1064,52 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
             logger.warning(f"Removing schema with broken references: {schema_name}")
             del schemas[schema_name]
 
+    # Clean up any operation-level references to removed schemas
+    removed_schemas = set()
+    if "components" in filtered_spec and "schemas" in filtered_spec["components"]:
+        removed_schemas = {"new_workflow", "update_workflow", "workflow", "workflow_task", 
+                          "workflow_response", "workflow_list", "new_workflow_task", 
+                          "update_workflow_task", "workflow_task_response", "workflow_task_list"}
+    
+    for path, path_item in filtered_spec.get("paths", {}).items():
+        for method, operation in path_item.items():
+            if method.lower() not in ["get", "post", "put", "delete", "patch"]:
+                continue
+                
+            # Clean request body references
+            if "requestBody" in operation:
+                request_body = operation["requestBody"]
+                if "content" in request_body:
+                    for content_type, content_info in request_body["content"].items():
+                        if "schema" in content_info and "$ref" in content_info["schema"]:
+                            ref_path = content_info["schema"]["$ref"]
+                            schema_name = ref_path.split("/")[-1]
+                            if schema_name in removed_schemas:
+                                # Replace with generic object schema
+                                content_info["schema"] = {
+                                    "type": "object",
+                                    "description": "Request data for this endpoint",
+                                    "additionalProperties": True
+                                }
+                                logger.debug(f"Cleaned broken reference in {method.upper()} {path} request body: {ref_path}")
+            
+            # Clean response references 
+            if "responses" in operation:
+                for status_code, response in operation["responses"].items():
+                    if "content" in response:
+                        for content_type, content_info in response["content"].items():
+                            if "schema" in content_info and "$ref" in content_info["schema"]:
+                                ref_path = content_info["schema"]["$ref"]
+                                schema_name = ref_path.split("/")[-1]
+                                if schema_name in removed_schemas:
+                                    # Replace with generic object schema
+                                    content_info["schema"] = {
+                                        "type": "object",
+                                        "description": "Response data from this endpoint",
+                                        "additionalProperties": True
+                                    }
+                                    logger.debug(f"Cleaned broken reference in {method.upper()} {path} response: {ref_path}")
+
     return filtered_spec
 
 
@@ -1075,8 +1121,23 @@ def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
         broken_refs = [
             "incident_trigger_params",
             "new_workflow",
-            "update_workflow",
-            "workflow"
+            "update_workflow", 
+            "workflow",
+            "new_workflow_task",
+            "update_workflow_task",
+            "workflow_task",
+            "workflow_task_response",
+            "workflow_task_list",
+            "workflow_response",
+            "workflow_list",
+            "workflow_custom_field_selection_response",
+            "workflow_custom_field_selection_list",
+            "workflow_form_field_condition_response", 
+            "workflow_form_field_condition_list",
+            "workflow_group_response",
+            "workflow_group_list",
+            "workflow_run_response",
+            "workflow_runs_list"
         ]
         if any(broken_ref in ref_path for broken_ref in broken_refs):
             return True
