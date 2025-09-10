@@ -403,10 +403,5 @@ class TestSmartToolsIntegration:
         for inc in similar_incidents:
             all_keywords.extend(inc.matched_keywords)
         
-        # Should detect some relevant keywords for website outages
-        outage_keywords = [kw for kw in all_keywords 
-                          if any(term in str(kw).lower() 
-                               for term in ["down", "outage", "website", "offline", "unavailable"])]
-        
-        # Note: This may be empty if exact matches are found, which is also valid
+        # Note: Keywords may be empty if exact matches are found, which is also valid
         # The important thing is that similarity analysis works with text descriptions
