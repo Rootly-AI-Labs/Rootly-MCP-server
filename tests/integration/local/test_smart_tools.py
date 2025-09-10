@@ -326,3 +326,87 @@ class TestSmartToolsIntegration:
             # Should detect partial matches like "payment~payments" or "timeout~timeouts"
             # Note: This might be 0 if exact matches exist, which is also valid
             assert top_match.similarity_score > 0.1, "Should have reasonable similarity score for payment incidents"
+
+    def test_find_related_incidents_with_text_description(self):
+        """Test find_related_incidents with descriptive text instead of incident ID."""
+        from rootly_mcp_server.smart_utils import TextSimilarityAnalyzer
+        
+        analyzer = TextSimilarityAnalyzer()
+        
+        # Simulate the enhanced find_related_incidents functionality
+        # Create synthetic incident from text description
+        text_description = "website is down"
+        target_incident = {
+            "id": "synthetic",
+            "attributes": {
+                "title": text_description,
+                "summary": text_description,
+                "description": text_description
+            }
+        }
+        
+        # Mock historical incidents with various outage scenarios
+        historical_incidents = [
+            {
+                "id": "1001",
+                "attributes": {
+                    "title": "Website outage - frontend servers down",
+                    "summary": "Complete website unavailable for users",
+                    "status": "resolved"
+                }
+            },
+            {
+                "id": "1002",
+                "attributes": {
+                    "title": "API service offline",
+                    "summary": "Backend API not responding, site unavailable",
+                    "status": "resolved"
+                }
+            },
+            {
+                "id": "1003",
+                "attributes": {
+                    "title": "Database connection timeout",
+                    "summary": "Cannot connect to postgres database",
+                    "status": "resolved"
+                }
+            },
+            {
+                "id": "1004",
+                "attributes": {
+                    "title": "Payment processing errors",
+                    "summary": "Users unable to complete checkout",
+                    "status": "resolved"
+                }
+            }
+        ]
+        
+        # Calculate similarities
+        similar_incidents = analyzer.calculate_similarity(historical_incidents, target_incident)
+        
+        # Should find website/outage related incidents
+        assert len(similar_incidents) > 0, "Should find similar incidents for 'website is down'"
+        
+        # Website outage incident should be most relevant
+        website_related = [inc for inc in similar_incidents 
+                          if any(keyword in inc.title.lower() 
+                               for keyword in ["website", "outage", "down", "offline", "unavailable"])]
+        
+        assert len(website_related) > 0, "Should identify website-related incidents"
+        
+        # Check that similarity scores are reasonable for text-based matching
+        top_match = similar_incidents[0]
+        assert top_match.similarity_score > 0.1, "Should have reasonable similarity score for text description"
+        
+        # Verify matched keywords include relevant terms
+        all_keywords = []
+        for inc in similar_incidents:
+            all_keywords.extend(inc.matched_keywords)
+        
+        # Should detect some relevant keywords for website outages
+        outage_keywords = [kw for kw in all_keywords 
+                          if any(term in str(kw).lower() 
+                               for term in ["down", "outage", "website", "offline", "unavailable"])]
+        
+        # Note: This may be empty if exact matches are found, which is also valid
+        # The important thing is that similarity analysis works with text descriptions

@@ -487,20 +487,37 @@ def create_rootly_mcp_server(
 
     @mcp.tool()
     async def find_related_incidents(
-        incident_id: str,
+        incident_id: str = "",
+        incident_description: str = "",
         similarity_threshold: Annotated[float, Field(description="Minimum similarity score (0.0-1.0)", ge=0.0, le=1.0)] = 0.3,
         max_results: Annotated[int, Field(description="Maximum number of related incidents to return", ge=1, le=20)] = 5
     ) -> dict:
-        """Find historically similar incidents to help with context and resolution strategies."""
+        """Find historically similar incidents to help with context and resolution strategies. Provide either incident_id OR incident_description (e.g., 'website is down', 'database timeout errors')."""
         try:
-            # Get the target incident details
-            target_response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
-            target_response.raise_for_status()
-            target_incident_data = target_response.json()
-            target_incident = target_incident_data.get("data", {})
+            target_incident = {}
             
-            if not target_incident:
-                return MCPError.tool_error("Incident not found", "not_found")
+            if incident_id:
+                # Get the target incident details by ID
+                target_response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
+                target_response.raise_for_status()
+                target_incident_data = target_response.json()
+                target_incident = target_incident_data.get("data", {})
+                
+                if not target_incident:
+                    return MCPError.tool_error("Incident not found", "not_found")
+                    
+            elif incident_description:
+                # Create synthetic incident for analysis from descriptive text
+                target_incident = {
+                    "id": "synthetic",
+                    "attributes": {
+                        "title": incident_description,
+                        "summary": incident_description,
+                        "description": incident_description
+                    }
+                }
+            else:
+                return MCPError.tool_error("Must provide either incident_id or incident_description", "validation_error")
             
             # Get historical incidents for comparison (resolved incidents from last 6 months)
             historical_response = await make_authenticated_request("GET", "/v1/incidents", params={
@@ -513,16 +530,17 @@ def create_rootly_mcp_server(
             historical_data = historical_response.json()
             historical_incidents = historical_data.get("data", [])
             
-            # Filter out the target incident itself
-            historical_incidents = [inc for inc in historical_incidents if str(inc.get('id')) != str(incident_id)]
+            # Filter out the target incident itself if it exists
+            if incident_id:
+                historical_incidents = [inc for inc in historical_incidents if str(inc.get('id')) != str(incident_id)]
             
             if not historical_incidents:
                 return {
                     "related_incidents": [],
                     "message": "No historical incidents found for comparison",
                     "target_incident": {
-                        "id": incident_id,
-                        "title": target_incident.get("attributes", {}).get("title", "")
+                        "id": incident_id or "synthetic",
+                        "title": target_incident.get("attributes", {}).get("title", incident_description)
                     }
                 }
             
@@ -550,8 +568,8 @@ def create_rootly_mcp_server(
             
             return {
                 "target_incident": {
-                    "id": incident_id,
-                    "title": target_incident.get("attributes", {}).get("title", "")
+                    "id": incident_id or "synthetic",
+                    "title": target_incident.get("attributes", {}).get("title", incident_description)
                 },
                 "related_incidents": related_incidents,
                 "total_found": len(filtered_incidents),
