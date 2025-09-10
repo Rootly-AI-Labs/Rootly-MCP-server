@@ -115,46 +115,55 @@ Alternatively, connect directly to our hosted MCP server:
 - **Dynamic Tool Generation**: Automatically creates MCP resources from Rootly's OpenAPI (Swagger) specification
 - **Smart Pagination**: Defaults to 10 items per request for incident endpoints to prevent context window overflow
 - **API Filtering**: Limits exposed API endpoints for security and performance
-- **AI-Powered Incident Analysis**: Smart tools that learn from historical incident data
-  - **`find_related_incidents`**: Uses TF-IDF similarity analysis to find historically similar incidents
+- **Intelligent Incident Analysis**: Smart tools that analyze historical incident data
+  - **`find_related_incidents`**: Uses TF-IDF similarity analysis to find historically similar incidents  
   - **`suggest_solutions`**: Mines past incident resolutions to recommend actionable solutions
 - **MCP Resources**: Exposes incident and team data as structured resources for easy AI reference
 - **Intelligent Pattern Recognition**: Automatically identifies services, error types, and resolution patterns
 
-### Whitelisted Endpoints
+### Available Tools
 
-By default, the following Rootly API endpoints are exposed to the AI agent (see `allowed_paths` in `src/rootly_mcp_server/server.py`):
+**Alerts**
+- `listIncidentAlerts`
+- `listAlerts`
+- `attachAlert`
+- `createAlert`
 
-```
-/v1/incidents
-/v1/incidents/{incident_id}/alerts
-/v1/alerts
-/v1/alerts/{alert_id}
-/v1/severities
-/v1/severities/{severity_id}
-/v1/teams
-/v1/teams/{team_id}
-/v1/services
-/v1/services/{service_id}
-/v1/functionalities
-/v1/functionalities/{functionality_id}
-/v1/incident_types
-/v1/incident_types/{incident_type_id}
-/v1/incident_action_items
-/v1/incident_action_items/{incident_action_item_id}
-/v1/incidents/{incident_id}/action_items
-/v1/workflows
-/v1/workflows/{workflow_id}
-/v1/workflow_runs
-/v1/workflow_runs/{workflow_run_id}
-/v1/environments
-/v1/environments/{environment_id}
-/v1/users
-/v1/users/{user_id}
-/v1/users/me
-/v1/status_pages
-/v1/status_pages/{status_page_id}
-```
+**Environments**
+- `listEnvironments`
+- `createEnvironment`
+
+**Functionalities**
+- `listFunctionalities`
+- `createFunctionality`
+
+**Workflows**
+- `listWorkflows`
+- `createWorkflow`
+
+**Incidents**
+- `listIncidentActionItems`
+- `createIncidentActionItem`
+- `listIncident_Types`
+- `createIncidentType`
+- `search_incidents`
+- `find_related_incidents`
+- `suggest_solutions`
+
+**Services & Severities**
+- `listServices`
+- `createService`
+- `listSeverities`
+- `createSeverity`
+
+**Teams & Users**
+- `listTeams`
+- `createTeam`
+- `listUsers`
+- `getCurrentUser`
+
+**Endpoints**
+- `list_endpoints`
 
 ### Why Path Limiting?
 
@@ -165,12 +174,12 @@ We limit exposed API paths for two key reasons:
 
 To expose additional paths, modify the `allowed_paths` variable in `src/rootly_mcp_server/server.py`.
 
-### AI-Powered Smart Tools
+### Smart Analysis Tools
 
 The MCP server includes intelligent tools that analyze historical incident data to provide actionable insights:
 
 #### `find_related_incidents`
-Finds historically similar incidents using machine learning text analysis:
+Finds historically similar incidents using text similarity analysis:
 ```
 find_related_incidents(incident_id="12345", similarity_threshold=0.3, max_results=5)
 ```
@@ -187,7 +196,7 @@ suggest_solutions(incident_title="Payment API errors", incident_description="Use
 ```
 - **Input**: Either incident ID OR title/description text
 - **Output**: Actionable solution recommendations with confidence scores and time estimates  
-- **Use Case**: Get AI-powered suggestions based on successful past resolutions
+- **Use Case**: Get intelligent suggestions based on successful past resolutions
 
 #### How It Works
 - **Text Similarity**: Uses TF-IDF vectorization and cosine similarity (scikit-learn)
