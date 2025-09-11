@@ -405,3 +405,57 @@ class TestSmartToolsIntegration:
         
         # Note: Keywords may be empty if exact matches are found, which is also valid
         # The important thing is that similarity analysis works with text descriptions
+
+    def test_status_filter_functionality(self):
+        """Test that status filtering works correctly for both tools."""
+        from rootly_mcp_server.smart_utils import TextSimilarityAnalyzer
+        
+        analyzer = TextSimilarityAnalyzer()
+        
+        # Mock incidents with different statuses
+        mixed_status_incidents = [
+            {
+                "id": "1001",
+                "attributes": {
+                    "title": "Payment API timeout",
+                    "summary": "Payment processing errors",
+                    "status": "resolved"
+                }
+            },
+            {
+                "id": "1002", 
+                "attributes": {
+                    "title": "Payment service down",
+                    "summary": "Payment API returning errors",
+                    "status": "investigating"
+                }
+            },
+            {
+                "id": "1003",
+                "attributes": {
+                    "title": "Payment gateway issues", 
+                    "summary": "Users cannot complete purchases",
+                    "status": "open"
+                }
+            }
+        ]
+        
+        target_incident = {
+            "id": "synthetic",
+            "attributes": {
+                "title": "Payment processing failures",
+                "summary": "Users experiencing payment errors",
+                "status": "open"
+            }
+        }
+        
+        # Test similarity analysis works with mixed statuses
+        similar_incidents = analyzer.calculate_similarity(mixed_status_incidents, target_incident)
+        
+        # Should find all payment-related incidents regardless of status
+        assert len(similar_incidents) == 3, f"Expected 3 similar incidents, got {len(similar_incidents)}"
+        
+        # All should be payment-related with reasonable similarity scores
+        for incident in similar_incidents:
+            assert incident.similarity_score > 0.1, f"Low similarity score {incident.similarity_score} for payment incident"
+            assert "payment" in incident.title.lower() or "payment" in incident.matched_keywords

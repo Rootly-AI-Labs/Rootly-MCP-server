@@ -181,7 +181,7 @@ The MCP server includes intelligent tools that analyze historical incident data 
 #### `find_related_incidents`
 Finds historically similar incidents using text similarity analysis:
 ```
-find_related_incidents(incident_id="12345", similarity_threshold=0.3, max_results=5)
+find_related_incidents(incident_id="12345", similarity_threshold=0.15, max_results=5)
 ```
 - **Input**: Incident ID, similarity threshold (0.0-1.0), max results
 - **Output**: Similar incidents with confidence scores, matched services, and resolution times

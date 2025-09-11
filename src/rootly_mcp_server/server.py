@@ -489,10 +489,11 @@ def create_rootly_mcp_server(
     async def find_related_incidents(
         incident_id: str = "",
         incident_description: str = "",
-        similarity_threshold: Annotated[float, Field(description="Minimum similarity score (0.0-1.0)", ge=0.0, le=1.0)] = 0.3,
-        max_results: Annotated[int, Field(description="Maximum number of related incidents to return", ge=1, le=20)] = 5
+        similarity_threshold: Annotated[float, Field(description="Minimum similarity score (0.0-1.0)", ge=0.0, le=1.0)] = 0.15,
+        max_results: Annotated[int, Field(description="Maximum number of related incidents to return", ge=1, le=20)] = 5,
+        status_filter: Annotated[str, Field(description="Filter incidents by status (empty for all, 'resolved', 'investigating', etc.)")] = ""
     ) -> dict:
-        """Find historically similar incidents to help with context and resolution strategies. Provide either incident_id OR incident_description (e.g., 'website is down', 'database timeout errors')."""
+        """Find similar incidents to help with context and resolution strategies. Provide either incident_id OR incident_description (e.g., 'website is down', 'database timeout errors'). Use status_filter to limit to specific incident statuses or leave empty for all incidents."""
         try:
             target_incident = {}
             
@@ -519,13 +520,18 @@ def create_rootly_mcp_server(
             else:
                 return MCPError.tool_error("Must provide either incident_id or incident_description", "validation_error")
             
-            # Get historical incidents for comparison (resolved incidents from last 6 months)
-            historical_response = await make_authenticated_request("GET", "/v1/incidents", params={
+            # Get historical incidents for comparison
+            params = {
                 "page[size]": 100,  # Get more incidents for better matching
                 "page[number]": 1,
-                "filter[status]": "resolved",  # Only look at resolved incidents
                 "include": ""
-            })
+            }
+            
+            # Only add status filter if specified
+            if status_filter:
+                params["filter[status]"] = status_filter
+                
+            historical_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
             historical_response.raise_for_status()
             historical_data = historical_response.json()
             historical_incidents = historical_data.get("data", [])
@@ -586,9 +592,10 @@ def create_rootly_mcp_server(
         incident_id: str = "",
         incident_title: str = "",
         incident_description: str = "",
-        max_solutions: Annotated[int, Field(description="Maximum number of solution suggestions", ge=1, le=10)] = 3
+        max_solutions: Annotated[int, Field(description="Maximum number of solution suggestions", ge=1, le=10)] = 3,
+        status_filter: Annotated[str, Field(description="Filter incidents by status (default 'resolved', empty for all, 'investigating', etc.)")] = "resolved"
     ) -> dict:
-        """Suggest solutions based on similar resolved incidents. Provide either incident_id OR title/description."""
+        """Suggest solutions based on similar incidents. Provide either incident_id OR title/description. Defaults to resolved incidents for solution mining, but can search all statuses."""
         try:
             target_incident = {}
             
@@ -615,13 +622,18 @@ def create_rootly_mcp_server(
             else:
                 return MCPError.tool_error("Must provide either incident_id or incident_title/description", "validation_error")
             
-            # Get resolved incidents for solution mining
-            historical_response = await make_authenticated_request("GET", "/v1/incidents", params={
+            # Get incidents for solution mining
+            params = {
                 "page[size]": 150,  # Get more incidents for better solution matching
                 "page[number]": 1,
-                "filter[status]": "resolved",
                 "include": ""
-            })
+            }
+            
+            # Only add status filter if specified
+            if status_filter:
+                params["filter[status]"] = status_filter
+                
+            historical_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
             historical_response.raise_for_status()
             historical_data = historical_response.json()
             historical_incidents = historical_data.get("data", [])
@@ -631,9 +643,10 @@ def create_rootly_mcp_server(
                 historical_incidents = [inc for inc in historical_incidents if str(inc.get('id')) != str(incident_id)]
             
             if not historical_incidents:
+                status_msg = f" with status '{status_filter}'" if status_filter else ""
                 return {
                     "solutions": [],
-                    "message": "No historical resolved incidents found for solution mining"
+                    "message": f"No historical incidents found{status_msg} for solution mining"
                 }
             
             # Find similar incidents
