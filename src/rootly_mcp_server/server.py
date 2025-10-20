@@ -720,7 +720,7 @@ def create_rootly_mcp_server(
         - Specific team: team_ids='team-1' (will query schedules for that team first)
         """
         try:
-            from datetime import datetime
+            from datetime import datetime, timedelta
             from collections import defaultdict
             from typing import Any, Dict
 
@@ -810,6 +810,7 @@ def create_rootly_mcp_server(
                 "primary_hours": 0.0,
                 "secondary_hours": 0.0,
                 "unknown_role_count": 0,
+                "unique_days": set(),
                 "shifts": []
             })
 
@@ -823,13 +824,21 @@ def create_rootly_mcp_server(
                 is_override = attrs.get("is_override", False)
                 schedule_id = attrs.get("schedule_id")
 
-                # Calculate shift duration in hours
+                # Calculate shift duration in hours and track unique days
                 duration_hours = 0.0
+                shift_days = set()
                 if starts_at and ends_at:
                     try:
                         start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
                         end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
                         duration_hours = (end_dt - start_dt).total_seconds() / 3600
+
+                        # Track all unique calendar days this shift spans
+                        shift_start_date = start_dt.date()
+                        shift_end_date = end_dt.date()
+                        while shift_start_date <= shift_end_date:
+                            shift_days.add(shift_start_date)
+                            shift_start_date += timedelta(days=1)
                     except (ValueError, AttributeError):
                         pass
 
@@ -888,6 +897,9 @@ def create_rootly_mcp_server(
                 else:
                     metrics[key]["unknown_role_count"] += 1
 
+                # Track unique days
+                metrics[key]["unique_days"].update(shift_days)
+
                 metrics[key]["shifts"].append({
                     "shift_id": shift.get("id"),
                     "starts_at": starts_at,
@@ -911,6 +923,7 @@ def create_rootly_mcp_server(
                         "user_id": user_id,
                         "user_name": user_name,
                         "shift_count": data["shift_count"],
+                        "days_on_call": len(data["unique_days"]),
                         "total_hours": round(data["total_hours"], 2),
                         "regular_shifts": data["regular_count"],
                         "override_shifts": data["override_count"],
@@ -925,6 +938,7 @@ def create_rootly_mcp_server(
                     result = {
                         "group_key": key,
                         "shift_count": data["shift_count"],
+                        "days_on_call": len(data["unique_days"]),
                         "total_hours": round(data["total_hours"], 2),
                         "regular_shifts": data["regular_count"],
                         "override_shifts": data["override_count"],
