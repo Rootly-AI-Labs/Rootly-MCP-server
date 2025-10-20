@@ -148,7 +148,7 @@ class TestGetOncallShiftMetrics:
 
             # Get the tool list
             tools = await server.get_tools()
-            tool_names = [t.name if hasattr(t, 'name') else t for t in tools]
+            tool_names = [t.name if hasattr(t, 'name') else str(t) for t in tools]
 
             # Check if our tool is registered
             assert "get_oncall_shift_metrics" in tool_names, "get_oncall_shift_metrics tool not found"

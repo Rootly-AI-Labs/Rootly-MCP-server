@@ -722,9 +722,10 @@ def create_rootly_mcp_server(
         try:
             from datetime import datetime
             from collections import defaultdict
+            from typing import Any, Dict
 
             # Build query parameters
-            params = {
+            params: Dict[str, Any] = {
                 "from": start_date,
                 "to": end_date,
             }
@@ -780,7 +781,7 @@ def create_rootly_mcp_server(
                     users_map[resource.get("id")] = resource
 
             # Calculate metrics
-            metrics = defaultdict(lambda: {
+            metrics: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
                 "shift_count": 0,
                 "total_hours": 0.0,
                 "override_count": 0,
