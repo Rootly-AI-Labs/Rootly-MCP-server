@@ -749,7 +749,7 @@ def create_rootly_mcp_server(
                 for schedule in all_schedules:
                     schedule_relationships = schedule.get("relationships", {})
                     team_rel = schedule_relationships.get("team", {})
-                    team_data = team_rel.get("data", {})
+                    team_data = team_rel.get("data") or {}
 
                     if team_data and str(team_data.get("id")) in team_id_list:
                         target_schedule_ids.append(schedule.get("id"))
@@ -826,7 +826,7 @@ def create_rootly_mcp_server(
                         pass
 
                 # Get user info
-                user_rel = relationships.get("user", {}).get("data", {})
+                user_rel = relationships.get("user", {}).get("data") or {}
                 user_id = user_rel.get("id")
                 user_name = "Unknown"
                 user_email = ""
