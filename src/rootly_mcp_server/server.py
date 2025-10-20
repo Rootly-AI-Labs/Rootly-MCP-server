@@ -730,8 +730,8 @@ def create_rootly_mcp_server(
                 "to": end_date,
             }
 
-            # Fetch schedules with team relationships for mapping
-            schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100, "include": "team"})
+            # Fetch schedules (schedules don't have team relationship, they have owner_group_ids)
+            schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100})
 
             if schedules_response is None:
                 return MCPError.tool_error("Failed to get schedules: API request returned None", "execution_error")
@@ -740,25 +740,32 @@ def create_rootly_mcp_server(
             schedules_data = schedules_response.json()
 
             all_schedules = schedules_data.get("data", [])
-            schedule_included = schedules_data.get("included", [])
 
-            # Build schedule -> team mapping and team lookup
-            schedule_to_team_map = {}
+            # Collect all unique team IDs from schedules' owner_group_ids
+            team_ids_set = set()
+            for schedule in all_schedules:
+                owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
+                team_ids_set.update(owner_group_ids)
+
+            # Fetch all teams
             teams_map = {}
+            if team_ids_set:
+                teams_response = await make_authenticated_request("GET", "/v1/teams", params={"page[size]": 100})
+                if teams_response and teams_response.status_code == 200:
+                    teams_data = teams_response.json()
+                    for team in teams_data.get("data", []):
+                        teams_map[team.get("id")] = team
 
-            for resource in schedule_included:
-                if resource.get("type") == "teams":
-                    teams_map[resource.get("id")] = resource
-
+            # Build schedule -> team mapping
+            schedule_to_team_map = {}
             for schedule in all_schedules:
                 schedule_id = schedule.get("id")
                 schedule_name = schedule.get("attributes", {}).get("name", "Unknown")
-                schedule_relationships = schedule.get("relationships", {})
-                team_rel = schedule_relationships.get("team", {})
-                team_data = team_rel.get("data") or {}
-                team_id = team_data.get("id")
+                owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
 
-                if team_id:
+                # Use the first owner group as the primary team
+                if owner_group_ids:
+                    team_id = owner_group_ids[0]
                     team_attrs = teams_map.get(team_id, {}).get("attributes", {})
                     team_name = team_attrs.get("name", "Unknown Team")
                     schedule_to_team_map[schedule_id] = {
