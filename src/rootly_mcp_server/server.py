@@ -780,12 +780,15 @@ def create_rootly_mcp_server(
                 shifts_response.raise_for_status()
                 shifts_data = shifts_response.json()
 
+                if shifts_data is None:
+                    return MCPError.tool_error("Failed to get shifts: API returned null/empty response", "execution_error", details={"status": shifts_response.status_code})
+
                 shifts = shifts_data.get("data", [])
                 included = shifts_data.get("included", [])
             except AttributeError as e:
                 return MCPError.tool_error(f"Failed to get shifts: Response object error - {str(e)}", "execution_error", details={"params": params})
             except Exception as e:
-                return MCPError.tool_error(f"Failed to get shifts: {str(e)}", "execution_error", details={"params": params})
+                return MCPError.tool_error(f"Failed to get shifts: {str(e)}", "execution_error", details={"params": params, "error_type": type(e).__name__})
 
             # Build lookup maps for included resources
             users_map = {}
@@ -911,8 +914,18 @@ def create_rootly_mcp_server(
             }
 
         except Exception as e:
+            import traceback
             error_type, error_message = MCPError.categorize_error(e)
-            return MCPError.tool_error(f"Failed to get on-call shift metrics: {error_message}", error_type, details={"params": {"start_date": start_date, "end_date": end_date}})
+            return MCPError.tool_error(
+                f"Failed to get on-call shift metrics: {error_message}",
+                error_type,
+                details={
+                    "params": {"start_date": start_date, "end_date": end_date},
+                    "exception_type": type(e).__name__,
+                    "exception_str": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            )
 
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
