@@ -332,7 +332,20 @@ To add new dependencies during development:
 uv pip install <package>
 ```
 
-### 3. Verify Installation
+### 3. Set Up Git Hooks (Recommended for Contributors)
+
+Install pre-commit hooks to automatically run linting and tests before commits:
+
+```bash
+./scripts/setup-hooks.sh
+```
+
+This ensures code quality by running:
+- Ruff linting
+- Pyright type checking
+- Unit tests
+
+### 4. Verify Installation
 
 The server should now be ready to use with your MCP-compatible editor.
 
