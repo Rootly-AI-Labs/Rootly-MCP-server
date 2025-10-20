@@ -225,8 +225,6 @@ get_oncall_shift_metrics(
 )
 ```
 
-See [examples/oncall_metrics_example.py](examples/oncall_metrics_example.py) for detailed usage patterns.
-
 ## About Rootly AI Labs
 
 This project was developed by [Rootly AI Labs](https://labs.rootly.ai/), where we're building the future of system reliability and operational excellence. As an open-source incubator, we share ideas, experiment, and rapidly prototype solutions that benefit the entire community.
