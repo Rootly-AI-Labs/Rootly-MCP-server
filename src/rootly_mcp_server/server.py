@@ -962,7 +962,6 @@ def create_rootly_mcp_server(
                         "primary_hours": round(data["primary_hours"], 2),
                         "secondary_hours": round(data["secondary_hours"], 2),
                         "unknown_role_shifts": data["unknown_role_count"],
-                        "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
                     }
                 elif group_by == "schedule":
                     schedule_id, schedule_name = key.split("|", 1)
@@ -979,7 +978,6 @@ def create_rootly_mcp_server(
                         "primary_hours": round(data["primary_hours"], 2),
                         "secondary_hours": round(data["secondary_hours"], 2),
                         "unknown_role_shifts": data["unknown_role_count"],
-                        "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
                     }
                 elif group_by == "team":
                     team_id, team_name = key.split("|", 1)
@@ -996,7 +994,6 @@ def create_rootly_mcp_server(
                         "primary_hours": round(data["primary_hours"], 2),
                         "secondary_hours": round(data["secondary_hours"], 2),
                         "unknown_role_shifts": data["unknown_role_count"],
-                        "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
                     }
                 else:
                     result = {
@@ -1011,7 +1008,6 @@ def create_rootly_mcp_server(
                         "primary_hours": round(data["primary_hours"], 2),
                         "secondary_hours": round(data["secondary_hours"], 2),
                         "unknown_role_shifts": data["unknown_role_count"],
-                        "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
                     }
 
                 results.append(result)
