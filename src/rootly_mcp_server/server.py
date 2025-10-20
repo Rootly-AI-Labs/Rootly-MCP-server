@@ -737,6 +737,10 @@ def create_rootly_mcp_server(
 
                 # Query schedules to find those belonging to specified teams
                 schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100})
+
+                if schedules_response is None:
+                    return MCPError.tool_error("Failed to get schedules: API request returned None", "execution_error")
+
                 schedules_response.raise_for_status()
                 schedules_data = schedules_response.json()
 
@@ -768,6 +772,10 @@ def create_rootly_mcp_server(
 
             # Query shifts
             shifts_response = await make_authenticated_request("GET", "/v1/shifts", params=params)
+
+            if shifts_response is None:
+                return MCPError.tool_error("Failed to get shifts: API request returned None", "execution_error")
+
             shifts_response.raise_for_status()
             shifts_data = shifts_response.json()
 
