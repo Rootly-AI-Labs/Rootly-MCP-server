@@ -771,16 +771,21 @@ def create_rootly_mcp_server(
             params["include"] = "user,shift_override"
 
             # Query shifts
-            shifts_response = await make_authenticated_request("GET", "/v1/shifts", params=params)
+            try:
+                shifts_response = await make_authenticated_request("GET", "/v1/shifts", params=params)
 
-            if shifts_response is None:
-                return MCPError.tool_error("Failed to get shifts: API request returned None", "execution_error")
+                if shifts_response is None:
+                    return MCPError.tool_error("Failed to get shifts: API request returned None", "execution_error")
 
-            shifts_response.raise_for_status()
-            shifts_data = shifts_response.json()
+                shifts_response.raise_for_status()
+                shifts_data = shifts_response.json()
 
-            shifts = shifts_data.get("data", [])
-            included = shifts_data.get("included", [])
+                shifts = shifts_data.get("data", [])
+                included = shifts_data.get("included", [])
+            except AttributeError as e:
+                return MCPError.tool_error(f"Failed to get shifts: Response object error - {str(e)}", "execution_error", details={"params": params})
+            except Exception as e:
+                return MCPError.tool_error(f"Failed to get shifts: {str(e)}", "execution_error", details={"params": params})
 
             # Build lookup maps for included resources
             users_map = {}
