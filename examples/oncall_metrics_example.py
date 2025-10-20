@@ -132,7 +132,7 @@ async def example_quarterly_report():
     }
 
     print(f"Parameters: {params}")
-    print("\nUse case: Q4 2025 compensation report for finance")
+    print("\nUse case: Q4 2025 on-call metrics for finance/HR")
 
 
 async def example_override_analysis():
@@ -190,10 +190,10 @@ async def main():
     print("COMMON USE CASES")
     print("=" * 60)
     print("""
-    1. Monthly Compensation Reports:
-       - Group by user
+    1. Monthly On-Call Metrics:
+       - Group by user to see hours worked
        - Filter by team if needed
-       - Export total_hours for payroll
+       - Use total_hours/days_on_call for compensation calculations
 
     2. Workload Distribution Analysis:
        - Group by user
