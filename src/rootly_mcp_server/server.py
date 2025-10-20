@@ -805,7 +805,7 @@ def create_rootly_mcp_server(
                         start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
                         end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
                         duration_hours = (end_dt - start_dt).total_seconds() / 3600
-                    except:
+                    except (ValueError, AttributeError):
                         pass
 
                 # Get user info

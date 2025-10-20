@@ -11,7 +11,7 @@ Tests cover:
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 from datetime import datetime
 
 
@@ -156,7 +156,6 @@ class TestGetOncallShiftMetrics:
     async def test_metrics_grouped_by_user(self, mock_shifts_response):
         """Test metrics calculation grouped by user."""
         # Import after patching to ensure module loads correctly
-        from rootly_mcp_server.server import create_rootly_mcp_server
 
         with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
             mock_spec = {
@@ -238,7 +237,6 @@ class TestGetOncallShiftMetrics:
 
     async def test_team_filtering_requires_schedule_query(self, mock_schedules_response):
         """Test that team filtering triggers schedule query."""
-        from rootly_mcp_server.server import create_rootly_mcp_server
 
         with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
             mock_spec = {

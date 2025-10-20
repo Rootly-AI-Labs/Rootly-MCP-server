@@ -158,7 +158,7 @@ async def example_with_api_call():
         return
 
     try:
-        server = create_rootly_mcp_server()
+        _ = create_rootly_mcp_server()
 
         # This would make actual API calls to Rootly
         print("Making real API call to Rootly...")

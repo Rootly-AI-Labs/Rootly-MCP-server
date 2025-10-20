@@ -1,0 +1,3178 @@
+{
+    "data": [
+        {
+            "id": "d374e44c-2495-4af5-933b-4f791e5e46c7",
+            "type": "incidents",
+            "attributes": {
+                "parent_incident_id": null,
+                "sequential_id": 3051,
+                "title": "Roles and responsibilities not assigned during elasticsearch production incident",
+                "slug": "frosty-plains",
+                "kind": "normal",
+                "private": false,
+                "summary": "The incident involving the elasticsearch-prod service began on August 28, 2025, at 9:09 PM UTC, classified as SEV2, but no specific root cause has been determined as of yet. The severity of the issue could potentially impact customers, though details on that have not been provided. The incident was reported by JP Cheung, and so far, no roles such as Commander or Executive Sponsor have been assigned to manage the situation, nor have action items been allocated to individuals, leaving several tasks unresolved including updating the incident summary and communicating with customers.",
+                "status": "resolved",
+                "source": "slack",
+                "url": "https://rootly.com/account/incidents/3051-frosty-plains",
+                "short_url": "https://root.ly/wmwg9r",
+                "user": {
+                    "data": {
+                        "id": "3497",
+                        "type": "users",
+                        "attributes": {
+                            "name": "JP Cheung",
+                            "email": "jp@rootly.com",
+                            "phone": "+17789281114",
+                            "phone_2": null,
+                            "first_name": "JP",
+                            "last_name": "Cheung",
+                            "full_name": "JP Cheung",
+                            "full_name_with_team": "[FailWhale Tales] JP Cheung",
+                            "slack_id": "U09093BP1HS",
+                            "time_zone": "America/Los_Angeles",
+                            "updated_at": "2025-08-28T14:16:11.628-07:00",
+                            "created_at": "2022-01-24T08:48:43.691-08:00"
+                        },
+                        "relationships": {
+                            "email_addresses": {
+                                "data": [
+                                    {
+                                        "id": "75440862-9b71-44ba-9c9d-4b7901587ebd",
+                                        "type": "user_email_addresses"
+                                    }
+                                ]
+                            },
+                            "phone_numbers": {
+                                "data": [
+                                    {
+                                        "id": "8b482519-41cc-4a90-94a5-55c62bd5c0ee",
+                                        "type": "user_phone_numbers"
+                                    }
+                                ]
+                            },
+                            "devices": {
+                                "data": [
+                                    {
+                                        "id": "3c051674-b3f3-4031-8a5a-d4aba164596b",
+                                        "type": "user_devices"
+                                    }
+                                ]
+                            },
+                            "role": {
+                                "data": {
+                                    "created_at": "2023-01-11T09:14:21.659-08:00",
+                                    "updated_at": "2024-10-08T23:56:33.137-07:00",
+                                    "display_order": 1,
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "billing_permissions": [
+                                        "update"
+                                    ],
+                                    "environments_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "functionalities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_causes_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_types_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "private_incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "playbooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "retrospective_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "severities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "status_pages_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "team_id": 1351,
+                                    "name": "owner",
+                                    "slug": "owner",
+                                    "is_editable": false,
+                                    "is_deletable": false,
+                                    "incident_feedbacks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update"
+                                    ],
+                                    "form_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "secrets_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "id": "23f38a98-2209-400a-b46b-3003f5b35b52",
+                                    "deleted_at": null,
+                                    "incident_permission_set_id": null,
+                                    "pulses_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "alerts_permissions": [
+                                        "create",
+                                        "read"
+                                    ],
+                                    "paging_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "sub_statuses_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "catalogs_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete",
+                                        "send"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ]
+                                }
+                            },
+                            "on_call_role": {
+                                "data": {
+                                    "id": "410067b9-78ec-4f82-a6a8-448c5eca7906",
+                                    "team_id": 1351,
+                                    "name": "Admin",
+                                    "slug": "admin",
+                                    "system_role": "admin",
+                                    "deleted_at": null,
+                                    "created_at": "2024-04-30T11:35:19.074-07:00",
+                                    "updated_at": "2024-04-30T11:35:19.074-07:00",
+                                    "alerts_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "escalation_policies_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "on_call_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "schedules_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "shift_overrides_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "contacts_permissions": [
+                                        "read"
+                                    ],
+                                    "live_call_routing_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "heartbeats_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_urgency_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_sources_permissions": [
+                                        "create",
+                                        "update",
+                                        "delete",
+                                        "read"
+                                    ],
+                                    "schedule_override_permissions": [
+                                        "create",
+                                        "update"
+                                    ],
+                                    "on_call_readiness_report_permissions": [
+                                        "read"
+                                    ],
+                                    "alert_routing_rules_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "alert_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_groups_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "severity": {
+                    "data": {
+                        "id": "e2a59ad1-0bab-4778-9653-a2765c952ded",
+                        "type": "severities",
+                        "attributes": {
+                            "name": "SEV2",
+                            "slug": "sev2",
+                            "description": "Stability or **minor customer-impacting issues** that require immediate attention from service owners, _e.g. 1 node failed_",
+                            "severity": "medium",
+                            "color": "#FBE4A0",
+                            "position": 3,
+                            "notify_emails": [],
+                            "slack_channels": [],
+                            "slack_aliases": [],
+                            "created_at": "2023-01-11T09:14:21.945-08:00",
+                            "updated_at": "2024-08-22T21:14:39.531-07:00"
+                        }
+                    }
+                },
+                "in_triage_by": null,
+                "started_by": {
+                    "data": {
+                        "id": "3497",
+                        "type": "users",
+                        "attributes": {
+                            "name": "JP Cheung",
+                            "email": "jp@rootly.com",
+                            "phone": "+17789281114",
+                            "phone_2": null,
+                            "first_name": "JP",
+                            "last_name": "Cheung",
+                            "full_name": "JP Cheung",
+                            "full_name_with_team": "[FailWhale Tales] JP Cheung",
+                            "slack_id": "U09093BP1HS",
+                            "time_zone": "America/Los_Angeles",
+                            "updated_at": "2025-08-28T14:16:11.628-07:00",
+                            "created_at": "2022-01-24T08:48:43.691-08:00"
+                        },
+                        "relationships": {
+                            "email_addresses": {
+                                "data": [
+                                    {
+                                        "id": "75440862-9b71-44ba-9c9d-4b7901587ebd",
+                                        "type": "user_email_addresses"
+                                    }
+                                ]
+                            },
+                            "phone_numbers": {
+                                "data": [
+                                    {
+                                        "id": "8b482519-41cc-4a90-94a5-55c62bd5c0ee",
+                                        "type": "user_phone_numbers"
+                                    }
+                                ]
+                            },
+                            "devices": {
+                                "data": [
+                                    {
+                                        "id": "3c051674-b3f3-4031-8a5a-d4aba164596b",
+                                        "type": "user_devices"
+                                    }
+                                ]
+                            },
+                            "role": {
+                                "data": {
+                                    "created_at": "2023-01-11T09:14:21.659-08:00",
+                                    "updated_at": "2024-10-08T23:56:33.137-07:00",
+                                    "display_order": 1,
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "billing_permissions": [
+                                        "update"
+                                    ],
+                                    "environments_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "functionalities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_causes_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_types_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "private_incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "playbooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "retrospective_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "severities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "status_pages_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "team_id": 1351,
+                                    "name": "owner",
+                                    "slug": "owner",
+                                    "is_editable": false,
+                                    "is_deletable": false,
+                                    "incident_feedbacks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update"
+                                    ],
+                                    "form_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "secrets_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "id": "23f38a98-2209-400a-b46b-3003f5b35b52",
+                                    "deleted_at": null,
+                                    "incident_permission_set_id": null,
+                                    "pulses_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "alerts_permissions": [
+                                        "create",
+                                        "read"
+                                    ],
+                                    "paging_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "sub_statuses_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "catalogs_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete",
+                                        "send"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ]
+                                }
+                            },
+                            "on_call_role": {
+                                "data": {
+                                    "id": "410067b9-78ec-4f82-a6a8-448c5eca7906",
+                                    "team_id": 1351,
+                                    "name": "Admin",
+                                    "slug": "admin",
+                                    "system_role": "admin",
+                                    "deleted_at": null,
+                                    "created_at": "2024-04-30T11:35:19.074-07:00",
+                                    "updated_at": "2024-04-30T11:35:19.074-07:00",
+                                    "alerts_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "escalation_policies_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "on_call_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "schedules_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "shift_overrides_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "contacts_permissions": [
+                                        "read"
+                                    ],
+                                    "live_call_routing_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "heartbeats_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_urgency_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_sources_permissions": [
+                                        "create",
+                                        "update",
+                                        "delete",
+                                        "read"
+                                    ],
+                                    "schedule_override_permissions": [
+                                        "create",
+                                        "update"
+                                    ],
+                                    "on_call_readiness_report_permissions": [
+                                        "read"
+                                    ],
+                                    "alert_routing_rules_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "alert_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_groups_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "mitigated_by": null,
+                "resolved_by": {
+                    "data": {
+                        "id": "3497",
+                        "type": "users",
+                        "attributes": {
+                            "name": "JP Cheung",
+                            "email": "jp@rootly.com",
+                            "phone": "+17789281114",
+                            "phone_2": null,
+                            "first_name": "JP",
+                            "last_name": "Cheung",
+                            "full_name": "JP Cheung",
+                            "full_name_with_team": "[FailWhale Tales] JP Cheung",
+                            "slack_id": "U09093BP1HS",
+                            "time_zone": "America/Los_Angeles",
+                            "updated_at": "2025-08-28T14:16:11.628-07:00",
+                            "created_at": "2022-01-24T08:48:43.691-08:00"
+                        },
+                        "relationships": {
+                            "email_addresses": {
+                                "data": [
+                                    {
+                                        "id": "75440862-9b71-44ba-9c9d-4b7901587ebd",
+                                        "type": "user_email_addresses"
+                                    }
+                                ]
+                            },
+                            "phone_numbers": {
+                                "data": [
+                                    {
+                                        "id": "8b482519-41cc-4a90-94a5-55c62bd5c0ee",
+                                        "type": "user_phone_numbers"
+                                    }
+                                ]
+                            },
+                            "devices": {
+                                "data": [
+                                    {
+                                        "id": "3c051674-b3f3-4031-8a5a-d4aba164596b",
+                                        "type": "user_devices"
+                                    }
+                                ]
+                            },
+                            "role": {
+                                "data": {
+                                    "created_at": "2023-01-11T09:14:21.659-08:00",
+                                    "updated_at": "2024-10-08T23:56:33.137-07:00",
+                                    "display_order": 1,
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "billing_permissions": [
+                                        "update"
+                                    ],
+                                    "environments_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "functionalities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_causes_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_types_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "private_incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "playbooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "retrospective_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "severities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "status_pages_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "team_id": 1351,
+                                    "name": "owner",
+                                    "slug": "owner",
+                                    "is_editable": false,
+                                    "is_deletable": false,
+                                    "incident_feedbacks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update"
+                                    ],
+                                    "form_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "secrets_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "id": "23f38a98-2209-400a-b46b-3003f5b35b52",
+                                    "deleted_at": null,
+                                    "incident_permission_set_id": null,
+                                    "pulses_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "alerts_permissions": [
+                                        "create",
+                                        "read"
+                                    ],
+                                    "paging_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "sub_statuses_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "catalogs_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete",
+                                        "send"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ]
+                                }
+                            },
+                            "on_call_role": {
+                                "data": {
+                                    "id": "410067b9-78ec-4f82-a6a8-448c5eca7906",
+                                    "team_id": 1351,
+                                    "name": "Admin",
+                                    "slug": "admin",
+                                    "system_role": "admin",
+                                    "deleted_at": null,
+                                    "created_at": "2024-04-30T11:35:19.074-07:00",
+                                    "updated_at": "2024-04-30T11:35:19.074-07:00",
+                                    "alerts_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "escalation_policies_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "on_call_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "schedules_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "shift_overrides_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "contacts_permissions": [
+                                        "read"
+                                    ],
+                                    "live_call_routing_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "heartbeats_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_urgency_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_sources_permissions": [
+                                        "create",
+                                        "update",
+                                        "delete",
+                                        "read"
+                                    ],
+                                    "schedule_override_permissions": [
+                                        "create",
+                                        "update"
+                                    ],
+                                    "on_call_readiness_report_permissions": [
+                                        "read"
+                                    ],
+                                    "alert_routing_rules_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "alert_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_groups_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "closed_by": null,
+                "cancelled_by": null,
+                "mitigation_message": null,
+                "resolution_message": "The incident report indicates that roles and responsibilities were not assigned during the elasticsearch production incident, and while the status is marked as \"Resolved,\" it is unclear if any actions were completed or if the resolution was effective in addressing the situation. Therefore, the specifics of how the incident was resolved remain ambiguous.",
+                "cancellation_message": null,
+                "public_title": null,
+                "duplicate_incident_id": null,
+                "retrospective_progress_status": "not_started",
+                "zoom_meeting_id": "84094402753",
+                "zoom_meeting_start_url": null,
+                "zoom_meeting_join_url": "https://us06web.zoom.us/j/84094402753?pwd=RpMaAzOJ4T3QrZ1f7BCyw5M2HQ9JNG.1",
+                "zoom_meeting_password": "#qK@4S06!P",
+                "zoom_meeting_pstn_password": "1519053717",
+                "zoom_meeting_h323_password": "1519053717",
+                "zoom_meeting_global_dial_in_numbers": [
+                    {
+                        "city": "New York",
+                        "type": "toll",
+                        "number": "+1 929 436 2866",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "Washington DC",
+                        "type": "toll",
+                        "number": "+1 301 715 8592",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 305 224 1968",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 309 205 3325",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "Chicago",
+                        "type": "toll",
+                        "number": "+1 312 626 6799",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 646 931 3860",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "Houston",
+                        "type": "toll",
+                        "number": "+1 346 248 7799",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 360 209 5623",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 386 347 5053",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 507 473 4847",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 564 217 2000",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 669 444 9171",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "San Jose",
+                        "type": "toll",
+                        "number": "+1 669 900 6833",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 689 278 1000",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 719 359 4580",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 253 205 0468",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "Tacoma",
+                        "type": "toll",
+                        "number": "+1 253 215 8782",
+                        "country": "US",
+                        "country_name": "US"
+                    }
+                ],
+                "shortcut_story_id": null,
+                "shortcut_story_url": null,
+                "shortcut_task_id": null,
+                "shortcut_task_url": null,
+                "asana_task_id": null,
+                "asana_task_url": null,
+                "github_issue_id": null,
+                "github_issue_url": null,
+                "gitlab_issue_id": null,
+                "gitlab_issue_url": null,
+                "jira_issue_key": "ROOT-19218",
+                "jira_issue_id": "54984",
+                "jira_issue_url": "https://okaywearefree-dev.atlassian.net/browse/ROOT-19218",
+                "google_meeting_id": "ppcp0ncgdhpr877r5o2aimft24",
+                "google_meeting_url": "https://meet.google.com/sjo-edfy-jzc",
+                "trello_card_id": null,
+                "trello_card_url": null,
+                "linear_issue_id": null,
+                "linear_issue_url": null,
+                "zendesk_ticket_id": null,
+                "zendesk_ticket_url": null,
+                "motion_task_id": null,
+                "motion_task_url": null,
+                "clickup_task_id": null,
+                "clickup_task_url": null,
+                "slack_channel_name": "incident-20250828-frosty-plains",
+                "slack_channel_id": "C09CYPJABBK",
+                "slack_channel_url": "https://slack.com/app_redirect?channel=C09CYPJABBK&team=T04JUSX0VPT",
+                "slack_channel_short_url": "https://root.ly/h2ll3e",
+                "slack_channel_deep_link": "slack://channel?id=C09CYPJABBK&team=T04JUSX0VPT",
+                "slack_channel_archived": true,
+                "slack_last_message_ts": "1756415787.005000",
+                "service_now_incident_id": "20f8e707c3e7e21038f57f65e4013199",
+                "service_now_incident_key": "INC0010046",
+                "service_now_incident_url": "https://dev343562.service-now.com/task.do?sys_id=20f8e707c3e7e21038f57f65e4013199",
+                "opsgenie_incident_id": null,
+                "opsgenie_incident_url": null,
+                "opsgenie_alert_id": null,
+                "opsgenie_alert_url": null,
+                "victor_ops_incident_id": null,
+                "victor_ops_incident_url": null,
+                "pagerduty_incident_id": null,
+                "pagerduty_incident_number": null,
+                "pagerduty_incident_url": null,
+                "mattermost_channel_id": null,
+                "mattermost_channel_name": null,
+                "mattermost_channel_url": null,
+                "confluence_page_id": "1548943361",
+                "confluence_page_url": "https://okaywearefree-dev.atlassian.net/wiki/spaces/ROOTLY/pages/1548943361/3051+-+Roles+and+responsibilities+not+assigned+during+elasticsearch+production+incident+-+20250828",
+                "quip_page_id": null,
+                "quip_page_url": null,
+                "airtable_base_key": null,
+                "airtable_table_name": null,
+                "airtable_record_id": null,
+                "airtable_record_url": null,
+                "google_drive_id": null,
+                "google_drive_parent_id": null,
+                "google_drive_url": null,
+                "sharepoint_page_id": null,
+                "sharepoint_page_url": null,
+                "datadog_notebook_id": null,
+                "datadog_notebook_url": null,
+                "freshservice_ticket_id": null,
+                "freshservice_ticket_url": null,
+                "freshservice_task_id": null,
+                "freshservice_task_url": null,
+                "scheduled_for": null,
+                "scheduled_until": null,
+                "in_triage_at": null,
+                "started_at": "2025-08-28T14:09:13.643-07:00",
+                "detected_at": null,
+                "acknowledged_at": null,
+                "mitigated_at": "2025-08-28T14:16:13.485-07:00",
+                "resolved_at": "2025-08-28T14:16:13.485-07:00",
+                "closed_at": null,
+                "cancelled_at": null,
+                "created_at": "2025-08-28T14:09:13.677-07:00",
+                "updated_at": "2025-08-28T14:17:16.396-07:00",
+                "labels": {}
+            },
+            "relationships": {
+                "incident_post_mortem": {
+                    "data": {
+                        "id": "a801559a-790a-4356-8a57-d7a3f77b7df2",
+                        "type": "incident_post_mortems"
+                    }
+                },
+                "causes": {
+                    "data": []
+                },
+                "subscribers": {
+                    "data": [
+                        {
+                            "id": "2ae3e4d7-c066-4767-a2f5-ae0297357ac4",
+                            "type": "incident_subscribers"
+                        },
+                        {
+                            "id": "d329ab39-a97f-4047-b988-506f3ce41b19",
+                            "type": "incident_subscribers"
+                        },
+                        {
+                            "id": "98b9e385-9cff-48dd-b4a2-c0c59a1cf3dd",
+                            "type": "incident_subscribers"
+                        },
+                        {
+                            "id": "fa71959b-915a-42d0-bd6c-b26e33e9d73a",
+                            "type": "incident_subscribers"
+                        },
+                        {
+                            "id": "5a570a07-0eb1-49ae-8fac-c5e583611ba5",
+                            "type": "incident_subscribers"
+                        }
+                    ]
+                },
+                "roles": {
+                    "data": [
+                        {
+                            "id": "f792e522-9b0e-4453-a7ba-cf64bf1caeab",
+                            "type": "incident_role_assignments"
+                        },
+                        {
+                            "id": "cee964fe-e8a9-4866-b853-9b346ad6ece3",
+                            "type": "incident_role_assignments"
+                        },
+                        {
+                            "id": "e6a9dcbe-0afd-4126-bc4d-cee8b9f664e0",
+                            "type": "incident_role_assignments"
+                        }
+                    ]
+                },
+                "environments": {
+                    "data": []
+                },
+                "incident_types": {
+                    "data": []
+                },
+                "services": {
+                    "data": [
+                        {
+                            "id": "0500118d-d9d9-4d0b-b9b8-84918e44a2c9",
+                            "type": "services"
+                        }
+                    ]
+                },
+                "functionalities": {
+                    "data": []
+                },
+                "groups": {
+                    "data": [
+                        {
+                            "id": "7e73f345-06d6-4071-aa0c-e4088c6e553a",
+                            "type": "groups"
+                        }
+                    ]
+                },
+                "events": {
+                    "data": [
+                        {
+                            "id": "c66a7fcf-1904-47d3-838e-8bb7e3ef5756",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "d65c075f-d6a6-4042-ae29-c0944996d5c7",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "d89cc69c-7e4a-4b3c-9790-76428e00c8af",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "fa11fb3f-e085-4626-a3e4-891310ce0583",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "b300876a-bcff-4ce4-84d2-5234d4db17fa",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "12f0bacc-6734-452f-8c97-f5269a0e1e11",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "748ac20f-fff6-4e3b-a9a1-b82b80dfc6ed",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "22be234e-bc67-4033-8abf-8b56b9acb46b",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "546d756f-a587-473f-9819-4ce4f184f196",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "d4c8820d-6465-4d1f-99cf-148ffca80f57",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "01907484-8a13-46f4-94b4-2a9047a0f5c0",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "53af62c3-9a9c-4bea-976d-4ad076e1ce99",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "a89b4b63-d339-4640-960b-e615dd83c9ad",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "0038bae3-a399-4a2b-8e68-57a20384fe4d",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "4208feae-de3e-4534-bda0-0c1528e40e8a",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "d963a3e9-debf-4cc0-8349-2c84353ea1ba",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "ccc390a9-e645-4bfb-b3be-9e2d8dd302af",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "ba42e356-7eb0-41f6-a5f6-740ea05e53bd",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "fa384ef8-ddfa-497c-a53d-e9dcd67df1ee",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "7cd0f96f-e800-4b3c-97a1-ced11e62094a",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "928457cb-b975-4a5f-ad11-48655b35dfb2",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "95089696-9dbe-4726-bc40-1c9d1666d8b7",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "a839438c-7986-45c0-8448-1fe3f8a0f6d0",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "bc04a5f0-9670-409c-9960-87b8e05b8f82",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "cc5059a9-1a77-4d96-aca1-d8e4a15c4517",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "c0eeb2e8-4eec-4170-8660-9b70928a6da7",
+                            "type": "incident_events"
+                        }
+                    ]
+                },
+                "action_items": {
+                    "data": [
+                        {
+                            "id": "7c267063-3bc6-47b4-9c11-8e5573efd4f9",
+                            "type": "incident_action_items"
+                        },
+                        {
+                            "id": "c6a6595d-d2fc-4198-ba51-a404784e1094",
+                            "type": "incident_action_items"
+                        },
+                        {
+                            "id": "eddc8827-73bf-415c-8be1-4828ee26d3e4",
+                            "type": "incident_action_items"
+                        },
+                        {
+                            "id": "d5f2aee6-d772-414c-832f-83f505999066",
+                            "type": "incident_action_items"
+                        },
+                        {
+                            "id": "4f55fe63-5927-4482-a0dc-170cc6be7f7c",
+                            "type": "incident_action_items"
+                        }
+                    ]
+                },
+                "custom_field_selections": {
+                    "data": [
+                        {
+                            "id": "6e7bf60c-c282-4b7c-9009-870cc267b5f8",
+                            "type": "incident_form_field_selections"
+                        }
+                    ]
+                },
+                "feedbacks": {
+                    "data": []
+                },
+                "attachments": {
+                    "data": [
+                        {
+                            "id": "e3acc62a-c129-453c-a8fd-90e03234f5c1",
+                            "type": "incident_attachments"
+                        },
+                        {
+                            "id": "636eae65-c4aa-44fa-98ef-b8b60e1db97f",
+                            "type": "incident_attachments"
+                        }
+                    ]
+                },
+                "slack_messages": {
+                    "data": [
+                        {
+                            "id": "624c4efd-fc00-473d-be2a-87464a435322",
+                            "type": "incident_slack_messages"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "9d0ea99b-f8b1-4769-8b25-69e1a90906d2",
+            "type": "incidents",
+            "attributes": {
+                "parent_incident_id": null,
+                "sequential_id": 3050,
+                "title": "Thoughtful Sea",
+                "slug": "thoughtful-sea",
+                "kind": "normal",
+                "private": false,
+                "summary": null,
+                "status": "resolved",
+                "source": "slack",
+                "url": "https://rootly.com/account/incidents/3050-thoughtful-sea",
+                "short_url": "https://root.ly/y98y8j",
+                "user": {
+                    "data": {
+                        "id": "3497",
+                        "type": "users",
+                        "attributes": {
+                            "name": "JP Cheung",
+                            "email": "jp@rootly.com",
+                            "phone": "+17789281114",
+                            "phone_2": null,
+                            "first_name": "JP",
+                            "last_name": "Cheung",
+                            "full_name": "JP Cheung",
+                            "full_name_with_team": "[FailWhale Tales] JP Cheung",
+                            "slack_id": "U09093BP1HS",
+                            "time_zone": "America/Los_Angeles",
+                            "updated_at": "2025-08-28T14:16:11.628-07:00",
+                            "created_at": "2022-01-24T08:48:43.691-08:00"
+                        },
+                        "relationships": {
+                            "email_addresses": {
+                                "data": [
+                                    {
+                                        "id": "75440862-9b71-44ba-9c9d-4b7901587ebd",
+                                        "type": "user_email_addresses"
+                                    }
+                                ]
+                            },
+                            "phone_numbers": {
+                                "data": [
+                                    {
+                                        "id": "8b482519-41cc-4a90-94a5-55c62bd5c0ee",
+                                        "type": "user_phone_numbers"
+                                    }
+                                ]
+                            },
+                            "devices": {
+                                "data": [
+                                    {
+                                        "id": "3c051674-b3f3-4031-8a5a-d4aba164596b",
+                                        "type": "user_devices"
+                                    }
+                                ]
+                            },
+                            "role": {
+                                "data": {
+                                    "created_at": "2023-01-11T09:14:21.659-08:00",
+                                    "updated_at": "2024-10-08T23:56:33.137-07:00",
+                                    "display_order": 1,
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "billing_permissions": [
+                                        "update"
+                                    ],
+                                    "environments_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "functionalities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_causes_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_types_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "private_incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "playbooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "retrospective_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "severities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "status_pages_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "team_id": 1351,
+                                    "name": "owner",
+                                    "slug": "owner",
+                                    "is_editable": false,
+                                    "is_deletable": false,
+                                    "incident_feedbacks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update"
+                                    ],
+                                    "form_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "secrets_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "id": "23f38a98-2209-400a-b46b-3003f5b35b52",
+                                    "deleted_at": null,
+                                    "incident_permission_set_id": null,
+                                    "pulses_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "alerts_permissions": [
+                                        "create",
+                                        "read"
+                                    ],
+                                    "paging_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "sub_statuses_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "catalogs_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete",
+                                        "send"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ]
+                                }
+                            },
+                            "on_call_role": {
+                                "data": {
+                                    "id": "410067b9-78ec-4f82-a6a8-448c5eca7906",
+                                    "team_id": 1351,
+                                    "name": "Admin",
+                                    "slug": "admin",
+                                    "system_role": "admin",
+                                    "deleted_at": null,
+                                    "created_at": "2024-04-30T11:35:19.074-07:00",
+                                    "updated_at": "2024-04-30T11:35:19.074-07:00",
+                                    "alerts_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "escalation_policies_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "on_call_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "schedules_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "shift_overrides_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "contacts_permissions": [
+                                        "read"
+                                    ],
+                                    "live_call_routing_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "heartbeats_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_urgency_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_sources_permissions": [
+                                        "create",
+                                        "update",
+                                        "delete",
+                                        "read"
+                                    ],
+                                    "schedule_override_permissions": [
+                                        "create",
+                                        "update"
+                                    ],
+                                    "on_call_readiness_report_permissions": [
+                                        "read"
+                                    ],
+                                    "alert_routing_rules_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "alert_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_groups_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "severity": {
+                    "data": {
+                        "id": "ecbc880f-4fef-4e8b-a9bc-153036679878",
+                        "type": "severities",
+                        "attributes": {
+                            "name": "SEV0",
+                            "slug": "sev0",
+                            "description": "**Critical issue** that warrants public notification and liaison with executive teams, _e.g. whole site outage_",
+                            "severity": "critical",
+                            "color": "#E65252",
+                            "position": 1,
+                            "notify_emails": [],
+                            "slack_channels": [],
+                            "slack_aliases": [],
+                            "created_at": "2023-01-11T09:14:21.899-08:00",
+                            "updated_at": "2024-08-22T21:13:28.692-07:00"
+                        }
+                    }
+                },
+                "in_triage_by": null,
+                "started_by": {
+                    "data": {
+                        "id": "3497",
+                        "type": "users",
+                        "attributes": {
+                            "name": "JP Cheung",
+                            "email": "jp@rootly.com",
+                            "phone": "+17789281114",
+                            "phone_2": null,
+                            "first_name": "JP",
+                            "last_name": "Cheung",
+                            "full_name": "JP Cheung",
+                            "full_name_with_team": "[FailWhale Tales] JP Cheung",
+                            "slack_id": "U09093BP1HS",
+                            "time_zone": "America/Los_Angeles",
+                            "updated_at": "2025-08-28T14:16:11.628-07:00",
+                            "created_at": "2022-01-24T08:48:43.691-08:00"
+                        },
+                        "relationships": {
+                            "email_addresses": {
+                                "data": [
+                                    {
+                                        "id": "75440862-9b71-44ba-9c9d-4b7901587ebd",
+                                        "type": "user_email_addresses"
+                                    }
+                                ]
+                            },
+                            "phone_numbers": {
+                                "data": [
+                                    {
+                                        "id": "8b482519-41cc-4a90-94a5-55c62bd5c0ee",
+                                        "type": "user_phone_numbers"
+                                    }
+                                ]
+                            },
+                            "devices": {
+                                "data": [
+                                    {
+                                        "id": "3c051674-b3f3-4031-8a5a-d4aba164596b",
+                                        "type": "user_devices"
+                                    }
+                                ]
+                            },
+                            "role": {
+                                "data": {
+                                    "created_at": "2023-01-11T09:14:21.659-08:00",
+                                    "updated_at": "2024-10-08T23:56:33.137-07:00",
+                                    "display_order": 1,
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "billing_permissions": [
+                                        "update"
+                                    ],
+                                    "environments_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "functionalities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_causes_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_types_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "private_incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "playbooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "retrospective_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "severities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "status_pages_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "team_id": 1351,
+                                    "name": "owner",
+                                    "slug": "owner",
+                                    "is_editable": false,
+                                    "is_deletable": false,
+                                    "incident_feedbacks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update"
+                                    ],
+                                    "form_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "secrets_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "id": "23f38a98-2209-400a-b46b-3003f5b35b52",
+                                    "deleted_at": null,
+                                    "incident_permission_set_id": null,
+                                    "pulses_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "alerts_permissions": [
+                                        "create",
+                                        "read"
+                                    ],
+                                    "paging_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "sub_statuses_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "catalogs_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete",
+                                        "send"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ]
+                                }
+                            },
+                            "on_call_role": {
+                                "data": {
+                                    "id": "410067b9-78ec-4f82-a6a8-448c5eca7906",
+                                    "team_id": 1351,
+                                    "name": "Admin",
+                                    "slug": "admin",
+                                    "system_role": "admin",
+                                    "deleted_at": null,
+                                    "created_at": "2024-04-30T11:35:19.074-07:00",
+                                    "updated_at": "2024-04-30T11:35:19.074-07:00",
+                                    "alerts_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "escalation_policies_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "on_call_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "schedules_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "shift_overrides_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "contacts_permissions": [
+                                        "read"
+                                    ],
+                                    "live_call_routing_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "heartbeats_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_urgency_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_sources_permissions": [
+                                        "create",
+                                        "update",
+                                        "delete",
+                                        "read"
+                                    ],
+                                    "schedule_override_permissions": [
+                                        "create",
+                                        "update"
+                                    ],
+                                    "on_call_readiness_report_permissions": [
+                                        "read"
+                                    ],
+                                    "alert_routing_rules_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "alert_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_groups_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "mitigated_by": null,
+                "resolved_by": {
+                    "data": {
+                        "id": "3497",
+                        "type": "users",
+                        "attributes": {
+                            "name": "JP Cheung",
+                            "email": "jp@rootly.com",
+                            "phone": "+17789281114",
+                            "phone_2": null,
+                            "first_name": "JP",
+                            "last_name": "Cheung",
+                            "full_name": "JP Cheung",
+                            "full_name_with_team": "[FailWhale Tales] JP Cheung",
+                            "slack_id": "U09093BP1HS",
+                            "time_zone": "America/Los_Angeles",
+                            "updated_at": "2025-08-28T14:16:11.628-07:00",
+                            "created_at": "2022-01-24T08:48:43.691-08:00"
+                        },
+                        "relationships": {
+                            "email_addresses": {
+                                "data": [
+                                    {
+                                        "id": "75440862-9b71-44ba-9c9d-4b7901587ebd",
+                                        "type": "user_email_addresses"
+                                    }
+                                ]
+                            },
+                            "phone_numbers": {
+                                "data": [
+                                    {
+                                        "id": "8b482519-41cc-4a90-94a5-55c62bd5c0ee",
+                                        "type": "user_phone_numbers"
+                                    }
+                                ]
+                            },
+                            "devices": {
+                                "data": [
+                                    {
+                                        "id": "3c051674-b3f3-4031-8a5a-d4aba164596b",
+                                        "type": "user_devices"
+                                    }
+                                ]
+                            },
+                            "role": {
+                                "data": {
+                                    "created_at": "2023-01-11T09:14:21.659-08:00",
+                                    "updated_at": "2024-10-08T23:56:33.137-07:00",
+                                    "display_order": 1,
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "billing_permissions": [
+                                        "update"
+                                    ],
+                                    "environments_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "functionalities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_causes_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_types_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "private_incidents_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "playbooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "retrospective_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "severities_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "status_pages_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "team_id": 1351,
+                                    "name": "owner",
+                                    "slug": "owner",
+                                    "is_editable": false,
+                                    "is_deletable": false,
+                                    "incident_feedbacks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update"
+                                    ],
+                                    "form_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "secrets_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "id": "23f38a98-2209-400a-b46b-3003f5b35b52",
+                                    "deleted_at": null,
+                                    "incident_permission_set_id": null,
+                                    "pulses_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "alerts_permissions": [
+                                        "create",
+                                        "read"
+                                    ],
+                                    "paging_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "sub_statuses_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "catalogs_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "incident_communication_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete",
+                                        "send"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ]
+                                }
+                            },
+                            "on_call_role": {
+                                "data": {
+                                    "id": "410067b9-78ec-4f82-a6a8-448c5eca7906",
+                                    "team_id": 1351,
+                                    "name": "Admin",
+                                    "slug": "admin",
+                                    "system_role": "admin",
+                                    "deleted_at": null,
+                                    "created_at": "2024-04-30T11:35:19.074-07:00",
+                                    "updated_at": "2024-04-30T11:35:19.074-07:00",
+                                    "alerts_permissions": [
+                                        "create",
+                                        "update",
+                                        "read"
+                                    ],
+                                    "api_keys_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "audits_permissions": [
+                                        "read"
+                                    ],
+                                    "escalation_policies_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "groups_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "integrations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "invitations_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "on_call_roles_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "schedules_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "services_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "shift_overrides_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "workflows_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "contacts_permissions": [
+                                        "read"
+                                    ],
+                                    "live_call_routing_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "heartbeats_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_urgency_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "webhooks_permissions": [
+                                        "read",
+                                        "create",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_sources_permissions": [
+                                        "create",
+                                        "update",
+                                        "delete",
+                                        "read"
+                                    ],
+                                    "schedule_override_permissions": [
+                                        "create",
+                                        "update"
+                                    ],
+                                    "on_call_readiness_report_permissions": [
+                                        "read"
+                                    ],
+                                    "alert_routing_rules_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ],
+                                    "alert_fields_permissions": [
+                                        "create",
+                                        "read",
+                                        "update",
+                                        "delete"
+                                    ],
+                                    "alert_groups_permissions": [
+                                        "create",
+                                        "update",
+                                        "read",
+                                        "delete"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                },
+                "closed_by": null,
+                "cancelled_by": null,
+                "mitigation_message": null,
+                "resolution_message": null,
+                "cancellation_message": null,
+                "public_title": null,
+                "duplicate_incident_id": null,
+                "retrospective_progress_status": "not_started",
+                "zoom_meeting_id": "89679414972",
+                "zoom_meeting_start_url": null,
+                "zoom_meeting_join_url": "https://us06web.zoom.us/j/89679414972?pwd=EMkSmMLoJUsaSEGhR3xm6pW1brDo1g.1",
+                "zoom_meeting_password": "m#3P2A0IG@",
+                "zoom_meeting_pstn_password": "3086622583",
+                "zoom_meeting_h323_password": "3086622583",
+                "zoom_meeting_global_dial_in_numbers": [
+                    {
+                        "city": "Washington DC",
+                        "type": "toll",
+                        "number": "+1 301 715 8592",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 305 224 1968",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 309 205 3325",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "Chicago",
+                        "type": "toll",
+                        "number": "+1 312 626 6799",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 646 931 3860",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "New York",
+                        "type": "toll",
+                        "number": "+1 929 436 2866",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 669 444 9171",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "San Jose",
+                        "type": "toll",
+                        "number": "+1 669 900 6833",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 689 278 1000",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 719 359 4580",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 253 205 0468",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "Tacoma",
+                        "type": "toll",
+                        "number": "+1 253 215 8782",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "city": "Houston",
+                        "type": "toll",
+                        "number": "+1 346 248 7799",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 360 209 5623",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 386 347 5053",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 507 473 4847",
+                        "country": "US",
+                        "country_name": "US"
+                    },
+                    {
+                        "type": "toll",
+                        "number": "+1 564 217 2000",
+                        "country": "US",
+                        "country_name": "US"
+                    }
+                ],
+                "shortcut_story_id": null,
+                "shortcut_story_url": null,
+                "shortcut_task_id": null,
+                "shortcut_task_url": null,
+                "asana_task_id": null,
+                "asana_task_url": null,
+                "github_issue_id": null,
+                "github_issue_url": null,
+                "gitlab_issue_id": null,
+                "gitlab_issue_url": null,
+                "jira_issue_key": "ROOT-19216",
+                "jira_issue_id": "54982",
+                "jira_issue_url": "https://okaywearefree-dev.atlassian.net/browse/ROOT-19216",
+                "google_meeting_id": "31u1pf7av0q2fok35qrk2su9vc",
+                "google_meeting_url": "https://meet.google.com/ryu-hzdk-moc",
+                "trello_card_id": null,
+                "trello_card_url": null,
+                "linear_issue_id": null,
+                "linear_issue_url": null,
+                "zendesk_ticket_id": null,
+                "zendesk_ticket_url": null,
+                "motion_task_id": null,
+                "motion_task_url": null,
+                "clickup_task_id": null,
+                "clickup_task_url": null,
+                "slack_channel_name": "incident-20250828-thoughtful-sea",
+                "slack_channel_id": "C09DCKN29SL",
+                "slack_channel_url": "https://slack.com/app_redirect?channel=C09DCKN29SL&team=T04JUSX0VPT",
+                "slack_channel_short_url": "https://root.ly/zjusbw",
+                "slack_channel_deep_link": "slack://channel?id=C09DCKN29SL&team=T04JUSX0VPT",
+                "slack_channel_archived": true,
+                "slack_last_message_ts": "1756414646.003500",
+                "service_now_incident_id": "88952b8bc3a7e21038f57f65e4013106",
+                "service_now_incident_key": "INC0010045",
+                "service_now_incident_url": "https://dev343562.service-now.com/task.do?sys_id=88952b8bc3a7e21038f57f65e4013106",
+                "opsgenie_incident_id": null,
+                "opsgenie_incident_url": null,
+                "opsgenie_alert_id": null,
+                "opsgenie_alert_url": null,
+                "victor_ops_incident_id": null,
+                "victor_ops_incident_url": null,
+                "pagerduty_incident_id": null,
+                "pagerduty_incident_number": null,
+                "pagerduty_incident_url": null,
+                "mattermost_channel_id": null,
+                "mattermost_channel_name": null,
+                "mattermost_channel_url": null,
+                "confluence_page_id": "1548877825",
+                "confluence_page_url": "https://okaywearefree-dev.atlassian.net/wiki/spaces/ROOTLY/pages/1548877825/3050+-+Thoughtful+Sea+-+20250828",
+                "quip_page_id": null,
+                "quip_page_url": null,
+                "airtable_base_key": null,
+                "airtable_table_name": null,
+                "airtable_record_id": null,
+                "airtable_record_url": null,
+                "google_drive_id": null,
+                "google_drive_parent_id": null,
+                "google_drive_url": null,
+                "sharepoint_page_id": null,
+                "sharepoint_page_url": null,
+                "datadog_notebook_id": null,
+                "datadog_notebook_url": null,
+                "freshservice_ticket_id": null,
+                "freshservice_ticket_url": null,
+                "freshservice_task_id": null,
+                "freshservice_task_url": null,
+                "scheduled_for": null,
+                "scheduled_until": null,
+                "in_triage_at": null,
+                "started_at": "2025-08-28T13:54:27.419-07:00",
+                "detected_at": null,
+                "acknowledged_at": null,
+                "mitigated_at": "2025-08-28T13:57:12.573-07:00",
+                "resolved_at": "2025-08-28T13:57:12.573-07:00",
+                "closed_at": null,
+                "cancelled_at": null,
+                "created_at": "2025-08-28T13:54:27.445-07:00",
+                "updated_at": "2025-08-28T13:58:17.139-07:00",
+                "labels": {}
+            },
+            "relationships": {
+                "incident_post_mortem": {
+                    "data": {
+                        "id": "8fe0fac6-6414-4bf3-93d9-93c30d345b8b",
+                        "type": "incident_post_mortems"
+                    }
+                },
+                "causes": {
+                    "data": []
+                },
+                "subscribers": {
+                    "data": [
+                        {
+                            "id": "57281acc-7f0a-40fe-8675-3fad5c298eac",
+                            "type": "incident_subscribers"
+                        },
+                        {
+                            "id": "8a7944a1-6866-441e-b684-e9631f03d2fb",
+                            "type": "incident_subscribers"
+                        },
+                        {
+                            "id": "426f8cbc-acc2-43c7-8928-10c4f73f8463",
+                            "type": "incident_subscribers"
+                        },
+                        {
+                            "id": "fb923a46-5ee8-4f9c-8adb-cbce4989310f",
+                            "type": "incident_subscribers"
+                        }
+                    ]
+                },
+                "roles": {
+                    "data": [
+                        {
+                            "id": "2288f4f2-bde2-492e-b146-69cf720514ee",
+                            "type": "incident_role_assignments"
+                        },
+                        {
+                            "id": "d8f3431f-11fd-4be4-bff3-55e433a1b2c2",
+                            "type": "incident_role_assignments"
+                        },
+                        {
+                            "id": "c035f2ed-e57e-4db2-b826-96d023569b16",
+                            "type": "incident_role_assignments"
+                        }
+                    ]
+                },
+                "environments": {
+                    "data": []
+                },
+                "incident_types": {
+                    "data": []
+                },
+                "services": {
+                    "data": []
+                },
+                "functionalities": {
+                    "data": []
+                },
+                "groups": {
+                    "data": []
+                },
+                "events": {
+                    "data": [
+                        {
+                            "id": "a321855e-a9ad-48a1-b962-0041d68eeebb",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "ee93549b-70ff-46a5-8285-db061be458c5",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "d03d5f1b-bcfe-44d4-bdcb-a91bb8e37a6f",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "fc101c54-7df9-41a2-be40-d92ee576125b",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "44119517-18bb-4acc-a927-5ca88dcfaf99",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "ed24d888-6501-4412-b29d-4e7c7836925c",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "7786691d-d111-4e84-b227-e896c539916c",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "e8945681-2767-43fe-9e39-1f2c696b2857",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "74ac27cb-33cc-4646-be21-d24ca62b9160",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "ffdd6f0b-dcb6-418a-a073-b909cd6db4b4",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "0059679f-82ad-4fd8-8264-508649f3f59e",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "ae7367bd-1ae5-49f0-a54d-9f2fea8cd890",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "60b03761-1cf2-42f8-b7f9-41bec9e29325",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "10e5b35a-898c-4531-b437-e106c63c8c3e",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "5a320a70-3b74-4fb7-a6a5-a2c00199684f",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "9e0f803d-1531-4e2d-93c9-d8fc54889b68",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "b6dc597b-f66a-4703-a346-93fd8d001daf",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "e7cc3822-5f5a-4309-a843-0e51ab72b713",
+                            "type": "incident_events"
+                        },
+                        {
+                            "id": "739ec26e-c513-4bd5-85a9-f0b0a577abc7",
+                            "type": "incident_events"
+                        }
+                    ]
+                },
+                "action_items": {
+                    "data": [
+                        {
+                            "id": "8e39c30f-074c-4c57-a490-306db091ec8a",
+                            "type": "incident_action_items"
+                        },
+                        {
+                            "id": "bcff38d3-8e2e-4d31-9465-a7956206d094",
+                            "type": "incident_action_items"
+                        },
+                        {
+                            "id": "e049e28f-55d6-4bbf-a95d-2770baf3c50a",
+                            "type": "incident_action_items"
+                        },
+                        {
+                            "id": "1dc9602b-0a94-46ff-9a3c-8f84ea85dbe0",
+                            "type": "incident_action_items"
+                        }
+                    ]
+                },
+                "custom_field_selections": {
+                    "data": []
+                },
+                "feedbacks": {
+                    "data": []
+                },
+                "attachments": {
+                    "data": [
+                        {
+                            "id": "62298cc1-1b48-4751-b205-756f0d410ea3",
+                            "type": "incident_attachments"
+                        },
+                        {
+                            "id": "91023d10-4a5c-470f-a1b0-e261e47fd6e8",
+                            "type": "incident_attachments"
+                        }
+                    ]
+                },
+                "slack_messages": {
+                    "data": []
+                }
+            }
+        }
+    ],
+    "links": {
+        "self": "https://api.rootly.com/v1/incidents?fields%5Bincidents%5D=id%2Ctitle%2Csummary%2Cstatus%2Cseverity%2Ccreated_at%2Cupdated_at%2Curl%2Cstarted_at&include=&page%5Bnumber%5D=1&page%5Bsize%5D=2",
+        "first": "https://api.rootly.com/v1/incidents?fields%5Bincidents%5D=id%2Ctitle%2Csummary%2Cstatus%2Cseverity%2Ccreated_at%2Cupdated_at%2Curl%2Cstarted_at&include=&page%5Bnumber%5D=1&page%5Bsize%5D=2",
+        "prev": null,
+        "next": "https://api.rootly.com/v1/incidents?fields%5Bincidents%5D=id%2Ctitle%2Csummary%2Cstatus%2Cseverity%2Ccreated_at%2Cupdated_at%2Curl%2Cstarted_at&include=&page%5Bnumber%5D=2&page%5Bsize%5D=2",
+        "last": "https://api.rootly.com/v1/incidents?fields%5Bincidents%5D=id%2Ctitle%2Csummary%2Cstatus%2Cseverity%2Ccreated_at%2Cupdated_at%2Curl%2Cstarted_at&include=&page%5Bnumber%5D=1511&page%5Bsize%5D=2"
+    },
+    "meta": {
+        "current_page": 1,
+        "next_page": 2,
+        "prev_page": null,
+        "total_count": 3022,
+        "total_pages": 1511
+    }
+}
