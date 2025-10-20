@@ -768,7 +768,7 @@ def create_rootly_mcp_server(
                 params["user_ids[]"] = user_id_list
 
             # Include relationships for richer data
-            params["include"] = "user,shift_override"
+            params["include"] = "user,shift_override,on_call_role,schedule_rotation"
 
             # Query shifts
             try:
@@ -792,9 +792,12 @@ def create_rootly_mcp_server(
 
             # Build lookup maps for included resources
             users_map = {}
+            on_call_roles_map = {}
             for resource in included:
                 if resource.get("type") == "users":
                     users_map[resource.get("id")] = resource
+                elif resource.get("type") == "on_call_roles":
+                    on_call_roles_map[resource.get("id")] = resource
 
             # Calculate metrics
             metrics: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
@@ -802,6 +805,11 @@ def create_rootly_mcp_server(
                 "total_hours": 0.0,
                 "override_count": 0,
                 "regular_count": 0,
+                "primary_count": 0,
+                "secondary_count": 0,
+                "primary_hours": 0.0,
+                "secondary_hours": 0.0,
+                "unknown_role_count": 0,
                 "shifts": []
             })
 
@@ -836,6 +844,19 @@ def create_rootly_mcp_server(
                     user_name = user_attrs.get("full_name") or user_attrs.get("email", "Unknown")
                     user_email = user_attrs.get("email", "")
 
+                # Get on-call role info (primary vs secondary)
+                role_rel = relationships.get("on_call_role", {}).get("data") or {}
+                role_id = role_rel.get("id")
+                role_name = "unknown"
+                is_primary = False
+
+                if role_id and role_id in on_call_roles_map:
+                    role_attrs = on_call_roles_map[role_id].get("attributes", {})
+                    role_name = role_attrs.get("name", "").lower()
+                    # Typically primary roles contain "primary" and secondary contain "secondary"
+                    # Common patterns: "Primary", "Secondary", "L1", "L2", etc.
+                    is_primary = "primary" in role_name or role_name == "l1" or role_name == "p1"
+
                 # Determine grouping key
                 if group_by == "user":
                     key = f"{user_id}|{user_name}"
@@ -856,6 +877,17 @@ def create_rootly_mcp_server(
                 else:
                     metrics[key]["regular_count"] += 1
 
+                # Track primary vs secondary
+                if role_id:
+                    if is_primary:
+                        metrics[key]["primary_count"] += 1
+                        metrics[key]["primary_hours"] += duration_hours
+                    else:
+                        metrics[key]["secondary_count"] += 1
+                        metrics[key]["secondary_hours"] += duration_hours
+                else:
+                    metrics[key]["unknown_role_count"] += 1
+
                 metrics[key]["shifts"].append({
                     "shift_id": shift.get("id"),
                     "starts_at": starts_at,
@@ -865,7 +897,9 @@ def create_rootly_mcp_server(
                     "schedule_id": schedule_id,
                     "user_id": user_id,
                     "user_name": user_name,
-                    "user_email": user_email
+                    "user_email": user_email,
+                    "role_name": role_name,
+                    "is_primary": is_primary
                 })
 
             # Format results
@@ -880,6 +914,11 @@ def create_rootly_mcp_server(
                         "total_hours": round(data["total_hours"], 2),
                         "regular_shifts": data["regular_count"],
                         "override_shifts": data["override_count"],
+                        "primary_shifts": data["primary_count"],
+                        "secondary_shifts": data["secondary_count"],
+                        "primary_hours": round(data["primary_hours"], 2),
+                        "secondary_hours": round(data["secondary_hours"], 2),
+                        "unknown_role_shifts": data["unknown_role_count"],
                         "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
                     }
                 else:
@@ -889,6 +928,11 @@ def create_rootly_mcp_server(
                         "total_hours": round(data["total_hours"], 2),
                         "regular_shifts": data["regular_count"],
                         "override_shifts": data["override_count"],
+                        "primary_shifts": data["primary_count"],
+                        "secondary_shifts": data["secondary_count"],
+                        "primary_hours": round(data["primary_hours"], 2),
+                        "secondary_hours": round(data["secondary_hours"], 2),
+                        "unknown_role_shifts": data["unknown_role_count"],
                         "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
                     }
 
