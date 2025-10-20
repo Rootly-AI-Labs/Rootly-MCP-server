@@ -66,8 +66,17 @@ class TestDefaultConfiguration:
         with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
             mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}, "components": {"schemas": {}}}
             mock_load_spec.return_value = mock_spec
-            
+
             server = create_rootly_mcp_server()
-            
+
             # Server should be created successfully with defaults
             assert server is not None
+
+    def test_oncall_endpoints_in_defaults(self):
+        """Test that on-call endpoints are included in default paths."""
+        path_strings = [p.lower() for p in DEFAULT_ALLOWED_PATHS]
+
+        # Verify on-call related paths are included
+        assert any("schedule" in p for p in path_strings)
+        assert any("shift" in p for p in path_strings)
+        assert any("on_call" in p for p in path_strings)

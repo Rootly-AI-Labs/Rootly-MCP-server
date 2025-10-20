@@ -153,6 +153,22 @@ DEFAULT_ALLOWED_PATHS = [
     # Status pages
     "/status_pages",
     "/status_pages/{status_page_id}",
+    # On-call schedules and shifts
+    "/schedules",
+    "/schedules/{schedule_id}",
+    "/schedules/{schedule_id}/shifts",
+    "/shifts",
+    "/schedule_rotations/{schedule_rotation_id}",
+    "/schedule_rotations/{schedule_rotation_id}/schedule_rotation_users",
+    "/schedule_rotations/{schedule_rotation_id}/schedule_rotation_active_days",
+    # On-call overrides
+    "/schedules/{schedule_id}/override_shifts",
+    "/override_shifts/{override_shift_id}",
+    # On-call shadows and roles
+    "/schedules/{schedule_id}/on_call_shadows",
+    "/on_call_shadows/{on_call_shadow_id}",
+    "/on_call_roles",
+    "/on_call_roles/{on_call_role_id}",
 ]
 
 
@@ -684,6 +700,205 @@ def create_rootly_mcp_server(
         except Exception as e:
             error_type, error_message = MCPError.categorize_error(e)
             return MCPError.tool_error(f"Failed to suggest solutions: {error_message}", error_type)
+
+    @mcp.tool()
+    async def get_oncall_shift_metrics(
+        start_date: Annotated[str, Field(description="Start date for metrics (ISO 8601 format, e.g., '2025-10-01' or '2025-10-01T00:00:00Z')")],
+        end_date: Annotated[str, Field(description="End date for metrics (ISO 8601 format, e.g., '2025-10-31' or '2025-10-31T23:59:59Z')")],
+        user_ids: Annotated[str, Field(description="Comma-separated list of user IDs to filter by (optional)")] = "",
+        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs to filter by (optional)")] = "",
+        team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter by (requires querying schedules first)")] = "",
+        group_by: Annotated[str, Field(description="Group results by: 'user', 'schedule', 'team', or 'none'")] = "user"
+    ) -> dict:
+        """
+        Get on-call shift metrics for a specified time period. Returns shift counts, total hours,
+        and other statistics grouped by user, schedule, or team.
+
+        Examples:
+        - Monthly report: start_date='2025-10-01', end_date='2025-10-31'
+        - Specific user: start_date='2025-10-01', end_date='2025-10-31', user_ids='123,456'
+        - Specific team: team_ids='team-1' (will query schedules for that team first)
+        """
+        try:
+            from datetime import datetime
+            from collections import defaultdict
+
+            # Build query parameters
+            params = {
+                "from": start_date,
+                "to": end_date,
+            }
+
+            # Handle team filtering (requires multi-step query)
+            target_schedule_ids = []
+            if team_ids:
+                team_id_list = [tid.strip() for tid in team_ids.split(",") if tid.strip()]
+
+                # Query schedules to find those belonging to specified teams
+                schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100})
+                schedules_response.raise_for_status()
+                schedules_data = schedules_response.json()
+
+                all_schedules = schedules_data.get("data", [])
+                # Filter schedules by team (if schedule has team relationship)
+                for schedule in all_schedules:
+                    schedule_relationships = schedule.get("relationships", {})
+                    team_rel = schedule_relationships.get("team", {})
+                    team_data = team_rel.get("data", {})
+
+                    if team_data and str(team_data.get("id")) in team_id_list:
+                        target_schedule_ids.append(schedule.get("id"))
+
+            # Apply schedule filtering
+            if schedule_ids:
+                schedule_id_list = [sid.strip() for sid in schedule_ids.split(",") if sid.strip()]
+                target_schedule_ids.extend(schedule_id_list)
+
+            if target_schedule_ids:
+                params["schedule_ids[]"] = target_schedule_ids
+
+            # Apply user filtering
+            if user_ids:
+                user_id_list = [uid.strip() for uid in user_ids.split(",") if uid.strip()]
+                params["user_ids[]"] = user_id_list
+
+            # Include relationships for richer data
+            params["include"] = "user,shift_override"
+
+            # Query shifts
+            shifts_response = await make_authenticated_request("GET", "/v1/shifts", params=params)
+            shifts_response.raise_for_status()
+            shifts_data = shifts_response.json()
+
+            shifts = shifts_data.get("data", [])
+            included = shifts_data.get("included", [])
+
+            # Build lookup maps for included resources
+            users_map = {}
+            for resource in included:
+                if resource.get("type") == "users":
+                    users_map[resource.get("id")] = resource
+
+            # Calculate metrics
+            metrics = defaultdict(lambda: {
+                "shift_count": 0,
+                "total_hours": 0.0,
+                "override_count": 0,
+                "regular_count": 0,
+                "shifts": []
+            })
+
+            for shift in shifts:
+                attrs = shift.get("attributes", {})
+                relationships = shift.get("relationships", {})
+
+                # Parse timestamps
+                starts_at = attrs.get("starts_at")
+                ends_at = attrs.get("ends_at")
+                is_override = attrs.get("is_override", False)
+                schedule_id = attrs.get("schedule_id")
+
+                # Calculate shift duration in hours
+                duration_hours = 0.0
+                if starts_at and ends_at:
+                    try:
+                        start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                        end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
+                        duration_hours = (end_dt - start_dt).total_seconds() / 3600
+                    except:
+                        pass
+
+                # Get user info
+                user_rel = relationships.get("user", {}).get("data", {})
+                user_id = user_rel.get("id")
+                user_name = "Unknown"
+                user_email = ""
+
+                if user_id and user_id in users_map:
+                    user_attrs = users_map[user_id].get("attributes", {})
+                    user_name = user_attrs.get("full_name") or user_attrs.get("email", "Unknown")
+                    user_email = user_attrs.get("email", "")
+
+                # Determine grouping key
+                if group_by == "user":
+                    key = f"{user_id}|{user_name}"
+                elif group_by == "schedule":
+                    key = f"schedule_{schedule_id}"
+                elif group_by == "team":
+                    # Would need additional team info
+                    key = f"schedule_{schedule_id}"  # Fallback to schedule
+                else:
+                    key = "all"
+
+                # Update metrics
+                metrics[key]["shift_count"] += 1
+                metrics[key]["total_hours"] += duration_hours
+
+                if is_override:
+                    metrics[key]["override_count"] += 1
+                else:
+                    metrics[key]["regular_count"] += 1
+
+                metrics[key]["shifts"].append({
+                    "shift_id": shift.get("id"),
+                    "starts_at": starts_at,
+                    "ends_at": ends_at,
+                    "duration_hours": round(duration_hours, 2),
+                    "is_override": is_override,
+                    "schedule_id": schedule_id,
+                    "user_id": user_id,
+                    "user_name": user_name,
+                    "user_email": user_email
+                })
+
+            # Format results
+            results = []
+            for key, data in metrics.items():
+                if group_by == "user":
+                    user_id, user_name = key.split("|", 1)
+                    result = {
+                        "user_id": user_id,
+                        "user_name": user_name,
+                        "shift_count": data["shift_count"],
+                        "total_hours": round(data["total_hours"], 2),
+                        "regular_shifts": data["regular_count"],
+                        "override_shifts": data["override_count"],
+                        "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
+                    }
+                else:
+                    result = {
+                        "group_key": key,
+                        "shift_count": data["shift_count"],
+                        "total_hours": round(data["total_hours"], 2),
+                        "regular_shifts": data["regular_count"],
+                        "override_shifts": data["override_count"],
+                        "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
+                    }
+
+                results.append(result)
+
+            # Sort by shift count descending
+            results.sort(key=lambda x: x["shift_count"], reverse=True)
+
+            return {
+                "period": {
+                    "start_date": start_date,
+                    "end_date": end_date
+                },
+                "total_shifts": len(shifts),
+                "grouped_by": group_by,
+                "metrics": results,
+                "summary": {
+                    "total_hours": round(sum(m["total_hours"] for m in results), 2),
+                    "total_regular_shifts": sum(m["regular_shifts"] for m in results),
+                    "total_override_shifts": sum(m["override_shifts"] for m in results),
+                    "unique_people": len(results) if group_by == "user" else None
+                }
+            }
+
+        except Exception as e:
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(f"Failed to get on-call shift metrics: {error_message}", error_type, details={"params": {"start_date": start_date, "end_date": end_date}})
 
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
