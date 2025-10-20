@@ -21,7 +21,10 @@ async def example_monthly_report():
     tools = await server.get_tools()
     metrics_tool = None
     for tool in tools:
-        tool_name = tool.name if hasattr(tool, 'name') else str(tool)
+        if hasattr(tool, 'name'):
+            tool_name = tool.name  # type: ignore[attr-defined]
+        else:
+            tool_name = str(tool)
         if tool_name == "get_oncall_shift_metrics":
             metrics_tool = tool
             break
