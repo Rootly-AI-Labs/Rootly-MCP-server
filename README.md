@@ -215,8 +215,8 @@ Example good resolution summary: `"Restarted auth-service, cleared Redis cache, 
 
 ### On-Call Shift Metrics
 
-#### `get_oncall_shift_metrics`
-Get on-call shift metrics and statistics for a specified time period:
+Get on-call shift metrics for any time period, grouped by user, team, or schedule. Includes primary/secondary role tracking, shift counts, hours, and days on-call.
+
 ```
 get_oncall_shift_metrics(
     start_date="2025-10-01",
@@ -225,79 +225,7 @@ get_oncall_shift_metrics(
 )
 ```
 
-**Parameters**:
-- `start_date` (required): Start date in ISO 8601 format (e.g., "2025-10-01" or "2025-10-01T00:00:00Z")
-- `end_date` (required): End date in ISO 8601 format
-- `user_ids` (optional): Comma-separated list of user IDs to filter
-- `schedule_ids` (optional): Comma-separated list of schedule IDs to filter
-- `team_ids` (optional): Comma-separated list of team IDs (queries schedules for that team)
-- `group_by` (optional): Group results by "user", "schedule", "team", or "none" (default: "user")
-
-**Output**: Returns aggregated metrics including:
-- Shift counts (total, regular, override)
-- Total hours and average hours per shift
-- Per-user/schedule/team breakdowns
-- Period summary statistics
-
-**Use Cases**:
-- Monthly on-call compensation reports
-- Track on-call workload distribution
-- Identify team members with high shift counts
-- Analyze override vs regular shift patterns
-- Generate time-period reports for HR/Finance
-
-**Example - Monthly report for specific users**:
-```
-get_oncall_shift_metrics(
-    start_date="2025-10-01",
-    end_date="2025-10-31",
-    user_ids="123,456,789",
-    group_by="user"
-)
-```
-
-**Example - Quarterly report by team**:
-```
-get_oncall_shift_metrics(
-    start_date="2025-10-01",
-    end_date="2025-12-31",
-    team_ids="team-backend,team-frontend",
-    group_by="team"
-)
-```
-
-**How to Use:**
-
-1. **Via AI Assistant (Claude Desktop, Cline, etc.)**
-
-   Simply ask in natural language:
-   ```
-   "Show me on-call shift metrics for October 2025"
-   "Get shift stats for user 123 from Oct 1 to Oct 31"
-   "How many on-call hours did the backend team work in Q4?"
-   ```
-
-   The AI will automatically call the tool with appropriate parameters.
-
-2. **Via MCP Client Programmatically**
-   ```python
-   result = await mcp_client.call_tool(
-       "get_oncall_shift_metrics",
-       {
-           "start_date": "2025-10-01",
-           "end_date": "2025-10-31",
-           "group_by": "user"
-       }
-   )
-   ```
-
-3. **See Full Examples**
-
-   Check [examples/oncall_metrics_example.py](examples/oncall_metrics_example.py) for detailed usage patterns including:
-   - Monthly compensation reports
-   - Workload distribution analysis
-   - Team performance metrics
-   - Holiday coverage tracking
+See [examples/oncall_metrics_example.py](examples/oncall_metrics_example.py) for detailed usage patterns.
 
 ## About Rootly AI Labs
 
