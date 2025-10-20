@@ -730,29 +730,52 @@ def create_rootly_mcp_server(
                 "to": end_date,
             }
 
+            # Fetch schedules with team relationships for mapping
+            schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100, "include": "team"})
+
+            if schedules_response is None:
+                return MCPError.tool_error("Failed to get schedules: API request returned None", "execution_error")
+
+            schedules_response.raise_for_status()
+            schedules_data = schedules_response.json()
+
+            all_schedules = schedules_data.get("data", [])
+            schedule_included = schedules_data.get("included", [])
+
+            # Build schedule -> team mapping and team lookup
+            schedule_to_team_map = {}
+            teams_map = {}
+
+            for resource in schedule_included:
+                if resource.get("type") == "teams":
+                    teams_map[resource.get("id")] = resource
+
+            for schedule in all_schedules:
+                schedule_id = schedule.get("id")
+                schedule_name = schedule.get("attributes", {}).get("name", "Unknown")
+                schedule_relationships = schedule.get("relationships", {})
+                team_rel = schedule_relationships.get("team", {})
+                team_data = team_rel.get("data") or {}
+                team_id = team_data.get("id")
+
+                if team_id:
+                    team_attrs = teams_map.get(team_id, {}).get("attributes", {})
+                    team_name = team_attrs.get("name", "Unknown Team")
+                    schedule_to_team_map[schedule_id] = {
+                        "team_id": team_id,
+                        "team_name": team_name,
+                        "schedule_name": schedule_name
+                    }
+
             # Handle team filtering (requires multi-step query)
             target_schedule_ids = []
             if team_ids:
                 team_id_list = [tid.strip() for tid in team_ids.split(",") if tid.strip()]
 
-                # Query schedules to find those belonging to specified teams
-                schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100})
-
-                if schedules_response is None:
-                    return MCPError.tool_error("Failed to get schedules: API request returned None", "execution_error")
-
-                schedules_response.raise_for_status()
-                schedules_data = schedules_response.json()
-
-                all_schedules = schedules_data.get("data", [])
-                # Filter schedules by team (if schedule has team relationship)
-                for schedule in all_schedules:
-                    schedule_relationships = schedule.get("relationships", {})
-                    team_rel = schedule_relationships.get("team", {})
-                    team_data = team_rel.get("data") or {}
-
-                    if team_data and str(team_data.get("id")) in team_id_list:
-                        target_schedule_ids.append(schedule.get("id"))
+                # Filter schedules by team
+                for schedule_id, team_info in schedule_to_team_map.items():
+                    if str(team_info["team_id"]) in team_id_list:
+                        target_schedule_ids.append(schedule_id)
 
             # Apply schedule filtering
             if schedule_ids:
@@ -870,10 +893,17 @@ def create_rootly_mcp_server(
                 if group_by == "user":
                     key = f"{user_id}|{user_name}"
                 elif group_by == "schedule":
-                    key = f"schedule_{schedule_id}"
+                    schedule_info = schedule_to_team_map.get(schedule_id, {})
+                    schedule_name = schedule_info.get("schedule_name", f"schedule_{schedule_id}")
+                    key = f"{schedule_id}|{schedule_name}"
                 elif group_by == "team":
-                    # Would need additional team info
-                    key = f"schedule_{schedule_id}"  # Fallback to schedule
+                    team_info = schedule_to_team_map.get(schedule_id, {})
+                    if team_info:
+                        team_id = team_info["team_id"]
+                        team_name = team_info["team_name"]
+                        key = f"{team_id}|{team_name}"
+                    else:
+                        key = "unknown_team|Unknown Team"
                 else:
                     key = "all"
 
@@ -922,6 +952,40 @@ def create_rootly_mcp_server(
                     result = {
                         "user_id": user_id,
                         "user_name": user_name,
+                        "shift_count": data["shift_count"],
+                        "days_on_call": len(data["unique_days"]),
+                        "total_hours": round(data["total_hours"], 2),
+                        "regular_shifts": data["regular_count"],
+                        "override_shifts": data["override_count"],
+                        "primary_shifts": data["primary_count"],
+                        "secondary_shifts": data["secondary_count"],
+                        "primary_hours": round(data["primary_hours"], 2),
+                        "secondary_hours": round(data["secondary_hours"], 2),
+                        "unknown_role_shifts": data["unknown_role_count"],
+                        "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
+                    }
+                elif group_by == "schedule":
+                    schedule_id, schedule_name = key.split("|", 1)
+                    result = {
+                        "schedule_id": schedule_id,
+                        "schedule_name": schedule_name,
+                        "shift_count": data["shift_count"],
+                        "days_on_call": len(data["unique_days"]),
+                        "total_hours": round(data["total_hours"], 2),
+                        "regular_shifts": data["regular_count"],
+                        "override_shifts": data["override_count"],
+                        "primary_shifts": data["primary_count"],
+                        "secondary_shifts": data["secondary_count"],
+                        "primary_hours": round(data["primary_hours"], 2),
+                        "secondary_hours": round(data["secondary_hours"], 2),
+                        "unknown_role_shifts": data["unknown_role_count"],
+                        "average_shift_hours": round(data["total_hours"] / data["shift_count"], 2) if data["shift_count"] > 0 else 0,
+                    }
+                elif group_by == "team":
+                    team_id, team_name = key.split("|", 1)
+                    result = {
+                        "team_id": team_id,
+                        "team_name": team_name,
                         "shift_count": data["shift_count"],
                         "days_on_call": len(data["unique_days"]),
                         "total_hours": round(data["total_hours"], 2),
