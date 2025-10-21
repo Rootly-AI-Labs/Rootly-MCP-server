@@ -1269,6 +1269,129 @@ def create_rootly_mcp_server(
                 }
             )
 
+    @mcp.tool()
+    async def get_shift_incidents(
+        start_time: Annotated[str, Field(description="Start time for incident search (ISO 8601 format, e.g., '2025-10-01T00:00:00Z')")],
+        end_time: Annotated[str, Field(description="End time for incident search (ISO 8601 format, e.g., '2025-10-01T23:59:59Z')")],
+        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs to filter incidents (optional)")] = "",
+        severity: Annotated[str, Field(description="Filter by severity: 'critical', 'high', 'medium', 'low' (optional)")] = ""
+    ) -> dict:
+        """
+        Get incidents and alerts that occurred during a specific shift or time period.
+
+        Useful for:
+        - Shift handoff summaries showing what happened during the shift
+        - Post-shift debriefs and reporting
+        - Incident analysis by time period
+        - Understanding team workload during specific shifts
+
+        Returns incident details including severity, status, duration, and basic summary.
+        """
+        try:
+            from datetime import datetime
+
+            # Build query parameters
+            params = {
+                "filter[created_at][gte]": start_time,
+                "filter[created_at][lte]": end_time,
+                "page[size]": 100,
+                "sort": "-created_at"
+            }
+
+            # Add severity filter if provided
+            if severity:
+                params["filter[severity]"] = severity.lower()
+
+            # Query incidents
+            incidents_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
+
+            if not incidents_response:
+                return MCPError.tool_error("Failed to fetch incidents", "execution_error")
+
+            incidents_response.raise_for_status()
+            incidents_data = incidents_response.json()
+            all_incidents = incidents_data.get("data", [])
+
+            # Format incidents for handoff summary
+            incidents_summary = []
+            for incident in all_incidents:
+                incident_id = incident.get("id")
+                attrs = incident.get("attributes", {})
+
+                # Calculate duration if resolved
+                started_at = attrs.get("started_at")
+                resolved_at = attrs.get("resolved_at")
+                duration_minutes = None
+
+                if started_at and resolved_at:
+                    try:
+                        start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+                        end_dt = datetime.fromisoformat(resolved_at.replace("Z", "+00:00"))
+                        duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
+                    except (ValueError, AttributeError):
+                        pass
+
+                incidents_summary.append({
+                    "incident_id": incident_id,
+                    "title": attrs.get("title", "Untitled Incident"),
+                    "severity": attrs.get("severity"),
+                    "status": attrs.get("status"),
+                    "started_at": started_at,
+                    "resolved_at": resolved_at,
+                    "duration_minutes": duration_minutes,
+                    "summary": attrs.get("summary"),
+                    "impact": attrs.get("customer_impact_summary"),
+                    "incident_url": attrs.get("incident_url")
+                })
+
+            # Group by severity
+            by_severity = {}
+            for inc in incidents_summary:
+                sev = inc["severity"] or "unknown"
+                if sev not in by_severity:
+                    by_severity[sev] = []
+                by_severity[sev].append(inc)
+
+            # Calculate statistics
+            total_incidents = len(incidents_summary)
+            resolved_count = sum(1 for inc in incidents_summary if inc["resolved_at"])
+            ongoing_count = total_incidents - resolved_count
+
+            avg_resolution_time = None
+            durations = [inc["duration_minutes"] for inc in incidents_summary if inc["duration_minutes"]]
+            if durations:
+                avg_resolution_time = int(sum(durations) / len(durations))
+
+            return {
+                "success": True,
+                "period": {
+                    "start_time": start_time,
+                    "end_time": end_time
+                },
+                "summary": {
+                    "total_incidents": total_incidents,
+                    "resolved": resolved_count,
+                    "ongoing": ongoing_count,
+                    "average_resolution_minutes": avg_resolution_time,
+                    "by_severity": {k: len(v) for k, v in by_severity.items()}
+                },
+                "incidents": incidents_summary
+            }
+
+        except Exception as e:
+            import traceback
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(
+                f"Failed to get shift incidents: {error_message}",
+                error_type,
+                details={
+                    "params": {"start_time": start_time, "end_time": end_time},
+                    "exception_type": type(e).__name__,
+                    "exception_str": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            )
+
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
     async def get_incident_resource(incident_id: str):
