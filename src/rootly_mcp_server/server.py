@@ -1056,12 +1056,15 @@ def create_rootly_mcp_server(
     async def get_oncall_handoff_summary(
         team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
         schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional)")] = "",
-        timezone: Annotated[str, Field(description="Timezone to use for display and filtering (e.g., 'America/Los_Angeles', 'Europe/London', 'Asia/Tokyo'). Defaults to UTC.")] = "UTC",
+        timezone: Annotated[str, Field(description="Timezone to use for display and filtering (e.g., 'America/Los_Angeles', 'Europe/London', 'Asia/Tokyo'). IMPORTANT: If user mentions a city, location, or region (e.g., 'Toronto', 'APAC', 'my time'), infer the appropriate IANA timezone. Defaults to UTC if not specified.")] = "UTC",
         filter_by_region: Annotated[bool, Field(description="If True, only show on-call for people whose shifts are during business hours (9am-5pm) in the specified timezone. Defaults to False.")] = False
     ) -> dict:
         """
         Get current on-call handoff summary with incidents. Shows who's currently on-call,
-        who's next, and all incidents that occurred during the current shifts.
+        who's next, and all incidents (both created during shift AND currently active).
+
+        Timezone handling: If user mentions their location/timezone, infer it (e.g., "Toronto" → "America/Toronto",
+        "my time" → ask clarifying question or use a common timezone).
 
         Regional filtering: Use timezone + filter_by_region=True to see only people on-call
         during business hours in that region (e.g., timezone='Asia/Tokyo', filter_by_region=True
@@ -1393,12 +1396,17 @@ def create_rootly_mcp_server(
             from datetime import datetime
 
             # Build query parameters
+            # Fetch incidents that:
+            # 1. Were created during the shift (created_at in range)
+            # 2. OR are currently active/unresolved (started but not resolved yet)
             params = {
-                "filter[created_at][gte]": start_time,
-                "filter[created_at][lte]": end_time,
                 "page[size]": 100,
                 "sort": "-created_at"
             }
+
+            # Get incidents created during shift OR still active
+            # We'll fetch all incidents and filter in-memory for active ones
+            params["filter[started_at][lte]"] = end_time  # Started before shift ended
 
             # Add severity filter if provided
             if severity:
@@ -1450,24 +1458,51 @@ def create_rootly_mcp_server(
 
                 page += 1
 
+            # Filter incidents to include:
+            # 1. Created during shift (created_at between start_time and end_time)
+            # 2. Currently active (started but not resolved, regardless of when created)
+            from datetime import timezone as dt_timezone
+            shift_start_dt = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+            shift_end_dt = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+            now_dt = datetime.now(dt_timezone.utc)
+
             # Format incidents for handoff summary
             incidents_summary = []
             for incident in all_incidents:
                 incident_id = incident.get("id")
                 attrs = incident.get("attributes", {})
 
-                # Calculate duration if resolved
+                # Check if incident is relevant to this shift
+                created_at = attrs.get("created_at")
                 started_at = attrs.get("started_at")
                 resolved_at = attrs.get("resolved_at")
-                duration_minutes = None
 
-                if started_at and resolved_at:
-                    try:
-                        start_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-                        end_dt = datetime.fromisoformat(resolved_at.replace("Z", "+00:00"))
-                        duration_minutes = int((end_dt - start_dt).total_seconds() / 60)
-                    except (ValueError, AttributeError):
-                        pass
+                # Parse timestamps
+                try:
+                    created_dt = datetime.fromisoformat(created_at.replace("Z", "+00:00")) if created_at else None
+                    started_dt = datetime.fromisoformat(started_at.replace("Z", "+00:00")) if started_at else None
+                    resolved_dt = datetime.fromisoformat(resolved_at.replace("Z", "+00:00")) if resolved_at else None
+                except (ValueError, AttributeError):
+                    continue  # Skip if we can't parse dates
+
+                # Include incident if:
+                # 1. Created during shift
+                # 2. OR currently active (not resolved and started before now)
+                include_incident = False
+
+                if created_dt and shift_start_dt <= created_dt <= shift_end_dt:
+                    include_incident = True  # Created during shift
+
+                if not resolved_dt and started_dt and started_dt <= now_dt:
+                    include_incident = True  # Currently active
+
+                if not include_incident:
+                    continue
+
+                # Calculate duration if resolved
+                duration_minutes = None
+                if started_dt and resolved_dt:
+                    duration_minutes = int((resolved_dt - started_dt).total_seconds() / 60)
 
                 # Build narrative summary
                 narrative_parts = []
