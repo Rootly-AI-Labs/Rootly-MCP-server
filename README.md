@@ -235,6 +235,18 @@ get_oncall_handoff_summary(
 )
 ```
 
+### Shift Incidents Summary
+
+Get all incidents that occurred during a specific shift or time period. Useful for shift handoffs and post-shift debriefs.
+
+```
+get_shift_incidents(
+    start_time="2025-10-20T09:00:00Z",
+    end_time="2025-10-20T17:00:00Z",
+    severity="critical"  # optional
+)
+```
+
 ## About Rootly AI Labs
 
 This project was developed by [Rootly AI Labs](https://labs.rootly.ai/), where we're building the future of system reliability and operational excellence. As an open-source incubator, we share ideas, experiment, and rapidly prototype solutions that benefit the entire community.
