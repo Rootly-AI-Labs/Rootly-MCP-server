@@ -1056,14 +1056,11 @@ def create_rootly_mcp_server(
     async def get_oncall_handoff_summary(
         team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
         schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional)")] = "",
-        timezone: Annotated[str, Field(description="Convert times to this timezone (e.g., 'America/Los_Angeles', 'Europe/London'). Defaults to UTC.")] = "UTC",
-        include_incidents: Annotated[bool, Field(description="Include incidents that occurred during current shifts. Defaults to False.")] = False
+        timezone: Annotated[str, Field(description="Convert times to this timezone (e.g., 'America/Los_Angeles', 'Europe/London'). Defaults to UTC.")] = "UTC"
     ) -> dict:
         """
-        Get current on-call status for handoff summaries. Shows who's currently on-call
-        and who's next for each schedule/team (region).
-
-        Optionally includes incidents that occurred during the current shifts.
+        Get current on-call handoff summary with incidents. Shows who's currently on-call,
+        who's next, and all incidents that occurred during the current shifts.
 
         Useful for:
         - Daily handoff meetings
@@ -1294,26 +1291,25 @@ def create_rootly_mcp_server(
 
                 handoff_data.append(schedule_info)
 
-            # If incidents requested, fetch them for each current shift
-            if include_incidents:
-                for schedule_info in handoff_data:
-                    current_oncall = schedule_info.get("current_oncall")
-                    if current_oncall:
-                        shift_start = current_oncall["starts_at"]
-                        shift_end = current_oncall["ends_at"]
+            # Fetch incidents for each current shift
+            for schedule_info in handoff_data:
+                current_oncall = schedule_info.get("current_oncall")
+                if current_oncall:
+                    shift_start = current_oncall["starts_at"]
+                    shift_end = current_oncall["ends_at"]
 
-                        incidents_result = await get_shift_incidents(  # type: ignore[misc]
-                            start_time=shift_start,
-                            end_time=shift_end,
-                            schedule_ids="",
-                            severity="",
-                            status="",
-                            tags=""
-                        )
+                    incidents_result = await get_shift_incidents(  # type: ignore[misc]
+                        start_time=shift_start,
+                        end_time=shift_end,
+                        schedule_ids="",
+                        severity="",
+                        status="",
+                        tags=""
+                    )
 
-                        schedule_info["shift_incidents"] = incidents_result if incidents_result.get("success") else None
-                    else:
-                        schedule_info["shift_incidents"] = None
+                    schedule_info["shift_incidents"] = incidents_result if incidents_result.get("success") else None
+                else:
+                    schedule_info["shift_incidents"] = None
 
             return {
                 "success": True,
@@ -1327,8 +1323,8 @@ def create_rootly_mcp_server(
                     "total_incidents": sum(
                         s.get("shift_incidents", {}).get("summary", {}).get("total_incidents", 0)
                         for s in handoff_data
-                        if include_incidents and s.get("shift_incidents")
-                    ) if include_incidents else None
+                        if s.get("shift_incidents")
+                    )
                 }
             }
 

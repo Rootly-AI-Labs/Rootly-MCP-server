@@ -232,23 +232,16 @@ get_oncall_shift_metrics(
 
 ### On-Call Handoff Summary
 
-Shows current and next on-call per schedule/team. Optionally includes incidents.
+Complete handoff: current/next on-call + incidents during shifts.
 
 ```python
-# Basic roster
 get_oncall_handoff_summary(
     team_ids="team-1,team-2",
     timezone="America/Los_Angeles"
 )
-
-# With incidents (complete handoff)
-get_oncall_handoff_summary(
-    timezone="America/New_York",
-    include_incidents=True
-)
 ```
 
-Returns: `schedules` with `current_oncall`, `next_oncall`, and optionally `shift_incidents`
+Returns: `schedules` with `current_oncall`, `next_oncall`, and `shift_incidents`
 
 ### Shift Incidents
 
