@@ -247,6 +247,18 @@ get_shift_incidents(
 )
 ```
 
+### Complete Shift Handoff Report (Automated)
+
+Get complete handoff report with on-call status AND incidents - automatically determines shift times, no manual input needed.
+
+```
+get_shift_handoff_report(
+    team_ids="team-1"  # optional
+)
+```
+
+Returns: Current on-call, next on-call, and all incidents that occurred during the current shift for each schedule.
+
 ## About Rootly AI Labs
 
 This project was developed by [Rootly AI Labs](https://labs.rootly.ai/), where we're building the future of system reliability and operational excellence. As an open-source incubator, we share ideas, experiment, and rapidly prototype solutions that benefit the entire community.
