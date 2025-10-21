@@ -1392,6 +1392,97 @@ def create_rootly_mcp_server(
                 }
             )
 
+    @mcp.tool()
+    async def get_shift_handoff_report(
+        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional, defaults to all schedules)")] = "",
+        team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = ""
+    ) -> dict:
+        """
+        Get complete shift handoff report with current on-call status AND incidents from their shift.
+        Automatically determines shift times and fetches relevant incidents.
+
+        Useful for:
+        - Complete shift handoffs without manually specifying times
+        - Daily standup summaries
+        - Regional handoff meetings with automatic context
+
+        Returns on-call status + incidents that occurred during current shifts.
+        """
+        try:
+            # First, get current on-call status to determine shift times
+            handoff_result = await get_oncall_handoff_summary.__wrapped__(team_ids=team_ids, schedule_ids=schedule_ids)  # type: ignore
+
+            if not handoff_result.get("success"):
+                return handoff_result  # Return error from handoff summary
+
+            schedules = handoff_result.get("schedules", [])
+
+            # For each schedule with current on-call, fetch incidents during their shift
+            shift_reports = []
+            for schedule_info in schedules:
+                current_oncall = schedule_info.get("current_oncall")
+
+                if not current_oncall:
+                    # No one currently on-call, skip
+                    shift_reports.append({
+                        "schedule_id": schedule_info["schedule_id"],
+                        "schedule_name": schedule_info["schedule_name"],
+                        "team_name": schedule_info["team_name"],
+                        "current_oncall": None,
+                        "next_oncall": schedule_info.get("next_oncall"),
+                        "shift_incidents": None,
+                        "message": "No one currently on-call"
+                    })
+                    continue
+
+                # Get incidents during this person's shift
+                shift_start = current_oncall["starts_at"]
+                shift_end = current_oncall["ends_at"]
+
+                incidents_result = await get_shift_incidents.__wrapped__(  # type: ignore
+                    start_time=shift_start,
+                    end_time=shift_end,
+                    schedule_ids="",
+                    severity=""
+                )
+
+                shift_reports.append({
+                    "schedule_id": schedule_info["schedule_id"],
+                    "schedule_name": schedule_info["schedule_name"],
+                    "team_name": schedule_info["team_name"],
+                    "current_oncall": current_oncall,
+                    "next_oncall": schedule_info.get("next_oncall"),
+                    "shift_incidents": incidents_result if incidents_result.get("success") else None
+                })
+
+            return {
+                "success": True,
+                "timestamp": handoff_result["timestamp"],
+                "shift_reports": shift_reports,
+                "summary": {
+                    "total_schedules": len(shift_reports),
+                    "schedules_with_current_oncall": sum(1 for s in shift_reports if s["current_oncall"]),
+                    "total_incidents_during_shifts": sum(
+                        s.get("shift_incidents", {}).get("summary", {}).get("total_incidents", 0)
+                        for s in shift_reports
+                        if s.get("shift_incidents")
+                    )
+                }
+            }
+
+        except Exception as e:
+            import traceback
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(
+                f"Failed to get shift handoff report: {error_message}",
+                error_type,
+                details={
+                    "exception_type": type(e).__name__,
+                    "exception_str": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            )
+
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
     async def get_incident_resource(incident_id: str):
