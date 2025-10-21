@@ -150,6 +150,12 @@ Alternatively, connect directly to our hosted MCP server:
 - `find_related_incidents`
 - `suggest_solutions`
 
+**On-Call**
+- `get_oncall_shift_metrics`
+- `get_oncall_handoff_summary`
+- `get_shift_incidents`
+- `get_shift_handoff_report`
+
 **Services & Severities**
 - `listServices`
 - `createService`
@@ -162,7 +168,7 @@ Alternatively, connect directly to our hosted MCP server:
 - `listUsers`
 - `getCurrentUser`
 
-**Endpoints**
+**Meta**
 - `list_endpoints`
 
 ### Why Path Limiting?
@@ -227,113 +233,49 @@ get_oncall_shift_metrics(
 
 ### On-Call Handoff Summary
 
-Get current on-call status for handoff meetings. Shows who's currently on-call and who's next for each schedule/team.
-
-**Features:**
-- Timezone conversion support
-- Pagination for large schedules
-- Team and schedule filtering
+Shows current and next on-call per schedule/team.
 
 ```python
 get_oncall_handoff_summary(
-    team_ids="team-1,team-2",  # optional
-    timezone="America/Los_Angeles"  # optional, defaults to UTC
+    team_ids="team-1,team-2",
+    timezone="America/Los_Angeles"  # optional
 )
 ```
 
-**Response example:**
-```json
-{
-  "success": true,
-  "timestamp": "2025-10-21T14:30:00-07:00",
-  "timezone": "America/Los_Angeles",
-  "schedules": [
-    {
-      "schedule_name": "Backend On-Call",
-      "team_name": "Engineering",
-      "current_oncall": {
-        "user_name": "John Doe",
-        "role": "Primary",
-        "starts_at": "2025-10-21T09:00:00-07:00",
-        "ends_at": "2025-10-21T17:00:00-07:00"
-      },
-      "next_oncall": {
-        "user_name": "Jane Smith",
-        "starts_at": "2025-10-21T17:00:00-07:00"
-      }
-    }
-  ]
-}
-```
+Returns: `schedules` with `current_oncall` and `next_oncall` (user, role, shift times)
 
-### Shift Incidents Summary
+### Shift Incidents
 
-Get all incidents that occurred during a specific shift or time period. Useful for shift handoffs and post-shift debriefs.
-
-**Features:**
-- Advanced filtering (severity, status, tags)
-- Automatic pagination for large result sets
-- Statistics and grouping by severity
+Incidents during a time period, with filtering by severity/status/tags.
 
 ```python
 get_shift_incidents(
     start_time="2025-10-20T09:00:00Z",
     end_time="2025-10-20T17:00:00Z",
-    severity="critical",  # optional: critical, high, medium, low
-    status="resolved",  # optional: started, investigating, resolved, etc.
-    tags="database,api"  # optional: comma-separated tags
+    severity="critical",  # optional
+    status="resolved",    # optional
+    tags="database,api"   # optional
 )
 ```
 
-**Response example:**
-```json
-{
-  "success": true,
-  "summary": {
-    "total_incidents": 5,
-    "resolved": 4,
-    "ongoing": 1,
-    "average_resolution_minutes": 45,
-    "by_severity": {"critical": 2, "high": 3}
-  },
-  "incidents": [
-    {
-      "title": "Database Connection Timeout",
-      "severity": "critical",
-      "status": "resolved",
-      "duration_minutes": 32,
-      "incident_url": "https://..."
-    }
-  ]
-}
-```
+Returns: `incidents` list + `summary` (counts, avg resolution time, grouping)
 
-### Complete Shift Handoff Report (Automated)
+### Complete Handoff Report
 
-Get complete handoff report with on-call status AND incidents. Two modes:
+Combines on-call status + incidents. Auto mode or custom time range.
 
-**Features:**
-- Auto-detects current shifts or use custom time range
-- Combines on-call status with incident data
-- Timezone support
-
-**Auto mode** (uses current shifts automatically):
 ```python
-get_shift_handoff_report(
-    timezone="America/New_York"  # optional
-)
-```
+# Current shifts
+get_shift_handoff_report(timezone="America/New_York")
 
-**Custom time period** (for historical handoffs):
-```python
+# Historical
 get_shift_handoff_report(
     start_time="2025-10-20T09:00:00Z",
-    end_time="2025-10-20T17:00:00Z",
-    timezone="Europe/London"  # optional
+    end_time="2025-10-20T17:00:00Z"
 )
 ```
 
-Returns: Current on-call, next on-call, and all incidents during the shift(s).
+Returns: `shift_reports` with on-call info and incidents per schedule
 
 ## About Rootly AI Labs
 
