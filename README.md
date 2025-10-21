@@ -249,15 +249,22 @@ get_shift_incidents(
 
 ### Complete Shift Handoff Report (Automated)
 
-Get complete handoff report with on-call status AND incidents - automatically determines shift times, no manual input needed.
+Get complete handoff report with on-call status AND incidents. Two modes:
 
+**Auto mode** (uses current shifts automatically):
+```
+get_shift_handoff_report()
+```
+
+**Custom time period** (for historical handoffs):
 ```
 get_shift_handoff_report(
-    team_ids="team-1"  # optional
+    start_time="2025-10-20T09:00:00Z",
+    end_time="2025-10-20T17:00:00Z"
 )
 ```
 
-Returns: Current on-call, next on-call, and all incidents that occurred during the current shift for each schedule.
+Returns: Current on-call, next on-call, and all incidents during the shift(s).
 
 ## About Rootly AI Labs
 
