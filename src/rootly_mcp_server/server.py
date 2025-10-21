@@ -1302,18 +1302,33 @@ def create_rootly_mcp_server(
                 business_start_hour = 9
                 business_end_hour = 17
 
-                # Get current time in target timezone
-                current_time_in_tz = now
-                current_hour = current_time_in_tz.hour
+                # Create datetime objects for today's business hours in target timezone
+                today_business_start = now.replace(hour=business_start_hour, minute=0, second=0, microsecond=0)
+                today_business_end = now.replace(hour=business_end_hour, minute=0, second=0, microsecond=0)
 
-                # Check if we're currently in business hours
-                if business_start_hour <= current_hour < business_end_hour:
-                    # Keep only schedules where someone is currently on-call
-                    # (they're on-call during business hours in this region)
-                    handoff_data = [s for s in handoff_data if s.get("current_oncall")]
-                else:
-                    # Outside business hours - no one should be filtered in
-                    handoff_data = []
+                # Filter schedules where current shift overlaps with business hours
+                filtered_data = []
+                for schedule_info in handoff_data:
+                    current_oncall = schedule_info.get("current_oncall")
+                    if current_oncall:
+                        # Parse shift times (already in target timezone)
+                        shift_start_str = current_oncall.get("starts_at")
+                        shift_end_str = current_oncall.get("ends_at")
+
+                        if shift_start_str and shift_end_str:
+                            try:
+                                shift_start = datetime.fromisoformat(shift_start_str.replace("Z", "+00:00"))
+                                shift_end = datetime.fromisoformat(shift_end_str.replace("Z", "+00:00"))
+
+                                # Check if shift overlaps with today's business hours
+                                # Shift overlaps if: shift_start < business_end AND shift_end > business_start
+                                if shift_start < today_business_end and shift_end > today_business_start:
+                                    filtered_data.append(schedule_info)
+                            except (ValueError, AttributeError):
+                                # Skip if we can't parse times
+                                continue
+
+                handoff_data = filtered_data
 
             # Fetch incidents for each current shift
             for schedule_info in handoff_data:
