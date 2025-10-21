@@ -1298,7 +1298,7 @@ def create_rootly_mcp_server(
                     shift_start = current_oncall["starts_at"]
                     shift_end = current_oncall["ends_at"]
 
-                    incidents_result = await get_shift_incidents(  # type: ignore[misc]
+                    incidents_result = await _fetch_shift_incidents_internal(
                         start_time=shift_start,
                         end_time=shift_end,
                         schedule_ids="",
@@ -1341,26 +1341,15 @@ def create_rootly_mcp_server(
                 }
             )
 
-    @mcp.tool()
-    async def get_shift_incidents(
-        start_time: Annotated[str, Field(description="Start time for incident search (ISO 8601 format, e.g., '2025-10-01T00:00:00Z')")],
-        end_time: Annotated[str, Field(description="End time for incident search (ISO 8601 format, e.g., '2025-10-01T23:59:59Z')")],
-        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs to filter incidents (optional)")] = "",
-        severity: Annotated[str, Field(description="Filter by severity: 'critical', 'high', 'medium', 'low' (optional)")] = "",
-        status: Annotated[str, Field(description="Filter by status: 'started', 'detected', 'acknowledged', 'investigating', 'identified', 'monitoring', 'resolved', 'cancelled' (optional)")] = "",
-        tags: Annotated[str, Field(description="Comma-separated list of tag slugs to filter incidents (optional)")] = ""
+    async def _fetch_shift_incidents_internal(
+        start_time: str,
+        end_time: str,
+        schedule_ids: str = "",
+        severity: str = "",
+        status: str = "",
+        tags: str = ""
     ) -> dict:
-        """
-        Get incidents and alerts that occurred during a specific shift or time period.
-
-        Useful for:
-        - Shift handoff summaries showing what happened during the shift
-        - Post-shift debriefs and reporting
-        - Incident analysis by time period
-        - Understanding team workload during specific shifts
-
-        Returns incident details including severity, status, duration, and basic summary.
-        """
+        """Internal helper to fetch incidents - used by both get_shift_incidents and get_oncall_handoff_summary."""
         try:
             from datetime import datetime
 
@@ -1502,6 +1491,27 @@ def create_rootly_mcp_server(
                 }
             )
 
+    @mcp.tool()
+    async def get_shift_incidents(
+        start_time: Annotated[str, Field(description="Start time for incident search (ISO 8601 format, e.g., '2025-10-01T00:00:00Z')")],
+        end_time: Annotated[str, Field(description="End time for incident search (ISO 8601 format, e.g., '2025-10-01T23:59:59Z')")],
+        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs to filter incidents (optional)")] = "",
+        severity: Annotated[str, Field(description="Filter by severity: 'critical', 'high', 'medium', 'low' (optional)")] = "",
+        status: Annotated[str, Field(description="Filter by status: 'started', 'detected', 'acknowledged', 'investigating', 'identified', 'monitoring', 'resolved', 'cancelled' (optional)")] = "",
+        tags: Annotated[str, Field(description="Comma-separated list of tag slugs to filter incidents (optional)")] = ""
+    ) -> dict:
+        """
+        Get incidents and alerts that occurred during a specific shift or time period.
+
+        Useful for:
+        - Shift handoff summaries showing what happened during the shift
+        - Post-shift debriefs and reporting
+        - Incident analysis by time period
+        - Understanding team workload during specific shifts
+
+        Returns incident details including severity, status, duration, and basic summary.
+        """
+        return await _fetch_shift_incidents_internal(start_time, end_time, schedule_ids, severity, status, tags)
 
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
