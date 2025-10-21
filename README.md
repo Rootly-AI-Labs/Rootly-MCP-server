@@ -154,7 +154,6 @@ Alternatively, connect directly to our hosted MCP server:
 - `get_oncall_shift_metrics`
 - `get_oncall_handoff_summary`
 - `get_shift_incidents`
-- `get_shift_handoff_report`
 
 **Services & Severities**
 - `listServices`
@@ -233,16 +232,23 @@ get_oncall_shift_metrics(
 
 ### On-Call Handoff Summary
 
-Shows current and next on-call per schedule/team.
+Shows current and next on-call per schedule/team. Optionally includes incidents.
 
 ```python
+# Basic roster
 get_oncall_handoff_summary(
     team_ids="team-1,team-2",
-    timezone="America/Los_Angeles"  # optional
+    timezone="America/Los_Angeles"
+)
+
+# With incidents (complete handoff)
+get_oncall_handoff_summary(
+    timezone="America/New_York",
+    include_incidents=True
 )
 ```
 
-Returns: `schedules` with `current_oncall` and `next_oncall` (user, role, shift times)
+Returns: `schedules` with `current_oncall`, `next_oncall`, and optionally `shift_incidents`
 
 ### Shift Incidents
 
@@ -259,23 +265,6 @@ get_shift_incidents(
 ```
 
 Returns: `incidents` list + `summary` (counts, avg resolution time, grouping)
-
-### Complete Handoff Report
-
-Combines on-call status + incidents. Auto mode or custom time range.
-
-```python
-# Current shifts
-get_shift_handoff_report(timezone="America/New_York")
-
-# Historical
-get_shift_handoff_report(
-    start_time="2025-10-20T09:00:00Z",
-    end_time="2025-10-20T17:00:00Z"
-)
-```
-
-Returns: `shift_reports` with on-call info and incidents per schedule
 
 ## About Rootly AI Labs
 

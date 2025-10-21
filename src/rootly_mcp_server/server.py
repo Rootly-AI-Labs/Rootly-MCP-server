@@ -1056,15 +1056,19 @@ def create_rootly_mcp_server(
     async def get_oncall_handoff_summary(
         team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
         schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional)")] = "",
-        timezone: Annotated[str, Field(description="Convert times to this timezone (e.g., 'America/Los_Angeles', 'Europe/London'). Defaults to UTC.")] = "UTC"
+        timezone: Annotated[str, Field(description="Convert times to this timezone (e.g., 'America/Los_Angeles', 'Europe/London'). Defaults to UTC.")] = "UTC",
+        include_incidents: Annotated[bool, Field(description="Include incidents that occurred during current shifts. Defaults to False.")] = False
     ) -> dict:
         """
         Get current on-call status for handoff summaries. Shows who's currently on-call
         and who's next for each schedule/team (region).
 
+        Optionally includes incidents that occurred during the current shifts.
+
         Useful for:
         - Daily handoff meetings
         - Regional on-call status checks
+        - Complete shift handoffs with incident context
         - Team coordination across timezones
         """
         try:
@@ -1290,6 +1294,27 @@ def create_rootly_mcp_server(
 
                 handoff_data.append(schedule_info)
 
+            # If incidents requested, fetch them for each current shift
+            if include_incidents:
+                for schedule_info in handoff_data:
+                    current_oncall = schedule_info.get("current_oncall")
+                    if current_oncall:
+                        shift_start = current_oncall["starts_at"]
+                        shift_end = current_oncall["ends_at"]
+
+                        incidents_result = await get_shift_incidents(  # type: ignore[misc]
+                            start_time=shift_start,
+                            end_time=shift_end,
+                            schedule_ids="",
+                            severity="",
+                            status="",
+                            tags=""
+                        )
+
+                        schedule_info["shift_incidents"] = incidents_result if incidents_result.get("success") else None
+                    else:
+                        schedule_info["shift_incidents"] = None
+
             return {
                 "success": True,
                 "timestamp": now.isoformat(),
@@ -1298,7 +1323,12 @@ def create_rootly_mcp_server(
                 "summary": {
                     "total_schedules": len(handoff_data),
                     "schedules_with_current_oncall": sum(1 for s in handoff_data if s["current_oncall"]),
-                    "schedules_with_next_oncall": sum(1 for s in handoff_data if s["next_oncall"])
+                    "schedules_with_next_oncall": sum(1 for s in handoff_data if s["next_oncall"]),
+                    "total_incidents": sum(
+                        s.get("shift_incidents", {}).get("summary", {}).get("total_incidents", 0)
+                        for s in handoff_data
+                        if include_incidents and s.get("shift_incidents")
+                    ) if include_incidents else None
                 }
             }
 
@@ -1476,129 +1506,6 @@ def create_rootly_mcp_server(
                 }
             )
 
-    @mcp.tool()
-    async def get_shift_handoff_report(
-        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional, defaults to all schedules)")] = "",
-        team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
-        start_time: Annotated[str, Field(description="Optional: Custom start time for historical handoffs (ISO 8601). If omitted, uses current shifts.")] = "",
-        end_time: Annotated[str, Field(description="Optional: Custom end time for historical handoffs (ISO 8601). Required if start_time provided.")] = "",
-        timezone: Annotated[str, Field(description="Convert times to this timezone (e.g., 'America/Los_Angeles', 'Europe/London'). Defaults to UTC.")] = "UTC"
-    ) -> dict:
-        """
-        Get complete shift handoff report with on-call status AND incidents.
-
-        Two modes:
-        1. Auto mode (default): Automatically gets current on-call and their shift incidents
-        2. Custom time period: Specify start_time/end_time for historical handoffs
-
-        Useful for:
-        - Current shift handoffs (no time params needed)
-        - Historical shift analysis (provide start_time/end_time)
-        - Daily standup summaries
-        - Regional handoff meetings with automatic context
-
-        Returns on-call status + incidents that occurred during the shifts.
-        """
-        try:
-            # Check if custom time period provided
-            if start_time and end_time:
-                # Custom time period mode - just get incidents for that period
-                incidents_result = await get_shift_incidents(  # type: ignore[misc]
-                    start_time=start_time,
-                    end_time=end_time,
-                    schedule_ids=schedule_ids,
-                    severity="",
-                    status="",
-                    tags=""
-                )
-
-                return {
-                    "success": True,
-                    "mode": "custom_time_period",
-                    "period": {
-                        "start_time": start_time,
-                        "end_time": end_time
-                    },
-                    "incidents": incidents_result if incidents_result.get("success") else None,
-                    "note": "Custom time period provided - showing incidents only (not tied to specific shifts)"
-                }
-
-            # Auto mode - get current on-call status to determine shift times
-            handoff_result = await get_oncall_handoff_summary(team_ids=team_ids, schedule_ids=schedule_ids, timezone=timezone)  # type: ignore[misc]
-
-            if not handoff_result.get("success"):
-                return handoff_result  # Return error from handoff summary
-
-            schedules = handoff_result.get("schedules", [])
-
-            # For each schedule with current on-call, fetch incidents during their shift
-            shift_reports = []
-            for schedule_info in schedules:
-                current_oncall = schedule_info.get("current_oncall")
-
-                if not current_oncall:
-                    # No one currently on-call, skip
-                    shift_reports.append({
-                        "schedule_id": schedule_info["schedule_id"],
-                        "schedule_name": schedule_info["schedule_name"],
-                        "team_name": schedule_info["team_name"],
-                        "current_oncall": None,
-                        "next_oncall": schedule_info.get("next_oncall"),
-                        "shift_incidents": None,
-                        "message": "No one currently on-call"
-                    })
-                    continue
-
-                # Get incidents during this person's shift
-                shift_start = current_oncall["starts_at"]
-                shift_end = current_oncall["ends_at"]
-
-                incidents_result = await get_shift_incidents(  # type: ignore[misc]
-                    start_time=shift_start,
-                    end_time=shift_end,
-                    schedule_ids="",
-                    severity="",
-                    status="",
-                    tags=""
-                )
-
-                shift_reports.append({
-                    "schedule_id": schedule_info["schedule_id"],
-                    "schedule_name": schedule_info["schedule_name"],
-                    "team_name": schedule_info["team_name"],
-                    "current_oncall": current_oncall,
-                    "next_oncall": schedule_info.get("next_oncall"),
-                    "shift_incidents": incidents_result if incidents_result.get("success") else None
-                })
-
-            return {
-                "success": True,
-                "mode": "auto_current_shifts",
-                "timestamp": handoff_result["timestamp"],
-                "shift_reports": shift_reports,
-                "summary": {
-                    "total_schedules": len(shift_reports),
-                    "schedules_with_current_oncall": sum(1 for s in shift_reports if s["current_oncall"]),
-                    "total_incidents_during_shifts": sum(
-                        s.get("shift_incidents", {}).get("summary", {}).get("total_incidents", 0)
-                        for s in shift_reports
-                        if s.get("shift_incidents")
-                    )
-                }
-            }
-
-        except Exception as e:
-            import traceback
-            error_type, error_message = MCPError.categorize_error(e)
-            return MCPError.tool_error(
-                f"Failed to get shift handoff report: {error_message}",
-                error_type,
-                details={
-                    "exception_type": type(e).__name__,
-                    "exception_str": str(e),
-                    "traceback": traceback.format_exc()
-                }
-            )
 
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
