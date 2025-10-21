@@ -1052,6 +1052,223 @@ def create_rootly_mcp_server(
                 }
             )
 
+    @mcp.tool()
+    async def get_oncall_handoff_summary(
+        team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
+        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional)")] = ""
+    ) -> dict:
+        """
+        Get current on-call status for handoff summaries. Shows who's currently on-call
+        and who's next for each schedule/team (region).
+
+        Useful for:
+        - Daily handoff meetings
+        - Regional on-call status checks
+        - Team coordination across timezones
+        """
+        try:
+            from datetime import datetime, timedelta
+
+            now = datetime.now()
+
+            # Fetch schedules with team info
+            schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100})
+            if not schedules_response:
+                return MCPError.tool_error("Failed to fetch schedules", "execution_error")
+
+            schedules_data = schedules_response.json()
+            all_schedules = schedules_data.get("data", [])
+
+            # Build team mapping
+            team_ids_set = set()
+            for schedule in all_schedules:
+                owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
+                team_ids_set.update(owner_group_ids)
+
+            teams_map = {}
+            if team_ids_set:
+                teams_response = await make_authenticated_request("GET", "/v1/teams", params={"page[size]": 100})
+                if teams_response and teams_response.status_code == 200:
+                    teams_data = teams_response.json()
+                    for team in teams_data.get("data", []):
+                        teams_map[team.get("id")] = team
+
+            # Filter schedules
+            target_schedules = []
+            team_filter = [tid.strip() for tid in team_ids.split(",") if tid.strip()] if team_ids else []
+            schedule_filter = [sid.strip() for sid in schedule_ids.split(",") if sid.strip()] if schedule_ids else []
+
+            for schedule in all_schedules:
+                schedule_id = schedule.get("id")
+                owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
+
+                # Apply filters
+                if schedule_filter and schedule_id not in schedule_filter:
+                    continue
+                if team_filter and not any(str(tgid) in team_filter for tgid in owner_group_ids):
+                    continue
+
+                target_schedules.append(schedule)
+
+            # Get current and upcoming shifts for each schedule
+            handoff_data = []
+            for schedule in target_schedules:
+                schedule_id = schedule.get("id")
+                schedule_attrs = schedule.get("attributes", {})
+                schedule_name = schedule_attrs.get("name", "Unknown Schedule")
+                owner_group_ids = schedule_attrs.get("owner_group_ids", [])
+
+                # Get team info
+                team_name = "No Team"
+                if owner_group_ids:
+                    team_id = owner_group_ids[0]
+                    team_attrs = teams_map.get(team_id, {}).get("attributes", {})
+                    team_name = team_attrs.get("name", "Unknown Team")
+
+                # Query shifts for this schedule
+                shifts_response = await make_authenticated_request(
+                    "GET",
+                    "/v1/shifts",
+                    params={
+                        "schedule_ids[]": [schedule_id],
+                        "filter[starts_at][gte]": (now - timedelta(days=1)).isoformat(),
+                        "filter[starts_at][lte]": (now + timedelta(days=7)).isoformat(),
+                        "include": "user,on_call_role",
+                        "page[size]": 50
+                    }
+                )
+
+                if not shifts_response:
+                    continue
+
+                shifts_data = shifts_response.json()
+                shifts = shifts_data.get("data", [])
+                included = shifts_data.get("included", [])
+
+                # Build user and role maps
+                users_map = {}
+                roles_map = {}
+                for resource in included:
+                    if resource.get("type") == "users":
+                        users_map[resource.get("id")] = resource
+                    elif resource.get("type") == "on_call_roles":
+                        roles_map[resource.get("id")] = resource
+
+                # Find current and next shifts
+                current_shift = None
+                next_shift = None
+
+                for shift in sorted(shifts, key=lambda s: s.get("attributes", {}).get("starts_at", "")):
+                    attrs = shift.get("attributes", {})
+                    starts_at_str = attrs.get("starts_at")
+                    ends_at_str = attrs.get("ends_at")
+
+                    if not starts_at_str or not ends_at_str:
+                        continue
+
+                    try:
+                        starts_at = datetime.fromisoformat(starts_at_str.replace("Z", "+00:00"))
+                        ends_at = datetime.fromisoformat(ends_at_str.replace("Z", "+00:00"))
+
+                        # Current shift: ongoing now
+                        if starts_at <= now <= ends_at:
+                            current_shift = shift
+                        # Next shift: starts after now and no current shift found yet
+                        elif starts_at > now and not next_shift:
+                            next_shift = shift
+
+                    except (ValueError, AttributeError):
+                        continue
+
+                # Build response for this schedule
+                schedule_info = {
+                    "schedule_id": schedule_id,
+                    "schedule_name": schedule_name,
+                    "team_name": team_name,
+                    "current_oncall": None,
+                    "next_oncall": None
+                }
+
+                if current_shift:
+                    current_attrs = current_shift.get("attributes", {})
+                    current_rels = current_shift.get("relationships", {})
+                    user_data = (current_rels.get("user", {}).get("data") or {})
+                    user_id = user_data.get("id")
+                    role_data = (current_rels.get("on_call_role", {}).get("data") or {})
+                    role_id = role_data.get("id")
+
+                    user_name = "Unknown"
+                    if user_id and user_id in users_map:
+                        user_attrs = users_map[user_id].get("attributes", {})
+                        user_name = user_attrs.get("full_name") or user_attrs.get("email", "Unknown")
+
+                    role_name = "Unknown Role"
+                    if role_id and role_id in roles_map:
+                        role_attrs = roles_map[role_id].get("attributes", {})
+                        role_name = role_attrs.get("name", "Unknown Role")
+
+                    schedule_info["current_oncall"] = {
+                        "user_name": user_name,
+                        "user_id": user_id,
+                        "role": role_name,
+                        "starts_at": current_attrs.get("starts_at"),
+                        "ends_at": current_attrs.get("ends_at"),
+                        "is_override": current_attrs.get("is_override", False)
+                    }
+
+                if next_shift:
+                    next_attrs = next_shift.get("attributes", {})
+                    next_rels = next_shift.get("relationships", {})
+                    user_data = (next_rels.get("user", {}).get("data") or {})
+                    user_id = user_data.get("id")
+                    role_data = (next_rels.get("on_call_role", {}).get("data") or {})
+                    role_id = role_data.get("id")
+
+                    user_name = "Unknown"
+                    if user_id and user_id in users_map:
+                        user_attrs = users_map[user_id].get("attributes", {})
+                        user_name = user_attrs.get("full_name") or user_attrs.get("email", "Unknown")
+
+                    role_name = "Unknown Role"
+                    if role_id and role_id in roles_map:
+                        role_attrs = roles_map[role_id].get("attributes", {})
+                        role_name = role_attrs.get("name", "Unknown Role")
+
+                    schedule_info["next_oncall"] = {
+                        "user_name": user_name,
+                        "user_id": user_id,
+                        "role": role_name,
+                        "starts_at": next_attrs.get("starts_at"),
+                        "ends_at": next_attrs.get("ends_at"),
+                        "is_override": next_attrs.get("is_override", False)
+                    }
+
+                handoff_data.append(schedule_info)
+
+            return {
+                "success": True,
+                "timestamp": now.isoformat(),
+                "schedules": handoff_data,
+                "summary": {
+                    "total_schedules": len(handoff_data),
+                    "schedules_with_current_oncall": sum(1 for s in handoff_data if s["current_oncall"]),
+                    "schedules_with_next_oncall": sum(1 for s in handoff_data if s["next_oncall"])
+                }
+            }
+
+        except Exception as e:
+            import traceback
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(
+                f"Failed to get on-call handoff summary: {error_message}",
+                error_type,
+                details={
+                    "exception_type": type(e).__name__,
+                    "exception_str": str(e),
+                    "traceback": traceback.format_exc()
+                }
+            )
+
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
     async def get_incident_resource(incident_id: str):
