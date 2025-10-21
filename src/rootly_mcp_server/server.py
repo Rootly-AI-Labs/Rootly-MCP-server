@@ -1469,6 +1469,40 @@ def create_rootly_mcp_server(
                     except (ValueError, AttributeError):
                         pass
 
+                # Build narrative summary
+                narrative_parts = []
+
+                # What happened
+                title = attrs.get("title", "Untitled Incident")
+                severity = attrs.get("severity", "unknown")
+                narrative_parts.append(f"[{severity.upper()}] {title}")
+
+                # When and duration
+                if started_at:
+                    narrative_parts.append(f"Started at {started_at}")
+                if resolved_at:
+                    narrative_parts.append(f"Resolved at {resolved_at}")
+                    if duration_minutes:
+                        narrative_parts.append(f"Duration: {duration_minutes} minutes")
+                elif attrs.get("status"):
+                    narrative_parts.append(f"Status: {attrs.get('status')}")
+
+                # What was the issue
+                if attrs.get("summary"):
+                    narrative_parts.append(f"Details: {attrs.get('summary')}")
+
+                # Impact
+                if attrs.get("customer_impact_summary"):
+                    narrative_parts.append(f"Impact: {attrs.get('customer_impact_summary')}")
+
+                # Resolution (if available)
+                if attrs.get("mitigation"):
+                    narrative_parts.append(f"Resolution: {attrs.get('mitigation')}")
+                elif attrs.get("action_items_count") and attrs.get("action_items_count") > 0:
+                    narrative_parts.append(f"Action items created: {attrs.get('action_items_count')}")
+
+                narrative = " | ".join(narrative_parts)
+
                 incidents_summary.append({
                     "incident_id": incident_id,
                     "title": attrs.get("title", "Untitled Incident"),
@@ -1479,6 +1513,8 @@ def create_rootly_mcp_server(
                     "duration_minutes": duration_minutes,
                     "summary": attrs.get("summary"),
                     "impact": attrs.get("customer_impact_summary"),
+                    "mitigation": attrs.get("mitigation"),
+                    "narrative": narrative,
                     "incident_url": attrs.get("incident_url")
                 })
 
