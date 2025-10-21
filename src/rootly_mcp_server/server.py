@@ -1395,21 +1395,48 @@ def create_rootly_mcp_server(
     @mcp.tool()
     async def get_shift_handoff_report(
         schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional, defaults to all schedules)")] = "",
-        team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = ""
+        team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
+        start_time: Annotated[str, Field(description="Optional: Custom start time for historical handoffs (ISO 8601). If omitted, uses current shifts.")] = "",
+        end_time: Annotated[str, Field(description="Optional: Custom end time for historical handoffs (ISO 8601). Required if start_time provided.")] = ""
     ) -> dict:
         """
-        Get complete shift handoff report with current on-call status AND incidents from their shift.
-        Automatically determines shift times and fetches relevant incidents.
+        Get complete shift handoff report with on-call status AND incidents.
+
+        Two modes:
+        1. Auto mode (default): Automatically gets current on-call and their shift incidents
+        2. Custom time period: Specify start_time/end_time for historical handoffs
 
         Useful for:
-        - Complete shift handoffs without manually specifying times
+        - Current shift handoffs (no time params needed)
+        - Historical shift analysis (provide start_time/end_time)
         - Daily standup summaries
         - Regional handoff meetings with automatic context
 
-        Returns on-call status + incidents that occurred during current shifts.
+        Returns on-call status + incidents that occurred during the shifts.
         """
         try:
-            # First, get current on-call status to determine shift times
+            # Check if custom time period provided
+            if start_time and end_time:
+                # Custom time period mode - just get incidents for that period
+                incidents_result = await get_shift_incidents.__wrapped__(  # type: ignore
+                    start_time=start_time,
+                    end_time=end_time,
+                    schedule_ids=schedule_ids,
+                    severity=""
+                )
+
+                return {
+                    "success": True,
+                    "mode": "custom_time_period",
+                    "period": {
+                        "start_time": start_time,
+                        "end_time": end_time
+                    },
+                    "incidents": incidents_result if incidents_result.get("success") else None,
+                    "note": "Custom time period provided - showing incidents only (not tied to specific shifts)"
+                }
+
+            # Auto mode - get current on-call status to determine shift times
             handoff_result = await get_oncall_handoff_summary.__wrapped__(team_ids=team_ids, schedule_ids=schedule_ids)  # type: ignore
 
             if not handoff_result.get("success"):
@@ -1457,6 +1484,7 @@ def create_rootly_mcp_server(
 
             return {
                 "success": True,
+                "mode": "auto_current_shifts",
                 "timestamp": handoff_result["timestamp"],
                 "shift_reports": shift_reports,
                 "summary": {
