@@ -1055,7 +1055,8 @@ def create_rootly_mcp_server(
     @mcp.tool()
     async def get_oncall_handoff_summary(
         team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
-        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional)")] = ""
+        schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional)")] = "",
+        timezone: Annotated[str, Field(description="Convert times to this timezone (e.g., 'America/Los_Angeles', 'Europe/London'). Defaults to UTC.")] = "UTC"
     ) -> dict:
         """
         Get current on-call status for handoff summaries. Shows who's currently on-call
@@ -1068,16 +1069,60 @@ def create_rootly_mcp_server(
         """
         try:
             from datetime import datetime, timedelta
+            from zoneinfo import ZoneInfo
 
-            now = datetime.now()
+            # Validate and set timezone
+            try:
+                tz = ZoneInfo(timezone)
+            except Exception:
+                tz = ZoneInfo("UTC")  # Fallback to UTC if invalid timezone
 
-            # Fetch schedules with team info
-            schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100})
-            if not schedules_response:
-                return MCPError.tool_error("Failed to fetch schedules", "execution_error")
+            now = datetime.now(tz)
 
-            schedules_data = schedules_response.json()
-            all_schedules = schedules_data.get("data", [])
+            def convert_to_timezone(iso_string: str) -> str:
+                """Convert ISO timestamp to target timezone."""
+                if not iso_string:
+                    return iso_string
+                try:
+                    dt = datetime.fromisoformat(iso_string.replace("Z", "+00:00"))
+                    dt_converted = dt.astimezone(tz)
+                    return dt_converted.isoformat()
+                except (ValueError, AttributeError):
+                    return iso_string  # Return original if conversion fails
+
+            # Fetch schedules with team info (with pagination)
+            all_schedules = []
+            page = 1
+            max_pages = 5  # Schedules shouldn't have many pages
+
+            while page <= max_pages:
+                schedules_response = await make_authenticated_request("GET", "/v1/schedules", params={"page[size]": 100, "page[number]": page})
+                if not schedules_response:
+                    return MCPError.tool_error("Failed to fetch schedules - no response from API", "execution_error")
+
+                if schedules_response.status_code != 200:
+                    return MCPError.tool_error(
+                        f"Failed to fetch schedules - API returned status {schedules_response.status_code}",
+                        "execution_error",
+                        details={"status_code": schedules_response.status_code}
+                    )
+
+                schedules_data = schedules_response.json()
+                page_schedules = schedules_data.get("data", [])
+
+                if not page_schedules:
+                    break
+
+                all_schedules.extend(page_schedules)
+
+                # Check if there are more pages
+                meta = schedules_data.get("meta", {})
+                total_pages = meta.get("total_pages", 1)
+
+                if page >= total_pages:
+                    break
+
+                page += 1
 
             # Build team mapping
             team_ids_set = set()
@@ -1211,8 +1256,8 @@ def create_rootly_mcp_server(
                         "user_name": user_name,
                         "user_id": user_id,
                         "role": role_name,
-                        "starts_at": current_attrs.get("starts_at"),
-                        "ends_at": current_attrs.get("ends_at"),
+                        "starts_at": convert_to_timezone(current_attrs.get("starts_at")),
+                        "ends_at": convert_to_timezone(current_attrs.get("ends_at")),
                         "is_override": current_attrs.get("is_override", False)
                     }
 
@@ -1238,8 +1283,8 @@ def create_rootly_mcp_server(
                         "user_name": user_name,
                         "user_id": user_id,
                         "role": role_name,
-                        "starts_at": next_attrs.get("starts_at"),
-                        "ends_at": next_attrs.get("ends_at"),
+                        "starts_at": convert_to_timezone(next_attrs.get("starts_at")),
+                        "ends_at": convert_to_timezone(next_attrs.get("ends_at")),
                         "is_override": next_attrs.get("is_override", False)
                     }
 
@@ -1248,6 +1293,7 @@ def create_rootly_mcp_server(
             return {
                 "success": True,
                 "timestamp": now.isoformat(),
+                "timezone": timezone,
                 "schedules": handoff_data,
                 "summary": {
                     "total_schedules": len(handoff_data),
@@ -1274,7 +1320,9 @@ def create_rootly_mcp_server(
         start_time: Annotated[str, Field(description="Start time for incident search (ISO 8601 format, e.g., '2025-10-01T00:00:00Z')")],
         end_time: Annotated[str, Field(description="End time for incident search (ISO 8601 format, e.g., '2025-10-01T23:59:59Z')")],
         schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs to filter incidents (optional)")] = "",
-        severity: Annotated[str, Field(description="Filter by severity: 'critical', 'high', 'medium', 'low' (optional)")] = ""
+        severity: Annotated[str, Field(description="Filter by severity: 'critical', 'high', 'medium', 'low' (optional)")] = "",
+        status: Annotated[str, Field(description="Filter by status: 'started', 'detected', 'acknowledged', 'investigating', 'identified', 'monitoring', 'resolved', 'cancelled' (optional)")] = "",
+        tags: Annotated[str, Field(description="Comma-separated list of tag slugs to filter incidents (optional)")] = ""
     ) -> dict:
         """
         Get incidents and alerts that occurred during a specific shift or time period.
@@ -1302,15 +1350,51 @@ def create_rootly_mcp_server(
             if severity:
                 params["filter[severity]"] = severity.lower()
 
-            # Query incidents
-            incidents_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
+            # Add status filter if provided
+            if status:
+                params["filter[status]"] = status.lower()
 
-            if not incidents_response:
-                return MCPError.tool_error("Failed to fetch incidents", "execution_error")
+            # Add tags filter if provided
+            if tags:
+                tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+                if tag_list:
+                    params["filter[tags][]"] = tag_list
 
-            incidents_response.raise_for_status()
-            incidents_data = incidents_response.json()
-            all_incidents = incidents_data.get("data", [])
+            # Query incidents with pagination
+            all_incidents = []
+            page = 1
+            max_pages = 10  # Safety limit to prevent infinite loops
+
+            while page <= max_pages:
+                params["page[number]"] = page
+                incidents_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
+
+                if not incidents_response:
+                    return MCPError.tool_error("Failed to fetch incidents - no response from API", "execution_error")
+
+                if incidents_response.status_code != 200:
+                    return MCPError.tool_error(
+                        f"Failed to fetch incidents - API returned status {incidents_response.status_code}",
+                        "execution_error",
+                        details={"status_code": incidents_response.status_code, "time_range": f"{start_time} to {end_time}"}
+                    )
+
+                incidents_data = incidents_response.json()
+                page_incidents = incidents_data.get("data", [])
+
+                if not page_incidents:
+                    break  # No more data
+
+                all_incidents.extend(page_incidents)
+
+                # Check if there are more pages
+                meta = incidents_data.get("meta", {})
+                total_pages = meta.get("total_pages", 1)
+
+                if page >= total_pages:
+                    break  # Reached the last page
+
+                page += 1
 
             # Format incidents for handoff summary
             incidents_summary = []
@@ -1397,7 +1481,8 @@ def create_rootly_mcp_server(
         schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional, defaults to all schedules)")] = "",
         team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
         start_time: Annotated[str, Field(description="Optional: Custom start time for historical handoffs (ISO 8601). If omitted, uses current shifts.")] = "",
-        end_time: Annotated[str, Field(description="Optional: Custom end time for historical handoffs (ISO 8601). Required if start_time provided.")] = ""
+        end_time: Annotated[str, Field(description="Optional: Custom end time for historical handoffs (ISO 8601). Required if start_time provided.")] = "",
+        timezone: Annotated[str, Field(description="Convert times to this timezone (e.g., 'America/Los_Angeles', 'Europe/London'). Defaults to UTC.")] = "UTC"
     ) -> dict:
         """
         Get complete shift handoff report with on-call status AND incidents.
@@ -1437,7 +1522,7 @@ def create_rootly_mcp_server(
                 }
 
             # Auto mode - get current on-call status to determine shift times
-            handoff_result = await get_oncall_handoff_summary.__wrapped__(team_ids=team_ids, schedule_ids=schedule_ids)  # type: ignore
+            handoff_result = await get_oncall_handoff_summary.__wrapped__(team_ids=team_ids, schedule_ids=schedule_ids, timezone=timezone)  # type: ignore
 
             if not handoff_result.get("success"):
                 return handoff_result  # Return error from handoff summary
