@@ -1503,11 +1503,13 @@ def create_rootly_mcp_server(
             # Check if custom time period provided
             if start_time and end_time:
                 # Custom time period mode - just get incidents for that period
-                incidents_result = await get_shift_incidents.__wrapped__(  # type: ignore
+                incidents_result = await get_shift_incidents(  # type: ignore[misc]
                     start_time=start_time,
                     end_time=end_time,
                     schedule_ids=schedule_ids,
-                    severity=""
+                    severity="",
+                    status="",
+                    tags=""
                 )
 
                 return {
@@ -1522,7 +1524,7 @@ def create_rootly_mcp_server(
                 }
 
             # Auto mode - get current on-call status to determine shift times
-            handoff_result = await get_oncall_handoff_summary.__wrapped__(team_ids=team_ids, schedule_ids=schedule_ids, timezone=timezone)  # type: ignore
+            handoff_result = await get_oncall_handoff_summary(team_ids=team_ids, schedule_ids=schedule_ids, timezone=timezone)  # type: ignore[misc]
 
             if not handoff_result.get("success"):
                 return handoff_result  # Return error from handoff summary
@@ -1551,11 +1553,13 @@ def create_rootly_mcp_server(
                 shift_start = current_oncall["starts_at"]
                 shift_end = current_oncall["ends_at"]
 
-                incidents_result = await get_shift_incidents.__wrapped__(  # type: ignore
+                incidents_result = await get_shift_incidents(  # type: ignore[misc]
                     start_time=shift_start,
                     end_time=shift_end,
                     schedule_ids="",
-                    severity=""
+                    severity="",
+                    status="",
+                    tags=""
                 )
 
                 shift_reports.append({
