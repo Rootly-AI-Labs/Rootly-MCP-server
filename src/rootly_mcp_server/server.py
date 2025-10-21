@@ -1487,11 +1487,19 @@ def create_rootly_mcp_server(
 
                 # Include incident if:
                 # 1. Created during shift
-                # 2. OR currently active (not resolved and started before now)
+                # 2. Started during shift
+                # 3. Resolved during shift
+                # 4. Currently active (not resolved and started before now)
                 include_incident = False
 
                 if created_dt and shift_start_dt <= created_dt <= shift_end_dt:
                     include_incident = True  # Created during shift
+
+                if started_dt and shift_start_dt <= started_dt <= shift_end_dt:
+                    include_incident = True  # Started during shift
+
+                if resolved_dt and shift_start_dt <= resolved_dt <= shift_end_dt:
+                    include_incident = True  # Resolved during shift
 
                 if not resolved_dt and started_dt and started_dt <= now_dt:
                     include_incident = True  # Currently active
