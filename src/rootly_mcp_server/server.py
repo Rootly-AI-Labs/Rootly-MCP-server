@@ -1056,15 +1056,20 @@ def create_rootly_mcp_server(
     async def get_oncall_handoff_summary(
         team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
         schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional)")] = "",
-        timezone: Annotated[str, Field(description="Convert times to this timezone (e.g., 'America/Los_Angeles', 'Europe/London'). Defaults to UTC.")] = "UTC"
+        timezone: Annotated[str, Field(description="Timezone to use for display and filtering (e.g., 'America/Los_Angeles', 'Europe/London', 'Asia/Tokyo'). Defaults to UTC.")] = "UTC",
+        filter_by_region: Annotated[bool, Field(description="If True, only show on-call for people whose shifts are during business hours (9am-5pm) in the specified timezone. Defaults to False.")] = False
     ) -> dict:
         """
         Get current on-call handoff summary with incidents. Shows who's currently on-call,
         who's next, and all incidents that occurred during the current shifts.
 
+        Regional filtering: Use timezone + filter_by_region=True to see only people on-call
+        during business hours in that region (e.g., timezone='Asia/Tokyo', filter_by_region=True
+        shows only APAC on-call during APAC business hours).
+
         Useful for:
         - Daily handoff meetings
-        - Regional on-call status checks
+        - Regional on-call status checks (APAC, EU, Americas)
         - Complete shift handoffs with incident context
         - Team coordination across timezones
         """
@@ -1290,6 +1295,25 @@ def create_rootly_mcp_server(
                     }
 
                 handoff_data.append(schedule_info)
+
+            # Filter by region if requested
+            if filter_by_region:
+                # Define business hours (9am-5pm) in the target timezone
+                business_start_hour = 9
+                business_end_hour = 17
+
+                # Get current time in target timezone
+                current_time_in_tz = now
+                current_hour = current_time_in_tz.hour
+
+                # Check if we're currently in business hours
+                if business_start_hour <= current_hour < business_end_hour:
+                    # Keep only schedules where someone is currently on-call
+                    # (they're on-call during business hours in this region)
+                    handoff_data = [s for s in handoff_data if s.get("current_oncall")]
+                else:
+                    # Outside business hours - no one should be filtered in
+                    handoff_data = []
 
             # Fetch incidents for each current shift
             for schedule_info in handoff_data:

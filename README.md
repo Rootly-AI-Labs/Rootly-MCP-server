@@ -235,11 +235,20 @@ get_oncall_shift_metrics(
 Complete handoff: current/next on-call + incidents during shifts.
 
 ```python
+# All on-call (any timezone)
 get_oncall_handoff_summary(
     team_ids="team-1,team-2",
     timezone="America/Los_Angeles"
 )
+
+# Regional filter - only show APAC on-call during APAC business hours
+get_oncall_handoff_summary(
+    timezone="Asia/Tokyo",
+    filter_by_region=True
+)
 ```
+
+Regional filtering shows only people on-call during business hours (9am-5pm) in the specified timezone.
 
 Returns: `schedules` with `current_oncall`, `next_oncall`, and `shift_incidents`
 
