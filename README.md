@@ -35,7 +35,7 @@ Configure your MCP-compatible editor (tested with Cursor) with one of the config
         "run",
         "--from",
         "rootly-mcp-server",
-        "rootly-mcp-server",
+        "rootly-mcp-server"
       ],      
       "env": {
         "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
@@ -55,7 +55,7 @@ Configure your MCP-compatible editor (tested with Cursor) with one of the config
       "args": [
         "--from",
         "rootly-mcp-server",
-        "rootly-mcp-server",
+        "rootly-mcp-server"
       ],      
       "env": {
         "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
