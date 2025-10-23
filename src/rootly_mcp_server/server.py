@@ -1057,11 +1057,12 @@ def create_rootly_mcp_server(
         team_ids: Annotated[str, Field(description="Comma-separated list of team IDs to filter schedules (optional)")] = "",
         schedule_ids: Annotated[str, Field(description="Comma-separated list of schedule IDs (optional)")] = "",
         timezone: Annotated[str, Field(description="Timezone to use for display and filtering (e.g., 'America/Los_Angeles', 'Europe/London', 'Asia/Tokyo'). IMPORTANT: If user mentions a city, location, or region (e.g., 'Toronto', 'APAC', 'my time'), infer the appropriate IANA timezone. Defaults to UTC if not specified.")] = "UTC",
-        filter_by_region: Annotated[bool, Field(description="If True, only show on-call for people whose shifts are during business hours (9am-5pm) in the specified timezone. Defaults to False.")] = False
+        filter_by_region: Annotated[bool, Field(description="If True, only show on-call for people whose shifts are during business hours (9am-5pm) in the specified timezone. Defaults to False.")] = False,
+        include_incidents: Annotated[bool, Field(description="If True, fetch incidents for each shift (slower). If False, only show on-call info (faster). Defaults to False for better performance.")] = False
     ) -> dict:
         """
-        Get current on-call handoff summary with incidents. Shows who's currently on-call,
-        who's next, and all incidents (both created during shift AND currently active).
+        Get current on-call handoff summary. Shows who's currently on-call and who's next.
+        Optionally fetch incidents (set include_incidents=True, but slower).
 
         Timezone handling: If user mentions their location/timezone, infer it (e.g., "Toronto" → "America/Toronto",
         "my time" → ask clarifying question or use a common timezone).
@@ -1070,10 +1071,13 @@ def create_rootly_mcp_server(
         during business hours in that region (e.g., timezone='Asia/Tokyo', filter_by_region=True
         shows only APAC on-call during APAC business hours).
 
+        Performance: By default, incidents are NOT fetched for faster response. Set include_incidents=True
+        to fetch incidents for each shift (slower, may timeout with many schedules).
+
         Useful for:
+        - Quick on-call status checks
         - Daily handoff meetings
-        - Regional on-call status checks (APAC, EU, Americas)
-        - Complete shift handoffs with incident context
+        - Regional on-call status (APAC, EU, Americas)
         - Team coordination across timezones
         """
         try:
@@ -1333,24 +1337,29 @@ def create_rootly_mcp_server(
 
                 handoff_data = filtered_data
 
-            # Fetch incidents for each current shift
-            for schedule_info in handoff_data:
-                current_oncall = schedule_info.get("current_oncall")
-                if current_oncall:
-                    shift_start = current_oncall["starts_at"]
-                    shift_end = current_oncall["ends_at"]
+            # Fetch incidents for each current shift (only if requested)
+            if include_incidents:
+                for schedule_info in handoff_data:
+                    current_oncall = schedule_info.get("current_oncall")
+                    if current_oncall:
+                        shift_start = current_oncall["starts_at"]
+                        shift_end = current_oncall["ends_at"]
 
-                    incidents_result = await _fetch_shift_incidents_internal(
-                        start_time=shift_start,
-                        end_time=shift_end,
-                        schedule_ids="",
-                        severity="",
-                        status="",
-                        tags=""
-                    )
+                        incidents_result = await _fetch_shift_incidents_internal(
+                            start_time=shift_start,
+                            end_time=shift_end,
+                            schedule_ids="",
+                            severity="",
+                            status="",
+                            tags=""
+                        )
 
-                    schedule_info["shift_incidents"] = incidents_result if incidents_result.get("success") else None
-                else:
+                        schedule_info["shift_incidents"] = incidents_result if incidents_result.get("success") else None
+                    else:
+                        schedule_info["shift_incidents"] = None
+            else:
+                # Skip incident fetching for better performance
+                for schedule_info in handoff_data:
                     schedule_info["shift_incidents"] = None
 
             return {
