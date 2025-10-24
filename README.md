@@ -17,7 +17,17 @@ An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overvie
   ```bash
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
-- [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F)
+- [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F) with appropriate permissions (see below)
+
+### API Token Permissions
+
+The MCP server requires a Rootly API token. Choose the appropriate token type based on your needs:
+
+- **Global API Key** (Recommended): Full access to all entities across your Rootly instance. Required for organization-wide visibility across teams, schedules, and incidents.
+- **Team API Key**: Team Admin permissions with full read/edit access to entities owned by that team. Suitable for team-specific workflows.
+- **Personal API Key**: Inherits the permissions of the user who created it. Works for individual use cases but may have limited visibility.
+
+For full functionality of tools like `get_oncall_handoff_summary`, `get_oncall_shift_metrics`, and organization-wide incident search, a **Global API Key** is recommended.
 
 ## Installation
 
