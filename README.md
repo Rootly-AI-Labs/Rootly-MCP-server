@@ -277,10 +277,6 @@ get_shift_incidents(
 
 Returns: `incidents` list + `summary` (counts, avg resolution time, grouping)
 
-## About Rootly AI Labs
-
-This project was developed by [Rootly AI Labs](https://labs.rootly.ai/), where we're building the future of system reliability and operational excellence. As an open-source incubator, we share ideas, experiment, and rapidly prototype solutions that benefit the entire community.
-![Rootly AI logo](https://github.com/Rootly-AI-Labs/EventOrOutage/raw/main/rootly-ai.png)
 
 ## Developer Setup & Troubleshooting
 
@@ -328,4 +324,14 @@ This ensures code quality by running:
 The server should now be ready to use with your MCP-compatible editor.
 
 **For developers:** Additional testing tools are available in the `tests/` directory.
+
+## Play with it on Postman
+[<img src="https://run.pstmn.io/button.svg" alt="Run In Postman" style="width: 128px; height: 32px;">](https://god.gw.postman.com/run-collection/45004446-1074ba3c-44fe-40e3-a932-af7c071b96eb?action=collection%2Ffork&source=rip_markdown&collection-url=entityId%3D45004446-1074ba3c-44fe-40e3-a932-af7c071b96eb%26entityType%3Dcollection%26workspaceId%3D4bec6e3c-50a0-4746-85f1-00a703c32f24)
+
+
+## About Rootly AI Labs
+
+This project was developed by [Rootly AI Labs](https://labs.rootly.ai/), where we're building the future of system reliability and operational excellence. As an open-source incubator, we share ideas, experiment, and rapidly prototype solutions that benefit the entire community.
+![Rootly AI logo](https://github.com/Rootly-AI-Labs/EventOrOutage/raw/main/rootly-ai.png)
+
 
