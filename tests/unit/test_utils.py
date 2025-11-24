@@ -6,7 +6,7 @@ Tests cover functionality for parameter sanitization.
 
 import pytest
 import copy
-from unittest.mock import patch
+import logging
 
 from rootly_mcp_server.utils import (
     sanitize_parameter_name,
@@ -31,17 +31,33 @@ class TestSanitizeParameterName:
         assert sanitize_parameter_name("") == "param"
         assert sanitize_parameter_name("@#$%") == "param"
         assert sanitize_parameter_name("123param") == "param_123param"
-        
-        # Length limit (64 chars)
-        long_name = "a" * 70
-        result = sanitize_parameter_name(long_name)
-        assert len(result) == 64
-        
+
         # Multiple underscores cleanup
         assert sanitize_parameter_name("param___name") == "param_name"
-        
+
         # Leading/trailing underscores
         assert sanitize_parameter_name("_param_") == "param"
+
+    def test_parameter_name_length_boundaries(self):
+        """Test boundary cases for the 64-character limit."""
+        # Below limit (63 chars) - should remain unchanged
+        name_63 = "a" * 63
+        assert sanitize_parameter_name(name_63) == name_63
+        assert len(sanitize_parameter_name(name_63)) == 63
+
+        # At limit (64 chars) - should remain unchanged
+        name_64 = "a" * 64
+        assert sanitize_parameter_name(name_64) == name_64
+        assert len(sanitize_parameter_name(name_64)) == 64
+
+        # Over limit (65 chars) - should be truncated
+        name_65 = "a" * 65
+        assert len(sanitize_parameter_name(name_65)) == 64
+
+        # Over limit (70 chars) - should be truncated
+        name_70 = "a" * 70
+        result = sanitize_parameter_name(name_70)
+        assert len(result) == 64
     
     def test_valid_names_unchanged(self):
         """Test that already valid names are preserved."""
@@ -127,8 +143,7 @@ class TestSanitizeParametersInSpec:
         assert result == {}
         assert spec["paths"]["/test"]["get"]["parameters"][0]["name"] == "valid_param"
     
-    @patch('rootly_mcp_server.utils.logger')
-    def test_logging_integration(self, mock_logger):
+    def test_logging_integration(self, caplog):
         """Test that parameter changes are properly logged."""
         spec = {
             "paths": {
@@ -139,10 +154,10 @@ class TestSanitizeParametersInSpec:
                 }
             }
         }
-        
-        sanitize_parameters_in_spec(spec)
-        
+
+        with caplog.at_level(logging.DEBUG):
+            sanitize_parameters_in_spec(spec)
+
         # Verify logging was called for the parameter change
-        mock_logger.debug.assert_called()
-        call_args = mock_logger.debug.call_args[0][0]
-        assert "filter[test]" in call_args and "filter_test" in call_args
+        assert any("filter[test]" in record.message and "filter_test" in record.message
+                   for record in caplog.records)
