@@ -25,6 +25,88 @@ from .smart_utils import TextSimilarityAnalyzer, SolutionExtractor
 logger = logging.getLogger(__name__)
 
 
+def strip_heavy_nested_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Strip heavy nested relationship data from incident responses to reduce payload size.
+    Removes embedded user objects, roles, permissions, schedules, etc.
+    """
+    if not isinstance(data, dict):
+        return data
+
+    if "data" in data and isinstance(data["data"], list):
+        # Process list of incidents
+        for incident in data["data"]:
+            if "attributes" in incident:
+                attrs = incident["attributes"]
+                # Strip heavy embedded user objects
+                for user_field in ["user", "started_by", "mitigated_by", "resolved_by", "closed_by", "cancelled_by", "in_triage_by"]:
+                    if user_field in attrs and isinstance(attrs[user_field], dict):
+                        user_data = attrs[user_field].get("data", {})
+                        if "attributes" in user_data:
+                            # Keep only basic user info
+                            attrs[user_field] = {
+                                "data": {
+                                    "id": user_data.get("id"),
+                                    "type": user_data.get("type"),
+                                    "attributes": {
+                                        "name": user_data.get("attributes", {}).get("name"),
+                                        "email": user_data.get("attributes", {}).get("email")
+                                    }
+                                }
+                            }
+
+                # Strip heavy severity object, keep only essential info
+                if "severity" in attrs and isinstance(attrs["severity"], dict):
+                    sev_data = attrs["severity"].get("data", {})
+                    if sev_data and "attributes" in sev_data:
+                        # Simplify to just name and slug
+                        attrs["severity"] = {
+                            "name": sev_data.get("attributes", {}).get("name"),
+                            "slug": sev_data.get("attributes", {}).get("slug")
+                        }
+                    elif not sev_data:
+                        # Severity is null/empty
+                        attrs["severity"] = None
+
+                # Remove heavy integration fields (50+ fields with IDs/URLs)
+                integration_fields = [
+                    "zoom_meeting_start_url", "zoom_meeting_global_dial_in_numbers",
+                    "shortcut_story_id", "shortcut_story_url", "shortcut_task_id", "shortcut_task_url",
+                    "asana_task_id", "asana_task_url", "github_issue_id", "github_issue_url",
+                    "gitlab_issue_id", "gitlab_issue_url", "google_meeting_id",
+                    "trello_card_id", "trello_card_url", "linear_issue_id", "linear_issue_url",
+                    "zendesk_ticket_id", "zendesk_ticket_url", "motion_task_id", "motion_task_url",
+                    "clickup_task_id", "clickup_task_url", "slack_channel_deep_link",
+                    "service_now_incident_id", "service_now_incident_key", "service_now_incident_url",
+                    "opsgenie_incident_id", "opsgenie_incident_url", "opsgenie_alert_id", "opsgenie_alert_url",
+                    "victor_ops_incident_id", "victor_ops_incident_url",
+                    "pagerduty_incident_id", "pagerduty_incident_number", "pagerduty_incident_url",
+                    "mattermost_channel_id", "mattermost_channel_name", "mattermost_channel_url",
+                    "confluence_page_id", "quip_page_id", "quip_page_url",
+                    "airtable_base_key", "airtable_table_name", "airtable_record_id", "airtable_record_url",
+                    "google_drive_id", "google_drive_parent_id", "google_drive_url",
+                    "sharepoint_page_id", "sharepoint_page_url",
+                    "datadog_notebook_id", "datadog_notebook_url",
+                    "freshservice_ticket_id", "freshservice_ticket_url",
+                    "freshservice_task_id", "freshservice_task_url",
+                    "zoom_meeting_password", "zoom_meeting_pstn_password", "zoom_meeting_h323_password",
+                    "labels", "slack_last_message_ts"
+                ]
+                for field in integration_fields:
+                    attrs.pop(field, None)
+
+            # Remove heavy relationships data
+            if "relationships" in incident:
+                rels = incident["relationships"]
+                # Keep only counts for heavy relationships, remove the actual data
+                for rel_key in ["events", "action_items", "subscribers", "roles", "slack_messages", "alerts"]:
+                    if rel_key in rels and isinstance(rels[rel_key], dict) and "data" in rels[rel_key]:
+                        # Replace with just count
+                        rels[rel_key] = {"count": len(rels[rel_key]["data"])}
+
+    return data
+
+
 class MCPError:
     """Enhanced error handling for MCP protocol compliance."""
     
@@ -410,7 +492,7 @@ def create_rootly_mcp_server(
                 "page[size]": page_size,  # Use requested page size (already limited to max 20)
                 "page[number]": page_number,
                 "include": "",
-                "fields[incidents]": "id,title,summary,status,severity,created_at,updated_at,url,started_at",
+                "fields[incidents]": "id,title,summary,status,created_at,updated_at,url,started_at",
             }
             if query:
                 params["filter[search]"] = query
@@ -418,7 +500,7 @@ def create_rootly_mcp_server(
             try:
                 response = await make_authenticated_request("GET", "/v1/incidents", params=params)
                 response.raise_for_status()
-                return response.json()
+                return strip_heavy_nested_data(response.json())
             except Exception as e:
                 error_type, error_message = MCPError.categorize_error(e)
                 return MCPError.tool_error(error_message, error_type)
@@ -435,7 +517,7 @@ def create_rootly_mcp_server(
                     "page[size]": effective_page_size,
                     "page[number]": current_page,
                     "include": "",
-                    "fields[incidents]": "id,title,summary,status,severity,created_at,updated_at,url,started_at",
+                    "fields[incidents]": "id,title,summary,status,created_at,updated_at,url,started_at",
                 }
                 if query:
                     params["filter[search]"] = query
@@ -483,7 +565,7 @@ def create_rootly_mcp_server(
             if len(all_incidents) > max_results:
                 all_incidents = all_incidents[:max_results]
 
-            return {
+            return strip_heavy_nested_data({
                 "data": all_incidents,
                 "meta": {
                     "total_fetched": len(all_incidents),
@@ -492,7 +574,7 @@ def create_rootly_mcp_server(
                     "pages_fetched": current_page - 1,
                     "page_size": effective_page_size
                 }
-            }
+            })
         except Exception as e:
             error_type, error_message = MCPError.categorize_error(e)
             return MCPError.tool_error(error_message, error_type)
@@ -517,8 +599,8 @@ def create_rootly_mcp_server(
                 # Get the target incident details by ID
                 target_response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
                 target_response.raise_for_status()
-                target_incident_data = target_response.json()
-                target_incident = target_incident_data.get("data", {})
+                target_incident_data = strip_heavy_nested_data({"data": [target_response.json().get("data", {})]})
+                target_incident = target_incident_data.get("data", [{}])[0]
                 
                 if not target_incident:
                     return MCPError.tool_error("Incident not found", "not_found")
@@ -540,7 +622,8 @@ def create_rootly_mcp_server(
             params = {
                 "page[size]": 100,  # Get more incidents for better matching
                 "page[number]": 1,
-                "include": ""
+                "include": "",
+                "fields[incidents]": "id,title,summary,status,created_at,url"
             }
             
             # Only add status filter if specified
@@ -549,7 +632,7 @@ def create_rootly_mcp_server(
                 
             historical_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
             historical_response.raise_for_status()
-            historical_data = historical_response.json()
+            historical_data = strip_heavy_nested_data(historical_response.json())
             historical_incidents = historical_data.get("data", [])
             
             # Filter out the target incident itself if it exists
@@ -619,8 +702,8 @@ def create_rootly_mcp_server(
                 # Get incident details by ID
                 response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
                 response.raise_for_status()
-                incident_data = response.json()
-                target_incident = incident_data.get("data", {})
+                incident_data = strip_heavy_nested_data({"data": [response.json().get("data", {})]})
+                target_incident = incident_data.get("data", [{}])[0]
                 
                 if not target_incident:
                     return MCPError.tool_error("Incident not found", "not_found")
@@ -651,7 +734,7 @@ def create_rootly_mcp_server(
                 
             historical_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
             historical_response.raise_for_status()
-            historical_data = historical_response.json()
+            historical_data = strip_heavy_nested_data(historical_response.json())
             historical_incidents = historical_data.get("data", [])
             
             # Filter out target incident if it exists
@@ -1647,10 +1730,10 @@ def create_rootly_mcp_server(
         try:
             response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
             response.raise_for_status()
-            incident_data = response.json()
-            
+            incident_data = strip_heavy_nested_data({"data": [response.json().get("data", {})]})
+
             # Format incident data as readable text
-            incident = incident_data.get("data", {})
+            incident = incident_data.get("data", [{}])[0]
             attributes = incident.get("attributes", {})
             
             text_content = f"""Incident #{incident_id}
@@ -1718,10 +1801,11 @@ Updated: {attributes.get('updated_at', 'N/A')}"""
             response = await make_authenticated_request("GET", "/v1/incidents", params={
                 "page[size]": 10,
                 "page[number]": 1,
-                "include": ""
+                "include": "",
+                "fields[incidents]": "id,title,status"
             })
             response.raise_for_status()
-            data = response.json()
+            data = strip_heavy_nested_data(response.json())
             
             incidents = data.get("data", [])
             text_lines = ["Recent Incidents:\n"]
