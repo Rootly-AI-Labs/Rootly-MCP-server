@@ -125,10 +125,37 @@ Alternatively, connect directly to our hosted MCP server:
 - **Smart Pagination**: Defaults to 10 items per request for incident endpoints to prevent context window overflow
 - **API Filtering**: Limits exposed API endpoints for security and performance
 - **Intelligent Incident Analysis**: Smart tools that analyze historical incident data
-  - **`find_related_incidents`**: Uses TF-IDF similarity analysis to find historically similar incidents  
+  - **`find_related_incidents`**: Uses TF-IDF similarity analysis to find historically similar incidents
   - **`suggest_solutions`**: Mines past incident resolutions to recommend actionable solutions
 - **MCP Resources**: Exposes incident and team data as structured resources for easy AI reference
 - **Intelligent Pattern Recognition**: Automatically identifies services, error types, and resolution patterns
+
+## Example Skills
+
+Want to get started quickly? We provide pre-built Claude Code skills that showcase the full power of the Rootly MCP server:
+
+### 🚨 [Rootly Incident Responder](examples/skills/rootly-incident-responder.md)
+
+An AI-powered incident response specialist that:
+- Analyzes production incidents with full context
+- Finds similar historical incidents using ML-based similarity matching
+- Suggests solutions based on past successful resolutions
+- Coordinates with on-call teams across timezones
+- Correlates incidents with recent code changes and deployments
+- Creates action items and remediation plans
+- Provides confidence scores and time estimates
+
+**Quick Start:**
+```bash
+# Copy the skill to your project
+mkdir -p .claude/skills
+cp examples/skills/rootly-incident-responder.md .claude/skills/
+
+# Then in Claude Code, invoke it:
+# @rootly-incident-responder analyze incident #12345
+```
+
+This skill demonstrates a complete incident response workflow using Rootly's intelligent tools combined with GitHub integration for code correlation.
 
 ### Available Tools
 
