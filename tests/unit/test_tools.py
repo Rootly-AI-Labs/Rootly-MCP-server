@@ -8,10 +8,11 @@ Tests cover:
 - Error handling and response formatting
 """
 
-import pytest
 from unittest.mock import patch
 
-from rootly_mcp_server.server import create_rootly_mcp_server, DEFAULT_ALLOWED_PATHS
+import pytest
+
+from rootly_mcp_server.server import DEFAULT_ALLOWED_PATHS, create_rootly_mcp_server
 
 
 @pytest.mark.unit
@@ -24,13 +25,13 @@ class TestSearchIncidentsIntegration:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Test API", "version": "1.0.0"},
-                "paths": {"/incidents": {"get": {"operationId": "listIncidents"}}}, 
+                "paths": {"/incidents": {"get": {"operationId": "listIncidents"}}},
                 "components": {"schemas": {}}
             }
             mock_load_spec.return_value = mock_spec
-            
+
             server = create_rootly_mcp_server()
-            
+
             # Verify server was created successfully
             assert server is not None
             assert hasattr(server, 'get_tools')
@@ -40,9 +41,9 @@ class TestSearchIncidentsIntegration:
         with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
             mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}, "components": {"schemas": {}}}
             mock_load_spec.return_value = mock_spec
-            
+
             server = create_rootly_mcp_server()
-            
+
             # Server should have been created with custom tools
             assert server is not None
 
@@ -56,7 +57,7 @@ class TestDefaultConfiguration:
         assert DEFAULT_ALLOWED_PATHS is not None
         assert isinstance(DEFAULT_ALLOWED_PATHS, list)
         assert len(DEFAULT_ALLOWED_PATHS) > 0
-        
+
         # Verify some expected paths are included
         path_strings = str(DEFAULT_ALLOWED_PATHS)
         assert "incidents" in path_strings

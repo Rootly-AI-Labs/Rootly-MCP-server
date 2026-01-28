@@ -303,7 +303,7 @@ def sanitize_input(value: Any, max_length: int = 10000) -> Any:
     if isinstance(value, bool):
         return value
 
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return value
 
     if isinstance(value, str):
@@ -332,7 +332,7 @@ def sanitize_input(value: Any, max_length: int = 10000) -> Any:
     if isinstance(value, dict):
         return {k: sanitize_input(v, max_length) for k, v in value.items()}
 
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return type(value)(sanitize_input(item, max_length) for item in value)
 
     # For other types, convert to string and sanitize

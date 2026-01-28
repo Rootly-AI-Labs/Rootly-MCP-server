@@ -6,6 +6,7 @@ and data structures.
 """
 
 from typing import Any
+
 from .exceptions import RootlyValidationError
 
 

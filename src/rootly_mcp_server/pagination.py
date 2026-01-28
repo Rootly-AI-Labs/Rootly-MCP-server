@@ -4,7 +4,8 @@ Pagination utilities for the Rootly MCP Server.
 This module provides helpers for paginated API requests.
 """
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 async def fetch_all_pages(

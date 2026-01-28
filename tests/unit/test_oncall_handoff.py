@@ -1,7 +1,8 @@
 """Unit tests for on-call handoff tools."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.mark.unit

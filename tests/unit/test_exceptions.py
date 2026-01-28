@@ -2,20 +2,16 @@
 Tests for exception handling module.
 """
 
-import pytest
 from rootly_mcp_server.exceptions import (
-    RootlyMCPError,
+    RootlyAPIError,
     RootlyAuthenticationError,
     RootlyAuthorizationError,
-    RootlyNetworkError,
+    RootlyMCPError,
+    RootlyRateLimitError,
+    RootlyResourceNotFoundError,
+    RootlyServerError,
     RootlyTimeoutError,
     RootlyValidationError,
-    RootlyRateLimitError,
-    RootlyAPIError,
-    RootlyServerError,
-    RootlyClientError,
-    RootlyConfigurationError,
-    RootlyResourceNotFoundError,
     categorize_exception,
 )
 

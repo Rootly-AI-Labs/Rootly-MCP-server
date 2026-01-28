@@ -13,10 +13,11 @@ import logging
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Callable
 from contextlib import contextmanager
 from functools import wraps
 from threading import Lock
-from typing import Any, Callable
+from typing import Any
 
 from .security import mask_sensitive_data
 
