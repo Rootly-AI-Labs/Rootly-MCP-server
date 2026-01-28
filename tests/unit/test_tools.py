@@ -21,12 +21,12 @@ class TestSearchIncidentsIntegration:
 
     def test_search_incidents_tool_availability(self):
         """Test that search_incidents tool is available in server."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Test API", "version": "1.0.0"},
                 "paths": {"/incidents": {"get": {"operationId": "listIncidents"}}},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -34,12 +34,17 @@ class TestSearchIncidentsIntegration:
 
             # Verify server was created successfully
             assert server is not None
-            assert hasattr(server, 'get_tools')
+            assert hasattr(server, "get_tools")
 
     def test_custom_tool_registration(self):
         """Test that custom tools are properly registered."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
-            mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}, "components": {"schemas": {}}}
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            mock_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": "Test API", "version": "1.0.0"},
+                "paths": {},
+                "components": {"schemas": {}},
+            }
             mock_load_spec.return_value = mock_spec
 
             server = create_rootly_mcp_server()
@@ -64,8 +69,13 @@ class TestDefaultConfiguration:
 
     def test_server_creation_uses_defaults(self):
         """Test that server creation works with default paths."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
-            mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}, "components": {"schemas": {}}}
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            mock_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": "Test API", "version": "1.0.0"},
+                "paths": {},
+                "components": {"schemas": {}},
+            }
             mock_load_spec.return_value = mock_spec
 
             server = create_rootly_mcp_server()

@@ -14,12 +14,12 @@ class TestGetOncallHandoffSummary:
         """Test that get_oncall_handoff_summary is registered."""
         from rootly_mcp_server.server import create_rootly_mcp_server
 
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Test API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -29,12 +29,12 @@ class TestGetOncallHandoffSummary:
             tools = await server.get_tools()
             tool_names = []
             for t in tools:
-                if hasattr(t, 'name'):
+                if hasattr(t, "name"):
                     tool_names.append(t.name)  # type: ignore[attr-defined]
                 else:
                     tool_names.append(str(t))
 
-            assert 'get_oncall_handoff_summary' in tool_names
+            assert "get_oncall_handoff_summary" in tool_names
 
 
 @pytest.mark.unit
@@ -46,12 +46,12 @@ class TestGetShiftIncidents:
         """Test that get_shift_incidents is registered."""
         from rootly_mcp_server.server import create_rootly_mcp_server
 
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Test API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -61,11 +61,9 @@ class TestGetShiftIncidents:
             tools = await server.get_tools()
             tool_names = []
             for t in tools:
-                if hasattr(t, 'name'):
+                if hasattr(t, "name"):
                     tool_names.append(t.name)  # type: ignore[attr-defined]
                 else:
                     tool_names.append(str(t))
 
-            assert 'get_shift_incidents' in tool_names
-
-
+            assert "get_shift_incidents" in tool_names

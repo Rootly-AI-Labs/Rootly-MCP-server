@@ -18,9 +18,7 @@ class TestSmartToolsIntegration:
         """Create server instance with smart tools enabled."""
         # Use local swagger to avoid external dependencies
         server = create_rootly_mcp_server(
-            swagger_path="src/rootly_mcp_server/data/swagger.json",
-            name="TestRootly",
-            hosted=False
+            swagger_path="src/rootly_mcp_server/data/swagger.json", name="TestRootly", hosted=False
         )
         return server
 
@@ -36,8 +34,8 @@ class TestSmartToolsIntegration:
                         "summary": "Users cannot complete payments due to timeout",
                         "status": "resolved",
                         "created_at": "2024-01-01T10:00:00Z",
-                        "resolved_at": "2024-01-01T11:30:00Z"
-                    }
+                        "resolved_at": "2024-01-01T11:30:00Z",
+                    },
                 },
                 {
                     "id": "1002",
@@ -46,8 +44,8 @@ class TestSmartToolsIntegration:
                         "summary": "Login failures due to service connectivity",
                         "status": "resolved",
                         "created_at": "2024-01-02T09:00:00Z",
-                        "resolved_at": "2024-01-02T10:15:00Z"
-                    }
+                        "resolved_at": "2024-01-02T10:15:00Z",
+                    },
                 },
                 {
                     "id": "1003",
@@ -56,8 +54,8 @@ class TestSmartToolsIntegration:
                         "summary": "Internal server errors in payment processing",
                         "status": "resolved",
                         "created_at": "2024-01-03T14:00:00Z",
-                        "resolved_at": "2024-01-03T15:00:00Z"
-                    }
+                        "resolved_at": "2024-01-03T15:00:00Z",
+                    },
                 },
                 {
                     "id": "1004",
@@ -66,11 +64,11 @@ class TestSmartToolsIntegration:
                         "summary": "Cannot connect to postgres database",
                         "status": "resolved",
                         "created_at": "2024-01-04T11:00:00Z",
-                        "resolved_at": "2024-01-04T13:30:00Z"
-                    }
-                }
+                        "resolved_at": "2024-01-04T13:30:00Z",
+                    },
+                },
             ],
-            "meta": {"total_count": 4}
+            "meta": {"total_count": 4},
         }
 
     @pytest.fixture
@@ -83,12 +81,14 @@ class TestSmartToolsIntegration:
                     "title": "Payment API returning errors",
                     "summary": "Users getting errors during payment processing",
                     "status": "open",
-                    "created_at": "2024-01-05T15:00:00Z"
-                }
+                    "created_at": "2024-01-05T15:00:00Z",
+                },
             }
         }
 
-    async def test_find_related_incidents_success(self, server_with_smart_tools, mock_target_incident, mock_historical_incidents):
+    async def test_find_related_incidents_success(
+        self, server_with_smart_tools, mock_target_incident, mock_historical_incidents
+    ):
         """Test successful related incidents finding."""
         # Test the core similarity analysis functionality directly
         # Since the MCP server functions are nested and hard to mock, we test the underlying logic
@@ -117,7 +117,9 @@ class TestSmartToolsIntegration:
         payment_matches = [inc for inc in similar_incidents if "payment" in inc.matched_services]
         assert len(payment_matches) > 0  # Should detect payment service matches
 
-    async def test_suggest_solutions_with_incident_id(self, server_with_smart_tools, mock_target_incident, mock_historical_incidents):
+    async def test_suggest_solutions_with_incident_id(
+        self, server_with_smart_tools, mock_target_incident, mock_historical_incidents
+    ):
         """Test solution suggestions using incident ID."""
         # Test the solution extraction functionality directly
         from rootly_mcp_server.smart_utils import SolutionExtractor, TextSimilarityAnalyzer
@@ -149,7 +151,9 @@ class TestSmartToolsIntegration:
             assert "similarity" in solution
             assert "resolution_summary" in solution
 
-    async def test_suggest_solutions_with_text_input(self, server_with_smart_tools, mock_historical_incidents):
+    async def test_suggest_solutions_with_text_input(
+        self, server_with_smart_tools, mock_historical_incidents
+    ):
         """Test solution suggestions using text input (no incident ID)."""
         # Test solution suggestions with text input directly
         from rootly_mcp_server.smart_utils import SolutionExtractor, TextSimilarityAnalyzer
@@ -163,8 +167,8 @@ class TestSmartToolsIntegration:
             "attributes": {
                 "title": "Payment processing errors",
                 "summary": "Users experiencing checkout failures",
-                "description": "500 errors from payment API"
-            }
+                "description": "500 errors from payment API",
+            },
         }
 
         historical = mock_historical_incidents["data"]
@@ -193,7 +197,9 @@ class TestSmartToolsIntegration:
         similar_incidents = analyzer.calculate_similarity([], target)
         assert len(similar_incidents) == 0
 
-    async def test_high_similarity_threshold(self, server_with_smart_tools, mock_target_incident, mock_historical_incidents):
+    async def test_high_similarity_threshold(
+        self, server_with_smart_tools, mock_target_incident, mock_historical_incidents
+    ):
         """Test related incidents with high similarity threshold."""
         from rootly_mcp_server.smart_utils import TextSimilarityAnalyzer
 
@@ -233,7 +239,7 @@ class TestSmartToolsIntegration:
             ("Updated database configuration", ["update"]),
             ("Fixed connection pool settings", ["fix"]),
             ("Rolled back deployment to v1.2.3", ["rollback"]),
-            ("Scaled up instances to handle load", ["scale"])
+            ("Scaled up instances to handle load", ["scale"]),
         ]
 
         for resolution_text, expected_actions in test_cases:
@@ -241,8 +247,9 @@ class TestSmartToolsIntegration:
 
             # Check that expected action types are found
             for expected_action in expected_actions:
-                assert any(expected_action in action.lower() for action in actions), \
-                    f"Expected action '{expected_action}' not found in {actions} for text '{resolution_text}'"
+                assert any(
+                    expected_action in action.lower() for action in actions
+                ), f"Expected action '{expected_action}' not found in {actions} for text '{resolution_text}'"
 
     def test_service_extraction_patterns(self):
         """Test service name extraction patterns."""
@@ -264,8 +271,9 @@ class TestSmartToolsIntegration:
             services = analyzer.extract_services(text)
 
             for expected_service in expected_services:
-                assert expected_service in services, \
-                    f"Expected service '{expected_service}' not found in {services} for text '{text}'"
+                assert (
+                    expected_service in services
+                ), f"Expected service '{expected_service}' not found in {services} for text '{text}'"
 
     def test_partial_matching_improvements(self):
         """Test partial/fuzzy matching for related but not identical incidents."""
@@ -278,8 +286,8 @@ class TestSmartToolsIntegration:
             "id": "target",
             "attributes": {
                 "title": "Payment API timeout errors",
-                "summary": "Users experiencing payment failures due to API timeouts"
-            }
+                "summary": "Users experiencing payment failures due to API timeouts",
+            },
         }
 
         historical_incidents = [
@@ -287,46 +295,49 @@ class TestSmartToolsIntegration:
                 "id": "similar1",
                 "attributes": {
                     "title": "Payment service timeouts",
-                    "summary": "Payments API timing out for users"
-                }
+                    "summary": "Payments API timing out for users",
+                },
             },
             {
                 "id": "similar2",
                 "attributes": {
                     "title": "Billing API errors",
-                    "summary": "Users unable to complete payments due to errors"
-                }
+                    "summary": "Users unable to complete payments due to errors",
+                },
             },
             {
                 "id": "unrelated",
                 "attributes": {
                     "title": "Auth service down",
-                    "summary": "Login failures for all users"
-                }
-            }
+                    "summary": "Login failures for all users",
+                },
+            },
         ]
 
         similar_incidents = analyzer.calculate_similarity(historical_incidents, target_incident)
 
         # Should find payment-related incidents with partial matching
-        payment_related = [inc for inc in similar_incidents
-                          if inc.incident_id in ["similar1", "similar2"]]
-        auth_related = [inc for inc in similar_incidents
-                       if inc.incident_id == "unrelated"]
+        payment_related = [
+            inc for inc in similar_incidents if inc.incident_id in ["similar1", "similar2"]
+        ]
+        auth_related = [inc for inc in similar_incidents if inc.incident_id == "unrelated"]
 
         # Payment incidents should have higher scores than auth incident
         if payment_related and auth_related:
             max_payment_score = max(inc.similarity_score for inc in payment_related)
             max_auth_score = max(inc.similarity_score for inc in auth_related)
-            assert max_payment_score > max_auth_score, \
-                f"Payment similarity ({max_payment_score}) should be higher than auth ({max_auth_score})"
+            assert (
+                max_payment_score > max_auth_score
+            ), f"Payment similarity ({max_payment_score}) should be higher than auth ({max_auth_score})"
 
         # Check that fuzzy keywords are detected
         if payment_related:
             top_match = max(payment_related, key=lambda x: x.similarity_score)
             # Should detect partial matches like "payment~payments" or "timeout~timeouts"
             # Note: This might be 0 if exact matches exist, which is also valid
-            assert top_match.similarity_score > 0.1, "Should have reasonable similarity score for payment incidents"
+            assert (
+                top_match.similarity_score > 0.1
+            ), "Should have reasonable similarity score for payment incidents"
 
     def test_find_related_incidents_with_text_description(self):
         """Test find_related_incidents with descriptive text instead of incident ID."""
@@ -342,8 +353,8 @@ class TestSmartToolsIntegration:
             "attributes": {
                 "title": text_description,
                 "summary": text_description,
-                "description": text_description
-            }
+                "description": text_description,
+            },
         }
 
         # Mock historical incidents with various outage scenarios
@@ -353,33 +364,33 @@ class TestSmartToolsIntegration:
                 "attributes": {
                     "title": "Website outage - frontend servers down",
                     "summary": "Complete website unavailable for users",
-                    "status": "resolved"
-                }
+                    "status": "resolved",
+                },
             },
             {
                 "id": "1002",
                 "attributes": {
                     "title": "API service offline",
                     "summary": "Backend API not responding, site unavailable",
-                    "status": "resolved"
-                }
+                    "status": "resolved",
+                },
             },
             {
                 "id": "1003",
                 "attributes": {
                     "title": "Database connection timeout",
                     "summary": "Cannot connect to postgres database",
-                    "status": "resolved"
-                }
+                    "status": "resolved",
+                },
             },
             {
                 "id": "1004",
                 "attributes": {
                     "title": "Payment processing errors",
                     "summary": "Users unable to complete checkout",
-                    "status": "resolved"
-                }
-            }
+                    "status": "resolved",
+                },
+            },
         ]
 
         # Calculate similarities
@@ -389,15 +400,22 @@ class TestSmartToolsIntegration:
         assert len(similar_incidents) > 0, "Should find similar incidents for 'website is down'"
 
         # Website outage incident should be most relevant
-        website_related = [inc for inc in similar_incidents
-                          if any(keyword in inc.title.lower()
-                               for keyword in ["website", "outage", "down", "offline", "unavailable"])]
+        website_related = [
+            inc
+            for inc in similar_incidents
+            if any(
+                keyword in inc.title.lower()
+                for keyword in ["website", "outage", "down", "offline", "unavailable"]
+            )
+        ]
 
         assert len(website_related) > 0, "Should identify website-related incidents"
 
         # Check that similarity scores are reasonable for text-based matching
         top_match = similar_incidents[0]
-        assert top_match.similarity_score > 0.1, "Should have reasonable similarity score for text description"
+        assert (
+            top_match.similarity_score > 0.1
+        ), "Should have reasonable similarity score for text description"
 
         # Verify matched keywords include relevant terms
         all_keywords = []
@@ -420,25 +438,25 @@ class TestSmartToolsIntegration:
                 "attributes": {
                     "title": "Payment API timeout",
                     "summary": "Payment processing errors",
-                    "status": "resolved"
-                }
+                    "status": "resolved",
+                },
             },
             {
                 "id": "1002",
                 "attributes": {
                     "title": "Payment service down",
                     "summary": "Payment API returning errors",
-                    "status": "investigating"
-                }
+                    "status": "investigating",
+                },
             },
             {
                 "id": "1003",
                 "attributes": {
                     "title": "Payment gateway issues",
                     "summary": "Users cannot complete purchases",
-                    "status": "open"
-                }
-            }
+                    "status": "open",
+                },
+            },
         ]
 
         target_incident = {
@@ -446,17 +464,21 @@ class TestSmartToolsIntegration:
             "attributes": {
                 "title": "Payment processing failures",
                 "summary": "Users experiencing payment errors",
-                "status": "open"
-            }
+                "status": "open",
+            },
         }
 
         # Test similarity analysis works with mixed statuses
         similar_incidents = analyzer.calculate_similarity(mixed_status_incidents, target_incident)
 
         # Should find all payment-related incidents regardless of status
-        assert len(similar_incidents) == 3, f"Expected 3 similar incidents, got {len(similar_incidents)}"
+        assert (
+            len(similar_incidents) == 3
+        ), f"Expected 3 similar incidents, got {len(similar_incidents)}"
 
         # All should be payment-related with reasonable similarity scores
         for incident in similar_incidents:
-            assert incident.similarity_score > 0.1, f"Low similarity score {incident.similarity_score} for payment incident"
+            assert (
+                incident.similarity_score > 0.1
+            ), f"Low similarity score {incident.similarity_score} for payment incident"
             assert "payment" in incident.title.lower() or "payment" in incident.matched_keywords

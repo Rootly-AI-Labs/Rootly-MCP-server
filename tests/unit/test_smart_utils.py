@@ -92,7 +92,7 @@ class TestTextSimilarityAnalyzer:
             "attributes": {
                 "title": "Payment API Error",
                 "summary": "Users cannot checkout",
-                "description": "500 errors from payment service"
+                "description": "500 errors from payment service",
             }
         }
 
@@ -106,7 +106,7 @@ class TestTextSimilarityAnalyzer:
         incident = {
             "title": "Auth Service Down",
             "summary": "Login failures",
-            "description": "Cannot authenticate users"
+            "description": "Cannot authenticate users",
         }
 
         result = self.analyzer._combine_incident_text(incident)
@@ -120,7 +120,7 @@ class TestTextSimilarityAnalyzer:
         incident = {
             "attributes": {
                 "created_at": "2024-01-01T10:00:00Z",
-                "resolved_at": "2024-01-01T12:30:00Z"
+                "resolved_at": "2024-01-01T12:30:00Z",
             }
         }
 
@@ -140,16 +140,13 @@ class TestTextSimilarityAnalyzer:
 
         # Test with invalid timestamps
         incident = {
-            "attributes": {
-                "created_at": "invalid-date",
-                "resolved_at": "2024-01-01T12:00:00Z"
-            }
+            "attributes": {"created_at": "invalid-date", "resolved_at": "2024-01-01T12:00:00Z"}
         }
 
         result = self.analyzer._calculate_resolution_time(incident)
         assert result is None
 
-    @patch('rootly_mcp_server.smart_utils.ML_AVAILABLE', True)
+    @patch("rootly_mcp_server.smart_utils.ML_AVAILABLE", True)
     def test_calculate_similarity_with_ml(self):
         """Test similarity calculation with ML libraries available."""
         incidents = [
@@ -157,29 +154,31 @@ class TestTextSimilarityAnalyzer:
                 "id": "1",
                 "attributes": {
                     "title": "Payment API timeout",
-                    "summary": "Users cannot complete payments"
-                }
+                    "summary": "Users cannot complete payments",
+                },
             },
             {
                 "id": "2",
                 "attributes": {
                     "title": "Auth service error",
-                    "summary": "Login failures occurring"
-                }
-            }
+                    "summary": "Login failures occurring",
+                },
+            },
         ]
 
         target_incident = {
             "id": "target",
             "attributes": {
                 "title": "Payment service down",
-                "summary": "Payment processing failures"
-            }
+                "summary": "Payment processing failures",
+            },
         }
 
         # Mock the TF-IDF components - patch the sklearn module imports
-        with patch('sklearn.feature_extraction.text.TfidfVectorizer') as mock_vectorizer, \
-             patch('sklearn.metrics.pairwise.cosine_similarity') as mock_similarity:
+        with (
+            patch("sklearn.feature_extraction.text.TfidfVectorizer") as mock_vectorizer,
+            patch("sklearn.metrics.pairwise.cosine_similarity") as mock_similarity,
+        ):
 
             mock_vectorizer_instance = MagicMock()
             mock_vectorizer.return_value = mock_vectorizer_instance
@@ -190,7 +189,10 @@ class TestTextSimilarityAnalyzer:
 
             # Mock similarity scores (payment incident should be more similar)
             import numpy as np
-            mock_similarity.return_value = np.array([[0.8, 0.3]])  # High similarity to incident 1, low to incident 2
+
+            mock_similarity.return_value = np.array(
+                [[0.8, 0.3]]
+            )  # High similarity to incident 1, low to incident 2
 
             results = self.analyzer.calculate_similarity(incidents, target_incident)
 
@@ -200,7 +202,7 @@ class TestTextSimilarityAnalyzer:
             assert results[0].incident_id == "1"  # Most similar incident
             assert results[0].similarity_score > 0.5
 
-    @patch('rootly_mcp_server.smart_utils.ML_AVAILABLE', False)
+    @patch("rootly_mcp_server.smart_utils.ML_AVAILABLE", False)
     def test_calculate_similarity_fallback(self):
         """Test similarity calculation fallback without ML libraries."""
         incidents = [
@@ -208,24 +210,24 @@ class TestTextSimilarityAnalyzer:
                 "id": "1",
                 "attributes": {
                     "title": "Payment API timeout error",
-                    "summary": "Users cannot complete payments due to timeout"
-                }
+                    "summary": "Users cannot complete payments due to timeout",
+                },
             },
             {
                 "id": "2",
                 "attributes": {
                     "title": "Database connection error",
-                    "summary": "Cannot connect to user database"
-                }
-            }
+                    "summary": "Cannot connect to user database",
+                },
+            },
         ]
 
         target_incident = {
             "id": "target",
             "attributes": {
                 "title": "Payment API timeout",
-                "summary": "Payment processing timeout errors"
-            }
+                "summary": "Payment processing timeout errors",
+            },
         }
 
         results = self.analyzer.calculate_similarity(incidents, target_incident)
@@ -290,7 +292,7 @@ class TestSolutionExtractor:
                 similarity_score=0.8,
                 matched_services=["payment", "auth"],
                 matched_keywords=["timeout", "error"],
-                resolution_time_hours=1.5
+                resolution_time_hours=1.5,
             ),
             IncidentSimilarity(
                 incident_id="2",
@@ -298,13 +300,12 @@ class TestSolutionExtractor:
                 similarity_score=0.7,
                 matched_services=["payment"],
                 matched_keywords=["timeout", "connection"],
-                resolution_time_hours=0.5
-            )
+                resolution_time_hours=0.5,
+            ),
         ]
 
         patterns = self.extractor._identify_common_patterns(
-            ["timeout", "error", "timeout", "connection"],
-            similar_incidents
+            ["timeout", "error", "timeout", "connection"], similar_incidents
         )
 
         # Should identify common services
@@ -324,7 +325,7 @@ class TestSolutionExtractor:
                 matched_services=["payment"],
                 matched_keywords=["timeout", "api"],
                 resolution_summary="Restarted payment service and cleared cache",
-                resolution_time_hours=1.0
+                resolution_time_hours=1.0,
             )
         ]
 
@@ -371,7 +372,7 @@ class TestIncidentSimilarity:
             matched_services=["api", "db"],
             matched_keywords=["error", "timeout"],
             resolution_summary="Fixed by restart",
-            resolution_time_hours=2.0
+            resolution_time_hours=2.0,
         )
 
         assert similarity.incident_id == "123"
@@ -389,7 +390,7 @@ class TestIncidentSimilarity:
             title="Test Incident",
             similarity_score=0.85,
             matched_services=[],
-            matched_keywords=[]
+            matched_keywords=[],
         )
 
         assert similarity.resolution_summary == ""
@@ -414,8 +415,8 @@ class TestIntegrationScenarios:
                     "title": "Payment API timeout errors",
                     "summary": "Users cannot complete payments due to API timeouts",
                     "created_at": "2024-01-01T10:00:00Z",
-                    "resolved_at": "2024-01-01T11:30:00Z"
-                }
+                    "resolved_at": "2024-01-01T11:30:00Z",
+                },
             },
             {
                 "id": "101",
@@ -423,9 +424,9 @@ class TestIntegrationScenarios:
                     "title": "Database connection issues",
                     "summary": "Cannot connect to user database",
                     "created_at": "2024-01-02T14:00:00Z",
-                    "resolved_at": "2024-01-02T18:00:00Z"
-                }
-            }
+                    "resolved_at": "2024-01-02T18:00:00Z",
+                },
+            },
         ]
 
         # Current incident
@@ -433,12 +434,14 @@ class TestIntegrationScenarios:
             "id": "200",
             "attributes": {
                 "title": "Payment service returning 500 errors",
-                "summary": "Users getting errors during checkout payment processing"
-            }
+                "summary": "Users getting errors during checkout payment processing",
+            },
         }
 
         # Calculate similarities
-        similar_incidents = self.analyzer.calculate_similarity(historical_incidents, target_incident)
+        similar_incidents = self.analyzer.calculate_similarity(
+            historical_incidents, target_incident
+        )
 
         # Should find the payment incident as more similar
         assert len(similar_incidents) > 0
@@ -451,7 +454,7 @@ class TestIntegrationScenarios:
         assert len(solutions["solutions"]) > 0
         assert solutions["average_resolution_time"] == 1.5  # 1.5 hours resolution time
 
-    @patch('rootly_mcp_server.smart_utils.ML_AVAILABLE', False)
+    @patch("rootly_mcp_server.smart_utils.ML_AVAILABLE", False)
     def test_fallback_scenario(self):
         """Test that fallback works when ML libraries aren't available."""
         historical_incidents = [
@@ -459,8 +462,8 @@ class TestIntegrationScenarios:
                 "id": "300",
                 "attributes": {
                     "title": "Auth service connection timeout",
-                    "summary": "Authentication failures due to connection timeout"
-                }
+                    "summary": "Authentication failures due to connection timeout",
+                },
             }
         ]
 
@@ -468,16 +471,21 @@ class TestIntegrationScenarios:
             "id": "400",
             "attributes": {
                 "title": "Auth API timeout errors",
-                "summary": "User login timeout errors"
-            }
+                "summary": "User login timeout errors",
+            },
         }
 
         # Should work with keyword-based fallback
-        similar_incidents = self.analyzer.calculate_similarity(historical_incidents, target_incident)
+        similar_incidents = self.analyzer.calculate_similarity(
+            historical_incidents, target_incident
+        )
 
         assert len(similar_incidents) > 0
         assert similar_incidents[0].incident_id == "300"
         assert similar_incidents[0].similarity_score > 0
 
         # Should have matched keywords
-        assert "auth" in similar_incidents[0].matched_keywords or "timeout" in similar_incidents[0].matched_keywords
+        assert (
+            "auth" in similar_incidents[0].matched_keywords
+            or "timeout" in similar_incidents[0].matched_keywords
+        )

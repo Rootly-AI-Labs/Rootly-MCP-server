@@ -55,21 +55,16 @@ def mock_api_response():
 
     Returns a function that creates mock responses with common structure.
     """
+
     def create_response(
-        data: list | None = None,
-        meta: dict | None = None,
-        status_code: int = 200
+        data: list | None = None, meta: dict | None = None, status_code: int = 200
     ) -> dict[str, Any]:
         if data is None:
             data = []
         if meta is None:
             meta = {"total": len(data), "page": 1}
 
-        return {
-            "data": data,
-            "meta": meta,
-            "status_code": status_code
-        }
+        return {"data": data, "meta": meta, "status_code": status_code}
 
     return create_response
 
@@ -90,8 +85,8 @@ def mock_incident_data():
                 "summary": "Users experiencing slow response times",
                 "status": "investigating",
                 "severity": "high",
-                "created_at": "2025-08-21T10:00:00Z"
-            }
+                "created_at": "2025-08-21T10:00:00Z",
+            },
         },
         {
             "id": "2",
@@ -101,9 +96,9 @@ def mock_incident_data():
                 "summary": "High traffic causing rate limits",
                 "status": "resolved",
                 "severity": "medium",
-                "created_at": "2025-08-21T09:30:00Z"
-            }
-        }
+                "created_at": "2025-08-21T09:30:00Z",
+            },
+        },
     ]
 
 
@@ -118,7 +113,7 @@ def mock_server_config():
         "name": "TestServer",
         "hosted": False,
         "swagger_path": None,
-        "api_base": "https://api.rootly.com/v1"
+        "api_base": "https://api.rootly.com/v1",
     }
 
 

@@ -145,10 +145,7 @@ class TestHTTPClientConfiguration:
     def test_parameter_mapping_initialization(self):
         """Test parameter mapping initialization."""
         custom_mapping = {"old_param": "new_param"}
-        client = AuthenticatedHTTPXClient(
-            hosted=True,
-            parameter_mapping=custom_mapping
-        )
+        client = AuthenticatedHTTPXClient(hosted=True, parameter_mapping=custom_mapping)
 
         assert client.parameter_mapping == custom_mapping
 
@@ -192,11 +189,7 @@ class TestTokenHandling:
 
     def test_token_format_validation(self):
         """Test that tokens are validated for correct format."""
-        valid_tokens = [
-            "rootly_abc123def456",
-            "rootly_1234567890abcdef",
-            "rootly_short123"
-        ]
+        valid_tokens = ["rootly_abc123def456", "rootly_1234567890abcdef", "rootly_short123"]
 
         for token in valid_tokens:
             with patch.dict(os.environ, {"ROOTLY_API_TOKEN": token}):

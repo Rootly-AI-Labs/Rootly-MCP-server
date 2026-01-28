@@ -36,13 +36,14 @@ async def test_search_incidents_limits():
     print("✅ Found search_incidents tool")
 
     # Check the parameter schema for max_results
-    if hasattr(search_tool, 'fn'):
+    if hasattr(search_tool, "fn"):
         # Get function signature info
         import inspect
-        sig = inspect.signature(search_tool.fn)  # type: ignore
-        max_results_param = sig.parameters.get('max_results')
 
-        if max_results_param and hasattr(max_results_param.annotation, '__metadata__'):
+        sig = inspect.signature(search_tool.fn)  # type: ignore
+        max_results_param = sig.parameters.get("max_results")
+
+        if max_results_param and hasattr(max_results_param.annotation, "__metadata__"):
             # Extract the Field constraints
             field_info = max_results_param.annotation.__metadata__[0]
             print(f"  Max allowed: {field_info.le if hasattr(field_info, 'le') else 'Unknown'}")
@@ -52,32 +53,32 @@ async def test_search_incidents_limits():
     try:
         print("\n  Testing with empty query (should get recent incidents)...")
         result = await search_tool.fn(query="", max_results=5)  # type: ignore
-        result_count = len(result.get('data', []))
+        result_count = len(result.get("data", []))
         print(f"  ✅ Empty query test - got {result_count} results")
 
         if result_count == 0:
             print("    ℹ️  No incidents found - this may be normal for a test/empty environment")
         else:
             # Show first incident title if available
-            first_incident = result.get('data', [{}])[0]
-            title = first_incident.get('attributes', {}).get('title', 'No title')
+            first_incident = result.get("data", [{}])[0]
+            title = first_incident.get("attributes", {}).get("title", "No title")
             print(f"    📋 First incident: {title[:50]}...")
 
         print("\n  Testing with max limit (10)...")
         result = await search_tool.fn(query="", max_results=10)  # type: ignore
-        result_count = len(result.get('data', []))
+        result_count = len(result.get("data", []))
         print(f"  ✅ Max limit test - got {result_count} results")
 
         # Also test pagination
         print("\n  Testing pagination (page_number=1)...")
         result = await search_tool.fn(query="", page_number=1, page_size=3)  # type: ignore
-        result_count = len(result.get('data', []))
+        result_count = len(result.get("data", []))
         print(f"  ✅ Pagination test - got {result_count} results (max 3 per page)")
 
         print("\n  Testing invalid limit (15 - should be rejected)...")
         try:
             # Try to use the tool through the MCP framework validation
-            if hasattr(search_tool, 'validate_call'):
+            if hasattr(search_tool, "validate_call"):
                 result = await search_tool.validate_call(query="test", max_results=15)  # type: ignore
             else:
                 # Fallback to direct call - validation might not trigger here
@@ -101,10 +102,7 @@ async def test_authentication_modes():
     # Test local mode (default)
     print("\n  Testing local mode (hosted=False)...")
     try:
-        server_local = create_rootly_mcp_server(
-            name="LocalTest",
-            hosted=False
-        )
+        server_local = create_rootly_mcp_server(name="LocalTest", hosted=False)
         print("  ✅ Local mode server created successfully")
 
         # Check if API token was loaded
@@ -119,10 +117,7 @@ async def test_authentication_modes():
     # Test hosted mode
     print("\n  Testing hosted mode (hosted=True)...")
     try:
-        server_hosted = create_rootly_mcp_server(
-            name="HostedTest",
-            hosted=True
-        )
+        server_hosted = create_rootly_mcp_server(name="HostedTest", hosted=True)
         print("  ✅ Hosted mode server created successfully")
 
         tools = await server_hosted.get_tools()
@@ -161,7 +156,7 @@ async def test_tool_availability():
         print(f"    ... and {len(openapi_tools) - 10} more")
 
     # Check for incident-related tools specifically
-    incident_tools = [name for name in tools.keys() if 'incident' in name.lower()]
+    incident_tools = [name for name in tools.keys() if "incident" in name.lower()]
     if incident_tools:
         print(f"  🔍 Incident-related tools: {', '.join(incident_tools)}")
 
@@ -189,6 +184,7 @@ async def main():
     except Exception as e:
         print(f"\n❌ Test suite failed: {e}")
         import traceback
+
         traceback.print_exc()
 
 

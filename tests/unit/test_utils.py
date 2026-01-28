@@ -81,16 +81,10 @@ class TestSanitizeParametersInSpec:
             "paths": {
                 "/incidents": {
                     "parameters": [{"name": "filter[kind]", "in": "query"}],
-                    "get": {
-                        "parameters": [{"name": "sort[created_at]", "in": "query"}]
-                    }
+                    "get": {"parameters": [{"name": "sort[created_at]", "in": "query"}]},
                 }
             },
-            "components": {
-                "parameters": {
-                    "FilterParam": {"name": "include[user]", "in": "query"}
-                }
-            }
+            "components": {"parameters": {"FilterParam": {"name": "include[user]", "in": "query"}}},
         }
 
         result = sanitize_parameters_in_spec(spec)
@@ -126,13 +120,7 @@ class TestSanitizeParametersInSpec:
     def test_parameters_without_changes(self):
         """Test that valid parameters don't get changed."""
         spec = {
-            "paths": {
-                "/test": {
-                    "get": {
-                        "parameters": [{"name": "valid_param", "in": "query"}]
-                    }
-                }
-            }
+            "paths": {"/test": {"get": {"parameters": [{"name": "valid_param", "in": "query"}]}}}
         }
 
         result = sanitize_parameters_in_spec(spec)
@@ -144,18 +132,14 @@ class TestSanitizeParametersInSpec:
     def test_logging_integration(self, caplog):
         """Test that parameter changes are properly logged."""
         spec = {
-            "paths": {
-                "/test": {
-                    "get": {
-                        "parameters": [{"name": "filter[test]", "in": "query"}]
-                    }
-                }
-            }
+            "paths": {"/test": {"get": {"parameters": [{"name": "filter[test]", "in": "query"}]}}}
         }
 
         with caplog.at_level(logging.DEBUG):
             sanitize_parameters_in_spec(spec)
 
         # Verify logging was called for the parameter change
-        assert any("filter[test]" in record.message and "filter_test" in record.message
-                   for record in caplog.records)
+        assert any(
+            "filter[test]" in record.message and "filter_test" in record.message
+            for record in caplog.records
+        )

@@ -159,11 +159,11 @@ class RootlyClient:
                 from .exceptions import RootlyRateLimitError
 
                 raise RootlyRateLimitError(f"Rate limit exceeded: {error_msg}")
-            elif 400 <= status_code < 500:
+            elif status_code is not None and 400 <= status_code < 500:
                 raise RootlyClientError(
                     f"Client error ({status_code}): {error_msg}", status_code=status_code
                 )
-            elif 500 <= status_code < 600:
+            elif status_code is not None and 500 <= status_code < 600:
                 raise RootlyServerError(
                     f"Server error ({status_code}): {error_msg}", status_code=status_code
                 )

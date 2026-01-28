@@ -29,12 +29,12 @@ class TestServerCreation:
 
     def test_create_server_with_defaults(self, mock_httpx_client, mock_api_response):
         """Test creating server with default parameters."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Rootly API", "version": "1.0.0"},
                 "paths": {"/incidents": {"get": {"operationId": "listIncidents"}}},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -42,15 +42,20 @@ class TestServerCreation:
 
             # Verify server was created
             assert server is not None
-            assert hasattr(server, 'get_tools')
+            assert hasattr(server, "get_tools")
 
             # Verify default parameters were used
             mock_load_spec.assert_called_once_with(None)
 
     def test_create_server_with_custom_name(self, mock_httpx_client):
         """Test server creation with custom name."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
-            mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}, "components": {"schemas": {}}}
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            mock_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": "Test API", "version": "1.0.0"},
+                "paths": {},
+                "components": {"schemas": {}},
+            }
             mock_load_spec.return_value = mock_spec
 
             custom_name = "CustomRootlyServer"
@@ -60,8 +65,13 @@ class TestServerCreation:
 
     def test_create_server_hosted_mode(self, mock_httpx_client):
         """Test server creation in hosted mode."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
-            mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}, "components": {"schemas": {}}}
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            mock_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": "Test API", "version": "1.0.0"},
+                "paths": {},
+                "components": {"schemas": {}},
+            }
             mock_load_spec.return_value = mock_spec
 
             server = create_rootly_mcp_server(hosted=True)
@@ -70,8 +80,13 @@ class TestServerCreation:
 
     def test_create_server_with_custom_paths(self, mock_httpx_client):
         """Test server creation with custom allowed paths."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
-            mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {"/custom": {}}, "components": {"schemas": {}}}
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            mock_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": "Test API", "version": "1.0.0"},
+                "paths": {"/custom": {}},
+                "components": {"schemas": {}},
+            }
             mock_load_spec.return_value = mock_spec
 
             custom_paths = ["/custom"]
@@ -81,8 +96,13 @@ class TestServerCreation:
 
     def test_create_server_with_swagger_path(self, mock_httpx_client):
         """Test server creation with explicit swagger file path."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
-            mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}, "components": {"schemas": {}}}
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            mock_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": "Test API", "version": "1.0.0"},
+                "paths": {},
+                "components": {"schemas": {}},
+            }
             mock_load_spec.return_value = mock_spec
 
             swagger_path = "/path/to/swagger.json"
@@ -163,7 +183,7 @@ class TestSwaggerSpecLoading:
         mock_spec = {
             "openapi": "3.0.0",
             "info": {"title": "Test API", "version": "1.0.0"},
-            "paths": {}
+            "paths": {},
         }
 
         with patch("os.path.isfile", return_value=True):
@@ -178,7 +198,7 @@ class TestSwaggerSpecLoading:
         mock_spec = {
             "openapi": "3.0.0",
             "info": {"title": "Remote API", "version": "1.0.0"},
-            "paths": {}
+            "paths": {},
         }
 
         with patch("pathlib.Path.is_file", return_value=False):
@@ -195,7 +215,11 @@ class TestSwaggerSpecLoading:
 
     def test_load_spec_file_not_found(self):
         """Test behavior when swagger file is not found."""
-        mock_spec = {"openapi": "3.0.0", "info": {"title": "Test API", "version": "1.0.0"}, "paths": {}}
+        mock_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {},
+        }
 
         # Mock all the path checking methods to return False
         with patch("os.path.isfile", return_value=False):
@@ -227,7 +251,7 @@ class TestOpenAPISpecFiltering:
                 "/teams": {"get": {"operationId": "listTeams"}},
                 "/forbidden": {"get": {"operationId": "forbiddenEndpoint"}},
             },
-            "components": {"schemas": {}}
+            "components": {"schemas": {}},
         }
 
         allowed_paths = ["/incidents", "/teams"]
@@ -261,7 +285,7 @@ class TestOpenAPISpecFiltering:
             "openapi": "3.0.0",
             "info": {"title": "Test API", "version": "1.0.0"},
             "paths": {"/other": {"get": {}}},
-            "components": {"schemas": {}}
+            "components": {"schemas": {}},
         }
 
         allowed_paths = ["/incidents"]
@@ -278,8 +302,8 @@ class TestOpenAPISpecFiltering:
             "paths": {"/incidents": {"get": {"operationId": "listIncidents"}}},
             "components": {
                 "schemas": {"Incident": {"type": "object"}},
-                "securitySchemes": {"bearer": {"type": "http"}}
-            }
+                "securitySchemes": {"bearer": {"type": "http"}},
+            },
         }
 
         filtered_spec = _filter_openapi_spec(original_spec, ["/incidents"])
@@ -308,7 +332,7 @@ class TestOpenAPISpecFiltering:
                 "/incidents/123/alerts": {"get": {"operationId": "listIncidentAlerts"}},
                 "/users": {"get": {"operationId": "listUsers"}},
             },
-            "components": {"schemas": {}}
+            "components": {"schemas": {}},
         }
 
         allowed_paths = ["/alerts", "/incidents/123/alerts", "/users"]
@@ -343,7 +367,7 @@ class TestOpenAPISpecFiltering:
                 "/incident_action_items": {"get": {"operationId": "listIncidentActionItems"}},
                 "/services": {"get": {"operationId": "listServices"}},
             },
-            "components": {"schemas": {}}
+            "components": {"schemas": {}},
         }
 
         allowed_paths = ["/incident_types", "/incident_action_items", "/services"]

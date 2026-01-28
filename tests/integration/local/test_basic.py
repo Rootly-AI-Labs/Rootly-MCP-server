@@ -19,41 +19,41 @@ class TestLocalServerBasics:
 
     def test_server_creation_integration(self):
         """Test that server can be created with real configuration."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             # Use a more complete mock spec
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {
                     "title": "Rootly API",
                     "version": "1.0.0",
-                    "description": "Rootly API for incident management"
+                    "description": "Rootly API for incident management",
                 },
                 "paths": {
                     "/v1/incidents": {
                         "get": {
                             "operationId": "listIncidents",
                             "summary": "List incidents",
-                            "responses": {"200": {"description": "Success"}}
+                            "responses": {"200": {"description": "Success"}},
                         }
                     }
                 },
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
             server = create_rootly_mcp_server()
 
             assert server is not None
-            assert hasattr(server, 'get_tools')
+            assert hasattr(server, "get_tools")
 
     def test_server_creation_hosted_mode(self):
         """Test server creation in hosted mode."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Rootly API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -63,12 +63,12 @@ class TestLocalServerBasics:
 
     def test_server_creation_local_mode(self):
         """Test server creation in local mode."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Rootly API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -110,12 +110,12 @@ class TestLocalServerConfiguration:
 
     def test_server_with_custom_swagger_path(self):
         """Test server creation with custom swagger path."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Custom API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -128,15 +128,15 @@ class TestLocalServerConfiguration:
 
     def test_server_with_custom_allowed_paths(self):
         """Test server creation with custom allowed paths."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Filtered API", "version": "1.0.0"},
                 "paths": {
                     "/custom/endpoint": {"get": {"operationId": "customOp"}},
-                    "/another/endpoint": {"post": {"operationId": "anotherOp"}}
+                    "/another/endpoint": {"post": {"operationId": "anotherOp"}},
                 },
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -147,12 +147,12 @@ class TestLocalServerConfiguration:
 
     def test_server_with_custom_name(self):
         """Test server creation with custom name."""
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Named API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -205,7 +205,9 @@ class TestLocalWithRealToken:
         token = os.getenv("ROOTLY_API_TOKEN")
 
         # Basic format validation
-        assert token is not None and token.startswith("rootly_"), "Token should start with 'rootly_'"
+        assert token is not None and token.startswith(
+            "rootly_"
+        ), "Token should start with 'rootly_'"
         assert token is not None and len(token) > 20, "Token should be reasonably long"
         assert token is not None and "_" in token, "Token should contain underscores"
 

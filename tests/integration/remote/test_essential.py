@@ -51,7 +51,7 @@ class ContainerClient:
         headers = {
             "Authorization": f"Bearer {bearer_token}",
             "Content-Type": "application/vnd.api+json",
-            "Accept": "application/vnd.api+json"
+            "Accept": "application/vnd.api+json",
         }
 
         try:
@@ -59,7 +59,7 @@ class ContainerClient:
             response = await self.client.get(
                 "https://api.rootly.com/v1/incidents",
                 headers=headers,
-                params={"page[size]": 1}  # Minimal request
+                params={"page[size]": 1},  # Minimal request
             )
 
             if response.status_code == 200:
@@ -87,7 +87,7 @@ class ContainerClient:
         # These are the tools that should be available based on our OpenAPI filtering
         expected_tools = [
             "search_incidents",  # Our custom tool
-            "listIncidents",     # OpenAPI generated
+            "listIncidents",  # OpenAPI generated
             "createIncident",
             "listTeams",
             "listAlerts",
@@ -103,11 +103,13 @@ class ContainerClient:
         for i, tool_name in enumerate(expected_tools * 2):  # Duplicate to get 20+ tools
             if len(tools) >= 20:
                 break
-            tools.append({
-                "name": f"{tool_name}_{i}" if i >= len(expected_tools) else tool_name,
-                "description": f"Tool for {tool_name}",
-                "input_schema": {"type": "object", "properties": {}}
-            })
+            tools.append(
+                {
+                    "name": f"{tool_name}_{i}" if i >= len(expected_tools) else tool_name,
+                    "description": f"Tool for {tool_name}",
+                    "input_schema": {"type": "object", "properties": {}},
+                }
+            )
 
         return tools
 
@@ -121,13 +123,13 @@ class ContainerClient:
             headers = {
                 "Authorization": f"Bearer {self._token}",
                 "Content-Type": "application/vnd.api+json",
-                "Accept": "application/vnd.api+json"
+                "Accept": "application/vnd.api+json",
             }
 
             params = {
                 "page[size]": min(arguments.get("max_results", 3), 5),
                 "page[number]": 1,
-                "include": ""
+                "include": "",
             }
 
             query = arguments.get("query", "")
@@ -136,9 +138,7 @@ class ContainerClient:
 
             try:
                 response = await self.client.get(
-                    "https://api.rootly.com/v1/incidents",
-                    headers=headers,
-                    params=params
+                    "https://api.rootly.com/v1/incidents", headers=headers, params=params
                 )
 
                 if response.status_code == 200:
@@ -146,23 +146,18 @@ class ContainerClient:
                     return {
                         "data": data.get("data", []),
                         "meta": data.get("meta", {}),
-                        "status": "success"
+                        "status": "success",
                     }
                 else:
                     return {
                         "status": "error",
                         "error": f"API error: {response.status_code}",
                         "data": [],
-                        "meta": {}
+                        "meta": {},
                     }
 
             except Exception as e:
-                return {
-                    "status": "error",
-                    "error": str(e),
-                    "data": [],
-                    "meta": {}
-                }
+                return {"status": "error", "error": str(e), "data": [], "meta": {}}
 
         # For other tools, return success (in real implementation,
         # these would go through the MCP protocol)
@@ -206,7 +201,9 @@ class TestContainerServerEssentials:
         result = await container_client.authenticate(bearer_token=api_token)
 
         if not result["authenticated"]:
-            pytest.skip(f"Authentication failed: {result.get('error')} - this may be expected with test tokens")
+            pytest.skip(
+                f"Authentication failed: {result.get('error')} - this may be expected with test tokens"
+            )
 
         assert result["authenticated"] is True
 
@@ -227,7 +224,9 @@ class TestContainerServerEssentials:
         # Authenticate first
         auth_result = await container_client.authenticate(bearer_token=api_token)
         if not auth_result["authenticated"]:
-            pytest.skip(f"Authentication failed: {auth_result.get('error')} - this may be expected with test tokens")
+            pytest.skip(
+                f"Authentication failed: {auth_result.get('error')} - this may be expected with test tokens"
+            )
 
         # Get tools list
         tools = await container_client.list_tools()
@@ -258,10 +257,9 @@ class TestContainerServerEssentials:
             pytest.skip(f"Authentication failed: {auth_result.get('error')}")
 
         # Execute search_incidents tool (makes real API call)
-        result = await container_client.call_tool("search_incidents", {
-            "query": "",
-            "max_results": 3
-        })
+        result = await container_client.call_tool(
+            "search_incidents", {"query": "", "max_results": 3}
+        )
 
         # Verify basic response structure (not specific data content)
         assert "data" in result, "Response missing 'data' field"
@@ -270,9 +268,13 @@ class TestContainerServerEssentials:
         # Handle both success and error cases gracefully
         if result.get("status") == "error":
             # API call failed, but structure is correct - this may be expected
-            print(f"API call failed: {result.get('error')} - this may be expected in test environment")
+            print(
+                f"API call failed: {result.get('error')} - this may be expected in test environment"
+            )
         else:
-            assert result.get("status") == "success", f"Expected success status, got {result.get('status')}"
+            assert (
+                result.get("status") == "success"
+            ), f"Expected success status, got {result.get('status')}"
 
             # Verify data structure matches expected Rootly API format
             if result["data"]:
@@ -293,7 +295,9 @@ class TestContainerServerEssentials:
         # Authenticate first
         auth_result = await container_client.authenticate(bearer_token=api_token)
         if not auth_result["authenticated"]:
-            pytest.skip(f"Authentication failed: {auth_result.get('error')} - this may be expected with test tokens")
+            pytest.skip(
+                f"Authentication failed: {auth_result.get('error')} - this may be expected with test tokens"
+            )
 
         # Measure response time for tool listing
         start_time = time.time()
@@ -343,9 +347,9 @@ class TestRemoteServerResilience:
             pytest.skip(f"Authentication failed: {auth_result.get('error')}")
 
         # Test with invalid tool arguments
-        result = await container_client.call_tool("search_incidents", {
-            "invalid_param": "invalid_value"
-        })
+        result = await container_client.call_tool(
+            "search_incidents", {"invalid_param": "invalid_value"}
+        )
 
         # Should return result (possibly with error) rather than crash
         assert isinstance(result, dict)
@@ -359,8 +363,7 @@ class TestRemoteServerResilience:
 
         # Create multiple concurrent requests
         tasks = [
-            container_client.call_tool("search_incidents", {"max_results": 1})
-            for _ in range(3)
+            container_client.call_tool("search_incidents", {"max_results": 1}) for _ in range(3)
         ]
 
         # Execute concurrently
@@ -396,4 +399,6 @@ class TestRemoteServerEnvironmentSkipping:
         # If we're running remote tests, we should have a token
         if test_environment["has_token"]:
             token = os.getenv("ROOTLY_API_TOKEN")
-            assert token is not None and token.startswith("rootly_"), "Token should start with 'rootly_'"
+            assert token is not None and token.startswith(
+                "rootly_"
+            ), "Token should start with 'rootly_'"

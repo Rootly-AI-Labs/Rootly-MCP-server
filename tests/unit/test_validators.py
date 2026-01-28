@@ -43,7 +43,7 @@ class TestPositiveIntegerValidation:
     def test_non_integer_fails(self):
         """Test that non-integers fail."""
         with pytest.raises(RootlyValidationError, match="must be an integer"):
-            validate_positive_integer("42", "count")
+            validate_positive_integer("42", "count")  # type: ignore[arg-type]
 
 
 class TestStringValidation:
@@ -75,7 +75,7 @@ class TestStringValidation:
     def test_non_string_fails(self):
         """Test that non-strings fail."""
         with pytest.raises(RootlyValidationError, match="must be a string"):
-            validate_string(42, "name")
+            validate_string(42, "name")  # type: ignore[arg-type]
 
 
 class TestDictValidation:
@@ -102,7 +102,7 @@ class TestDictValidation:
     def test_non_dict_fails(self):
         """Test that non-dicts fail."""
         with pytest.raises(RootlyValidationError, match="must be a dict"):
-            validate_dict("not a dict", "config")
+            validate_dict("not a dict", "config")  # type: ignore[arg-type]
 
 
 class TestEnumValidation:
