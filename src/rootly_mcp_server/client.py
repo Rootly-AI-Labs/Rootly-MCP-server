@@ -10,6 +10,7 @@ import requests
 
 from .exceptions import (
     RootlyAuthenticationError,
+    RootlyAuthorizationError,
     RootlyNetworkError,
     RootlyServerError,
     RootlyClientError,
@@ -154,7 +155,7 @@ class RootlyClient:
             if status_code == 401:
                 raise RootlyAuthenticationError(f"Authentication failed: {error_msg}")
             elif status_code == 403:
-                raise RootlyAuthenticationError(f"Access forbidden: {error_msg}")
+                raise RootlyAuthorizationError(f"Access forbidden: {error_msg}")
             elif status_code == 429:
                 from .exceptions import RootlyRateLimitError
                 raise RootlyRateLimitError(f"Rate limit exceeded: {error_msg}")
