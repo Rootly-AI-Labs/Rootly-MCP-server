@@ -3,7 +3,6 @@ Rootly API client for making authenticated requests to the Rootly API.
 """
 
 import json
-import logging
 from typing import Any
 
 import requests
@@ -11,19 +10,19 @@ import requests
 from .exceptions import (
     RootlyAuthenticationError,
     RootlyAuthorizationError,
+    RootlyClientError,
     RootlyNetworkError,
     RootlyServerError,
-    RootlyClientError,
     RootlyTimeoutError,
     categorize_exception,
 )
+from .monitoring import StructuredLogger
 from .security import (
-    get_api_token_from_env,
-    validate_url,
     enforce_https,
+    get_api_token_from_env,
     sanitize_error_message,
+    validate_url,
 )
-from .monitoring import StructuredLogger, log_request
 
 # Set up structured logger
 logger = StructuredLogger(__name__)

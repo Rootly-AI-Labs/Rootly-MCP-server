@@ -371,7 +371,7 @@ class TextSimilarityAnalyzer:
                 resolved = datetime.fromisoformat(resolved_at.replace('Z', '+00:00'))
                 diff = resolved - created
                 return diff.total_seconds() / 3600  # Convert to hours
-        except Exception:  # noqa: S110
+        except Exception:  # nosec B110
             # Intentionally broad: invalid date formats should return None, not crash
             pass
 

@@ -466,7 +466,7 @@ def create_rootly_mcp_server(
                     if "headers" not in kwargs:
                         kwargs["headers"] = {}
                     kwargs["headers"]["Authorization"] = auth_header
-            except Exception:  # noqa: S110
+            except Exception:  # nosec B110
                 # Intentionally broad exception handling: fallback to default client behavior
                 # if token extraction fails for any reason (missing env var, invalid format, etc.)
                 pass

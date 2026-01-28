@@ -28,11 +28,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install --system -e ".[dev]"
+          uv sync --all-extras
+          uv pip install --system pytest pytest-cov pytest-asyncio pytest-mock pytest-timeout respx sseclient-py
 
       - name: Run tests with pytest
         run: |
-          pytest tests/ -v --cov=src/rootly_mcp_server --cov-report=term --cov-report=xml
+          uv run pytest tests/ -v --cov=src/rootly_mcp_server --cov-report=term --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
