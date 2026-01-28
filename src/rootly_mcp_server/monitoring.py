@@ -111,9 +111,7 @@ class StructuredLogger:
         """Log an error message."""
         self._log_structured(logging.ERROR, message, extra=kwargs, exc_info=exc_info)
 
-    def critical(
-        self, message: str, exc_info: Exception | None = None, **kwargs
-    ) -> None:
+    def critical(self, message: str, exc_info: Exception | None = None, **kwargs) -> None:
         """Log a critical message."""
         self._log_structured(logging.CRITICAL, message, extra=kwargs, exc_info=exc_info)
 
@@ -153,9 +151,7 @@ class MetricsCollector:
 
             # Keep only recent samples
             if len(self._latencies[endpoint]) > self._max_latency_samples:
-                self._latencies[endpoint] = self._latencies[endpoint][
-                    -self._max_latency_samples :
-                ]
+                self._latencies[endpoint] = self._latencies[endpoint][-self._max_latency_samples :]
 
     def increment_active_requests(self) -> None:
         """Increment active request counter."""

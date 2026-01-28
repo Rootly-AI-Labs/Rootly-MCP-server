@@ -19,6 +19,6 @@ from .server import RootlyMCPServer
 
 __version__ = "2.1.0"
 __all__ = [
-    'RootlyMCPServer',
-    'RootlyClient',
+    "RootlyMCPServer",
+    "RootlyClient",
 ]

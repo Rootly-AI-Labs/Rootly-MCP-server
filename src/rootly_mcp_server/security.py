@@ -87,9 +87,7 @@ class RateLimiter:
 
             # Clean up old requests
             self._requests[identifier] = [
-                req_time
-                for req_time in self._requests[identifier]
-                if req_time > window_start
+                req_time for req_time in self._requests[identifier] if req_time > window_start
             ]
 
             # Check if limit is exceeded
@@ -130,9 +128,7 @@ def rate_limit(identifier_func=None):
     def decorator(func):
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
-            identifier = (
-                identifier_func(*args, **kwargs) if identifier_func else "default"
-            )
+            identifier = identifier_func(*args, **kwargs) if identifier_func else "default"
             allowed, retry_after = _rate_limiter.is_allowed(identifier)
 
             if not allowed:
@@ -145,9 +141,7 @@ def rate_limit(identifier_func=None):
 
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
-            identifier = (
-                identifier_func(*args, **kwargs) if identifier_func else "default"
-            )
+            identifier = identifier_func(*args, **kwargs) if identifier_func else "default"
             allowed, retry_after = _rate_limiter.is_allowed(identifier)
 
             if not allowed:
@@ -183,16 +177,14 @@ def validate_api_token(token: str | None) -> str:
     """
     if not token:
         raise RootlyConfigurationError(
-            "API token is required but not provided. "
-            "Set the ROOTLY_API_TOKEN environment variable."
+            "API token is required but not provided. Set the ROOTLY_API_TOKEN environment variable."
         )
 
     token = token.strip()
 
     if len(token) < 20:
         raise RootlyConfigurationError(
-            "API token appears to be invalid (too short). "
-            "Please check your ROOTLY_API_TOKEN value."
+            "API token appears to be invalid (too short). Please check your ROOTLY_API_TOKEN value."
         )
 
     # Don't log the actual token value for security
@@ -276,9 +268,7 @@ def validate_url(url: str, allowed_domains: list[str] | None = None) -> str:
             for domain in allowed_domains
         )
         if not domain_allowed:
-            raise RootlyValidationError(
-                f"Domain {parsed.netloc} is not in the allowed list"
-            )
+            raise RootlyValidationError(f"Domain {parsed.netloc} is not in the allowed list")
 
     return url
 
@@ -316,16 +306,12 @@ def sanitize_input(value: Any, max_length: int = 10000) -> Any:
         # Check for SQL injection patterns
         for pattern in SQL_INJECTION_PATTERNS:
             if re.search(pattern, value, re.IGNORECASE):
-                raise RootlyValidationError(
-                    "Input contains potentially malicious SQL patterns"
-                )
+                raise RootlyValidationError("Input contains potentially malicious SQL patterns")
 
         # Check for XSS patterns
         for pattern in XSS_PATTERNS:
             if re.search(pattern, value, re.IGNORECASE):
-                raise RootlyValidationError(
-                    "Input contains potentially malicious XSS patterns"
-                )
+                raise RootlyValidationError("Input contains potentially malicious XSS patterns")
 
         return value
 
@@ -409,9 +395,7 @@ def mask_sensitive_data(
             masked[key] = mask_sensitive_data(value, sensitive_keys)
         elif isinstance(value, list):
             masked[key] = [
-                mask_sensitive_data(item, sensitive_keys)
-                if isinstance(item, dict)
-                else item
+                mask_sensitive_data(item, sensitive_keys) if isinstance(item, dict) else item
                 for item in value
             ]
         else:

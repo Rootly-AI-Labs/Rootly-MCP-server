@@ -20,20 +20,20 @@ def sanitize_parameter_name(name: str) -> str:
         Sanitized parameter name
     """
     # Replace square brackets with underscores: filter[kind] -> filter_kind
-    sanitized = re.sub(r'\[([^\]]+)\]', r'_\1', name)
+    sanitized = re.sub(r"\[([^\]]+)\]", r"_\1", name)
 
     # Replace any remaining invalid characters with underscores
-    sanitized = re.sub(r'[^a-zA-Z0-9_.-]', '_', sanitized)
+    sanitized = re.sub(r"[^a-zA-Z0-9_.-]", "_", sanitized)
 
     # Remove multiple consecutive underscores
-    sanitized = re.sub(r'_{2,}', '_', sanitized)
+    sanitized = re.sub(r"_{2,}", "_", sanitized)
 
     # Remove leading/trailing underscores
-    sanitized = sanitized.strip('_')
+    sanitized = sanitized.strip("_")
 
     # Ensure the name doesn't exceed 64 characters
     if len(sanitized) > 64:
-        sanitized = sanitized[:64].rstrip('_')
+        sanitized = sanitized[:64].rstrip("_")
 
     # Ensure the name is not empty and starts with a letter or underscore
     if not sanitized or sanitized[0].isdigit():
@@ -70,13 +70,24 @@ def sanitize_parameters_in_spec(spec: dict[str, Any]) -> dict[str, str]:
                         original_name = param["name"]
                         sanitized_name = sanitize_parameter_name(original_name)
                         if sanitized_name != original_name:
-                            logger.debug(f"Sanitized path-level parameter: '{original_name}' -> '{sanitized_name}'")
+                            logger.debug(
+                                f"Sanitized path-level parameter: '{original_name}' -> '{sanitized_name}'"
+                            )
                             param["name"] = sanitized_name
                             parameter_mapping[sanitized_name] = original_name
 
             # Sanitize operation-level parameters
             for method, operation in path_item.items():
-                if method.lower() not in ["get", "post", "put", "delete", "patch", "options", "head", "trace"]:
+                if method.lower() not in [
+                    "get",
+                    "post",
+                    "put",
+                    "delete",
+                    "patch",
+                    "options",
+                    "head",
+                    "trace",
+                ]:
                     continue
                 if not isinstance(operation, dict):
                     continue
@@ -87,7 +98,9 @@ def sanitize_parameters_in_spec(spec: dict[str, Any]) -> dict[str, str]:
                             original_name = param["name"]
                             sanitized_name = sanitize_parameter_name(original_name)
                             if sanitized_name != original_name:
-                                logger.debug(f"Sanitized operation parameter: '{original_name}' -> '{sanitized_name}'")
+                                logger.debug(
+                                    f"Sanitized operation parameter: '{original_name}' -> '{sanitized_name}'"
+                                )
                                 param["name"] = sanitized_name
                                 parameter_mapping[sanitized_name] = original_name
 
@@ -98,7 +111,9 @@ def sanitize_parameters_in_spec(spec: dict[str, Any]) -> dict[str, str]:
                 original_name = param_def["name"]
                 sanitized_name = sanitize_parameter_name(original_name)
                 if sanitized_name != original_name:
-                    logger.debug(f"Sanitized component parameter: '{original_name}' -> '{sanitized_name}'")
+                    logger.debug(
+                        f"Sanitized component parameter: '{original_name}' -> '{sanitized_name}'"
+                    )
                     param_def["name"] = sanitized_name
                     parameter_mapping[sanitized_name] = original_name
 

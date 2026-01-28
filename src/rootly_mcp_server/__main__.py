@@ -18,9 +18,7 @@ from .server import create_rootly_mcp_server
 
 def parse_args():
     """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Start the Rootly MCP server for API integration."
-    )
+    parser = argparse.ArgumentParser(description="Start the Rootly MCP server for API integration.")
     parser.add_argument(
         "--swagger-path",
         type=str,
@@ -101,7 +99,9 @@ def setup_logging(log_level, debug=False):
     logger.debug(f"Python version: {sys.version}")
     logger.debug(f"Current directory: {Path.cwd()}")
     # SECURITY: Never log actual token values or prefixes
-    logger.debug(f"Environment variables configured: {', '.join([k for k in os.environ.keys() if k.startswith('ROOTLY_') or k in ['DEBUG']])}")
+    logger.debug(
+        f"Environment variables configured: {', '.join([k for k in os.environ.keys() if k.startswith('ROOTLY_') or k in ['DEBUG']])}"
+    )
 
 
 def check_api_token():

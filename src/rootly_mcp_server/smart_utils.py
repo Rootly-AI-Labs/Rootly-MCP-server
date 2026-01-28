@@ -15,8 +15,8 @@ from typing import Any
 
 try:
     ML_AVAILABLE = (
-        importlib.util.find_spec("sklearn.feature_extraction.text") is not None and
-        importlib.util.find_spec("sklearn.metrics.pairwise") is not None
+        importlib.util.find_spec("sklearn.feature_extraction.text") is not None
+        and importlib.util.find_spec("sklearn.metrics.pairwise") is not None
     )
 except (ImportError, ModuleNotFoundError):
     ML_AVAILABLE = False
@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class IncidentSimilarity:
     """Represents similarity between two incidents."""
+
     incident_id: str
     title: str
     similarity_score: float
@@ -41,7 +42,9 @@ class TextSimilarityAnalyzer:
 
     def __init__(self):
         if not ML_AVAILABLE:
-            logger.warning("scikit-learn not available. Text similarity will use basic keyword matching.")
+            logger.warning(
+                "scikit-learn not available. Text similarity will use basic keyword matching."
+            )
         self.vectorizer = None
         self.incident_vectors = None
         self.incident_metadata = {}
@@ -55,15 +58,34 @@ class TextSimilarityAnalyzer:
         text = text.lower()
 
         # Remove special characters but keep spaces and important symbols
-        text = re.sub(r'[^\w\s\-\.]', ' ', text)
+        text = re.sub(r"[^\w\s\-\.]", " ", text)
 
         # Replace multiple spaces with single space
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
 
         # Remove common stopwords manually (basic set)
-        stopwords = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were'}
+        stopwords = {
+            "the",
+            "a",
+            "an",
+            "and",
+            "or",
+            "but",
+            "in",
+            "on",
+            "at",
+            "to",
+            "for",
+            "of",
+            "with",
+            "by",
+            "is",
+            "are",
+            "was",
+            "were",
+        }
         words = text.split()
-        text = ' '.join([word for word in words if word not in stopwords and len(word) > 1])
+        text = " ".join([word for word in words if word not in stopwords and len(word) > 1])
 
         return text.strip()
 
@@ -73,16 +95,27 @@ class TextSimilarityAnalyzer:
 
         # Common service patterns
         service_patterns = [
-            r'\b(\w+)-(?:service|api|app|server|db)\b',  # service-api, auth-service
-            r'\b(\w+)(?:service|api|app|server|db)\b',   # paymentapi, authservice
-            r'\b(\w+)\.(?:service|api|app|com)\b',       # auth.service, api.com
-            r'\b(\w+)\s+(?:api|service|app|server|db)\b',  # payment api, auth service
+            r"\b(\w+)-(?:service|api|app|server|db)\b",  # service-api, auth-service
+            r"\b(\w+)(?:service|api|app|server|db)\b",  # paymentapi, authservice
+            r"\b(\w+)\.(?:service|api|app|com)\b",  # auth.service, api.com
+            r"\b(\w+)\s+(?:api|service|app|server|db)\b",  # payment api, auth service
         ]
 
         # Known service names (exact matches)
         known_services = [
-            'elasticsearch', 'elastic', 'kibana', 'redis', 'postgres', 'mysql',
-            'mongodb', 'kafka', 'rabbitmq', 'nginx', 'apache', 'docker', 'kubernetes'
+            "elasticsearch",
+            "elastic",
+            "kibana",
+            "redis",
+            "postgres",
+            "mysql",
+            "mongodb",
+            "kafka",
+            "rabbitmq",
+            "nginx",
+            "apache",
+            "docker",
+            "kubernetes",
         ]
 
         text_lower = text.lower()
@@ -94,7 +127,7 @@ class TextSimilarityAnalyzer:
 
         # Extract known services (with word boundaries to avoid false positives)
         for service in known_services:
-            if re.search(r'\b' + re.escape(service) + r'\b', text_lower):
+            if re.search(r"\b" + re.escape(service) + r"\b", text_lower):
                 services.append(service)
 
         # Remove duplicates while preserving order
@@ -105,24 +138,26 @@ class TextSimilarityAnalyzer:
         patterns = []
 
         # HTTP status codes
-        http_codes = re.findall(r'\b[45]\d\d\b', text)
+        http_codes = re.findall(r"\b[45]\d\d\b", text)
         patterns.extend([f"http-{code}" for code in http_codes])
 
         # Database errors
-        if re.search(r'\b(?:connection|timeout|database|db)\b', text.lower()):
+        if re.search(r"\b(?:connection|timeout|database|db)\b", text.lower()):
             patterns.append("database-error")
 
         # Memory/resource errors
-        if re.search(r'\b(?:memory|cpu|disk|resource)\b', text.lower()):
+        if re.search(r"\b(?:memory|cpu|disk|resource)\b", text.lower()):
             patterns.append("resource-error")
 
         # Network errors
-        if re.search(r'\b(?:network|dns|connection|unreachable)\b', text.lower()):
+        if re.search(r"\b(?:network|dns|connection|unreachable)\b", text.lower()):
             patterns.append("network-error")
 
         return patterns
 
-    def calculate_similarity(self, incidents: list[dict], target_incident: dict) -> list[IncidentSimilarity]:
+    def calculate_similarity(
+        self, incidents: list[dict], target_incident: dict
+    ) -> list[IncidentSimilarity]:
         """Calculate similarity scores between target incident and historical incidents."""
         if not incidents:
             return []
@@ -134,9 +169,13 @@ class TextSimilarityAnalyzer:
         similarities = []
 
         if ML_AVAILABLE and len(incidents) > 1:
-            similarities = self._calculate_tfidf_similarity(incidents, target_incident, target_text, target_services, target_errors)
+            similarities = self._calculate_tfidf_similarity(
+                incidents, target_incident, target_text, target_services, target_errors
+            )
         else:
-            similarities = self._calculate_keyword_similarity(incidents, target_incident, target_text, target_services, target_errors)
+            similarities = self._calculate_keyword_similarity(
+                incidents, target_incident, target_text, target_services, target_errors
+            )
 
         # Sort by similarity score descending
         return sorted(similarities, key=lambda x: x.similarity_score, reverse=True)
@@ -146,30 +185,35 @@ class TextSimilarityAnalyzer:
         text_parts = []
 
         # Get text from incident attributes (preferred)
-        attributes = incident.get('attributes', {})
-        title = attributes.get('title', '')
-        summary = attributes.get('summary', '')
-        description = attributes.get('description', '')
+        attributes = incident.get("attributes", {})
+        title = attributes.get("title", "")
+        summary = attributes.get("summary", "")
+        description = attributes.get("description", "")
 
         # Fallback to root level if attributes are empty
         if not title:
-            title = incident.get('title', '')
+            title = incident.get("title", "")
         if not summary:
-            summary = incident.get('summary', '')
+            summary = incident.get("summary", "")
         if not description:
-            description = incident.get('description', '')
+            description = incident.get("description", "")
 
         # Add non-empty parts, avoiding duplication
         for part in [title, summary, description]:
             if part and part not in text_parts:
                 text_parts.append(part)
 
-        combined = ' '.join(text_parts)
+        combined = " ".join(text_parts)
         return self.preprocess_text(combined)
 
-    def _calculate_tfidf_similarity(self, incidents: list[dict], target_incident: dict,
-                                  target_text: str, target_services: list[str],
-                                  target_errors: list[str]) -> list[IncidentSimilarity]:
+    def _calculate_tfidf_similarity(
+        self,
+        incidents: list[dict],
+        target_incident: dict,
+        target_text: str,
+        target_services: list[str],
+        target_errors: list[str],
+    ) -> list[IncidentSimilarity]:
         """Use TF-IDF and cosine similarity for advanced text matching."""
         if not ML_AVAILABLE:
             return []
@@ -202,29 +246,51 @@ class TextSimilarityAnalyzer:
 
                 # Exact match bonus for identical preprocessed text
                 exact_match_bonus = 0.0
-                if target_text and incident_texts[i] and target_text.strip() == incident_texts[i].strip():
+                if (
+                    target_text
+                    and incident_texts[i]
+                    and target_text.strip() == incident_texts[i].strip()
+                ):
                     exact_match_bonus = 0.3  # Strong bonus for exact matches
 
                 # Partial matching bonus using fuzzy keyword similarity
-                partial_bonus = self._calculate_partial_similarity_bonus(target_text, incident_texts[i])
+                partial_bonus = self._calculate_partial_similarity_bonus(
+                    target_text, incident_texts[i]
+                )
 
-                final_score = min(1.0, similarities[i] + service_bonus + error_bonus + exact_match_bonus + partial_bonus)
+                final_score = min(
+                    1.0,
+                    similarities[i]
+                    + service_bonus
+                    + error_bonus
+                    + exact_match_bonus
+                    + partial_bonus,
+                )
 
-                results.append(IncidentSimilarity(
-                    incident_id=str(incident.get('id', '')),
-                    title=incident.get('attributes', {}).get('title', 'Unknown'),
-                    similarity_score=final_score,
-                    matched_services=list(set(target_services) & set(incident_services)),
-                    matched_keywords=self._extract_common_keywords(target_text, incident_texts[i]),
-                    resolution_summary=incident.get('attributes', {}).get('summary', ''),
-                    resolution_time_hours=self._calculate_resolution_time(incident)
-                ))
+                results.append(
+                    IncidentSimilarity(
+                        incident_id=str(incident.get("id", "")),
+                        title=incident.get("attributes", {}).get("title", "Unknown"),
+                        similarity_score=final_score,
+                        matched_services=list(set(target_services) & set(incident_services)),
+                        matched_keywords=self._extract_common_keywords(
+                            target_text, incident_texts[i]
+                        ),
+                        resolution_summary=incident.get("attributes", {}).get("summary", ""),
+                        resolution_time_hours=self._calculate_resolution_time(incident),
+                    )
+                )
 
         return results
 
-    def _calculate_keyword_similarity(self, incidents: list[dict], target_incident: dict,
-                                    target_text: str, target_services: list[str],
-                                    target_errors: list[str]) -> list[IncidentSimilarity]:
+    def _calculate_keyword_similarity(
+        self,
+        incidents: list[dict],
+        target_incident: dict,
+        target_text: str,
+        target_services: list[str],
+        target_errors: list[str],
+    ) -> list[IncidentSimilarity]:
         """Fallback keyword-based similarity when ML libraries not available."""
         target_words = set(target_text.split())
 
@@ -237,7 +303,9 @@ class TextSimilarityAnalyzer:
 
             # Calculate Jaccard similarity
             if len(target_words | incident_words) > 0:
-                word_similarity = len(target_words & incident_words) / len(target_words | incident_words)
+                word_similarity = len(target_words & incident_words) / len(
+                    target_words | incident_words
+                )
             else:
                 word_similarity = 0
 
@@ -253,18 +321,23 @@ class TextSimilarityAnalyzer:
             # Partial matching bonus using fuzzy keyword similarity
             partial_bonus = self._calculate_partial_similarity_bonus(target_text, incident_text)
 
-            final_score = min(1.0, word_similarity + service_bonus + error_bonus + exact_match_bonus + partial_bonus)
+            final_score = min(
+                1.0,
+                word_similarity + service_bonus + error_bonus + exact_match_bonus + partial_bonus,
+            )
 
             if final_score > 0.15:  # Only include reasonable matches
-                results.append(IncidentSimilarity(
-                    incident_id=str(incident.get('id', '')),
-                    title=incident.get('attributes', {}).get('title', 'Unknown'),
-                    similarity_score=final_score,
-                    matched_services=list(set(target_services) & set(incident_services)),
-                    matched_keywords=list(target_words & incident_words)[:5],  # Top 5 matches
-                    resolution_summary=incident.get('attributes', {}).get('summary', ''),
-                    resolution_time_hours=self._calculate_resolution_time(incident)
-                ))
+                results.append(
+                    IncidentSimilarity(
+                        incident_id=str(incident.get("id", "")),
+                        title=incident.get("attributes", {}).get("title", "Unknown"),
+                        similarity_score=final_score,
+                        matched_services=list(set(target_services) & set(incident_services)),
+                        matched_keywords=list(target_words & incident_words)[:5],  # Top 5 matches
+                        resolution_summary=incident.get("attributes", {}).get("summary", ""),
+                        resolution_time_hours=self._calculate_resolution_time(incident),
+                    )
+                )
 
         return results
 
@@ -288,20 +361,20 @@ class TextSimilarityAnalyzer:
 
         # Combine exact and fuzzy matches
         all_matches = list(exact_common) + fuzzy_common
-        meaningful = [word for word in all_matches if len(word.split('~')[0]) > 2]
+        meaningful = [word for word in all_matches if len(word.split("~")[0]) > 2]
         return meaningful[:8]  # Increased to show more matches
 
     def _words_similar(self, word1: str, word2: str) -> bool:
         """Check if two words are similar enough to be considered related."""
         # Handle common variations
         variations = {
-            'elastic': ['elasticsearch', 'elk'],
-            'payment': ['payments', 'pay', 'billing'],
-            'database': ['db', 'postgres', 'mysql', 'mongo'],
-            'timeout': ['timeouts', 'timed-out', 'timing-out'],
-            'service': ['services', 'svc', 'api', 'app'],
-            'error': ['errors', 'err', 'failure', 'failed', 'failing'],
-            'down': ['outage', 'offline', 'unavailable']
+            "elastic": ["elasticsearch", "elk"],
+            "payment": ["payments", "pay", "billing"],
+            "database": ["db", "postgres", "mysql", "mongo"],
+            "timeout": ["timeouts", "timed-out", "timing-out"],
+            "service": ["services", "svc", "api", "app"],
+            "error": ["errors", "err", "failure", "failed", "failing"],
+            "down": ["outage", "offline", "unavailable"],
         }
 
         # Check if words are variations of each other
@@ -361,14 +434,14 @@ class TextSimilarityAnalyzer:
     def _calculate_resolution_time(self, incident: dict) -> float | None:
         """Calculate resolution time in hours if timestamps are available."""
         try:
-            attributes = incident.get('attributes', {})
-            created_at = attributes.get('created_at')
-            resolved_at = attributes.get('resolved_at') or attributes.get('updated_at')
+            attributes = incident.get("attributes", {})
+            created_at = attributes.get("created_at")
+            resolved_at = attributes.get("resolved_at") or attributes.get("updated_at")
 
             if created_at and resolved_at:
                 # Try to parse ISO format timestamps
-                created = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
-                resolved = datetime.fromisoformat(resolved_at.replace('Z', '+00:00'))
+                created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                resolved = datetime.fromisoformat(resolved_at.replace("Z", "+00:00"))
                 diff = resolved - created
                 return diff.total_seconds() / 3600  # Convert to hours
         except Exception:  # nosec B110
@@ -388,7 +461,7 @@ class SolutionExtractor:
                 "solutions": [],
                 "common_patterns": [],
                 "average_resolution_time": None,
-                "total_similar_incidents": 0
+                "total_similar_incidents": 0,
             }
 
         solutions = []
@@ -401,8 +474,9 @@ class SolutionExtractor:
                 "title": incident.title,
                 "similarity": round(incident.similarity_score, 3),
                 "matched_services": incident.matched_services,
-                "resolution_summary": incident.resolution_summary or "No resolution summary available",
-                "resolution_time_hours": incident.resolution_time_hours
+                "resolution_summary": incident.resolution_summary
+                or "No resolution summary available",
+                "resolution_time_hours": incident.resolution_time_hours,
             }
 
             # Extract potential solution steps from resolution summary
@@ -427,7 +501,7 @@ class SolutionExtractor:
             "solutions": solutions,
             "common_patterns": common_patterns,
             "average_resolution_time": round(avg_resolution, 2) if avg_resolution else None,
-            "total_similar_incidents": len(similar_incidents)
+            "total_similar_incidents": len(similar_incidents),
         }
 
     def _extract_action_items(self, resolution_text: str) -> list[str]:
@@ -440,49 +514,53 @@ class SolutionExtractor:
 
         # Look for common action patterns
         action_patterns = [
-            r'restart(?:ed)?\s+(\w+(?:\s+\w+)*)',
-            r'clear(?:ed)?\s+(\w+(?:\s+\w+)*)',
-            r'update(?:d)?\s+(\w+(?:\s+\w+)*)',
-            r'fix(?:ed)?\s+(\w+(?:\s+\w+)*)',
-            r'roll(?:ed)?\s+back\s+(\w+(?:\s+\w+)*)',
-            r'scale(?:d)?\s+(\w+(?:\s+\w+)*)',
-            r'deploy(?:ed)?\s+(\w+(?:\s+\w+)*)',
+            r"restart(?:ed)?\s+(\w+(?:\s+\w+)*)",
+            r"clear(?:ed)?\s+(\w+(?:\s+\w+)*)",
+            r"update(?:d)?\s+(\w+(?:\s+\w+)*)",
+            r"fix(?:ed)?\s+(\w+(?:\s+\w+)*)",
+            r"roll(?:ed)?\s+back\s+(\w+(?:\s+\w+)*)",
+            r"scale(?:d)?\s+(\w+(?:\s+\w+)*)",
+            r"deploy(?:ed)?\s+(\w+(?:\s+\w+)*)",
         ]
 
         for pattern in action_patterns:
             matches = re.findall(pattern, text_lower)
             for match in matches:
                 # Extract the base action word from the pattern
-                if 'roll' in pattern and 'back' in pattern:
+                if "roll" in pattern and "back" in pattern:
                     action = f"rollback {match}".strip()
-                elif 'restart' in pattern:
+                elif "restart" in pattern:
                     action = f"restart {match}".strip()
-                elif 'clear' in pattern:
+                elif "clear" in pattern:
                     action = f"clear {match}".strip()
-                elif 'update' in pattern:
+                elif "update" in pattern:
                     action = f"update {match}".strip()
-                elif 'fix' in pattern:
+                elif "fix" in pattern:
                     action = f"fix {match}".strip()
-                elif 'scale' in pattern:
+                elif "scale" in pattern:
                     action = f"scale {match}".strip()
-                elif 'deploy' in pattern:
+                elif "deploy" in pattern:
                     action = f"deploy {match}".strip()
                 else:
                     # Fallback to original logic
-                    base_pattern = pattern.split('(')[0].replace('(?:ed)?', '').replace('(?:d)?', '')
+                    base_pattern = (
+                        pattern.split("(")[0].replace("(?:ed)?", "").replace("(?:d)?", "")
+                    )
                     action = f"{base_pattern.replace(r'\s+', ' ')} {match}".strip()
                 actions.append(action)
 
         # Look for explicit steps
-        if 'step' in text_lower or 'action' in text_lower:
-            sentences = resolution_text.split('.')
+        if "step" in text_lower or "action" in text_lower:
+            sentences = resolution_text.split(".")
             for sentence in sentences:
-                if any(word in sentence.lower() for word in ['step', 'action', 'fix', 'solution']):
+                if any(word in sentence.lower() for word in ["step", "action", "fix", "solution"]):
                     actions.append(sentence.strip())
 
         return actions[:5]  # Limit to top 5 actions
 
-    def _identify_common_patterns(self, keywords: list[str], incidents: list[IncidentSimilarity]) -> list[str]:
+    def _identify_common_patterns(
+        self, keywords: list[str], incidents: list[IncidentSimilarity]
+    ) -> list[str]:
         """Identify common patterns across similar incidents."""
         patterns = []
 
@@ -492,7 +570,9 @@ class SolutionExtractor:
             all_services.extend(incident.matched_services)
 
         if all_services:
-            common_services = [service for service in set(all_services) if all_services.count(service) >= 2]
+            common_services = [
+                service for service in set(all_services) if all_services.count(service) >= 2
+            ]
             if common_services:
                 patterns.append(f"Common services affected: {', '.join(common_services)}")
 
@@ -507,7 +587,9 @@ class SolutionExtractor:
                 patterns.append(f"Common keywords: {', '.join(frequent_keywords[:3])}")
 
         # Resolution time patterns
-        resolution_times = [inc.resolution_time_hours for inc in incidents if inc.resolution_time_hours is not None]
+        resolution_times = [
+            inc.resolution_time_hours for inc in incidents if inc.resolution_time_hours is not None
+        ]
         if resolution_times:
             avg_time = sum(resolution_times) / len(resolution_times)
             if avg_time < 1:

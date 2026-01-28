@@ -48,9 +48,7 @@ class RootlyValidationError(RootlyMCPError):
 class RootlyRateLimitError(RootlyMCPError):
     """Raised when API rate limits are exceeded."""
 
-    def __init__(
-        self, message: str, retry_after: int | None = None, details: dict | None = None
-    ):
+    def __init__(self, message: str, retry_after: int | None = None, details: dict | None = None):
         super().__init__(message, details)
         self.retry_after = retry_after
 
@@ -58,9 +56,7 @@ class RootlyRateLimitError(RootlyMCPError):
 class RootlyAPIError(RootlyMCPError):
     """Raised when the Rootly API returns an error response."""
 
-    def __init__(
-        self, message: str, status_code: int | None = None, details: dict | None = None
-    ):
+    def __init__(self, message: str, status_code: int | None = None, details: dict | None = None):
         super().__init__(message, details)
         self.status_code = status_code
 
@@ -117,9 +113,7 @@ def categorize_exception(exception: Exception) -> tuple[type[RootlyMCPError], st
         return RootlyAuthorizationError, f"Authorization failed: {exception}"
 
     # Rate limit errors (429)
-    if any(
-        keyword in error_str for keyword in ["429", "rate limit", "too many requests"]
-    ):
+    if any(keyword in error_str for keyword in ["429", "rate limit", "too many requests"]):
         return RootlyRateLimitError, f"Rate limit exceeded: {exception}"
 
     # Resource not found (404)
@@ -131,9 +125,7 @@ def categorize_exception(exception: Exception) -> tuple[type[RootlyMCPError], st
         return RootlyClientError, f"Client error: {exception}"
 
     # Server errors (5xx)
-    if any(
-        keyword in error_str for keyword in ["500", "502", "503", "504", "server error"]
-    ):
+    if any(keyword in error_str for keyword in ["500", "502", "503", "504", "server error"]):
         return RootlyServerError, f"Server error: {exception}"
 
     # Timeout errors
@@ -145,9 +137,7 @@ def categorize_exception(exception: Exception) -> tuple[type[RootlyMCPError], st
         return RootlyNetworkError, f"Network error: {exception}"
 
     # Validation errors
-    if any(
-        keyword in exception_type for keyword in ["validation", "pydantic", "field"]
-    ):
+    if any(keyword in exception_type for keyword in ["validation", "pydantic", "field"]):
         return RootlyValidationError, f"Validation error: {exception}"
 
     # Configuration errors

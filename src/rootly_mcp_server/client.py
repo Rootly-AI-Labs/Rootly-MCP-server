@@ -157,11 +157,16 @@ class RootlyClient:
                 raise RootlyAuthorizationError(f"Access forbidden: {error_msg}")
             elif status_code == 429:
                 from .exceptions import RootlyRateLimitError
+
                 raise RootlyRateLimitError(f"Rate limit exceeded: {error_msg}")
             elif 400 <= status_code < 500:
-                raise RootlyClientError(f"Client error ({status_code}): {error_msg}", status_code=status_code)
+                raise RootlyClientError(
+                    f"Client error ({status_code}): {error_msg}", status_code=status_code
+                )
             elif 500 <= status_code < 600:
-                raise RootlyServerError(f"Server error ({status_code}): {error_msg}", status_code=status_code)
+                raise RootlyServerError(
+                    f"Server error ({status_code}): {error_msg}", status_code=status_code
+                )
             else:
                 raise RootlyNetworkError(f"HTTP error: {error_msg}")
 

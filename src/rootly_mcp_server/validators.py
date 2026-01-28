@@ -26,9 +26,7 @@ def validate_positive_integer(value: int, field_name: str, min_value: int = 1) -
         RootlyValidationError: If validation fails
     """
     if not isinstance(value, int):
-        raise RootlyValidationError(
-            f"{field_name} must be an integer, got {type(value).__name__}"
-        )
+        raise RootlyValidationError(f"{field_name} must be an integer, got {type(value).__name__}")
 
     if value < min_value:
         raise RootlyValidationError(f"{field_name} must be >= {min_value}, got {value}")
@@ -60,19 +58,13 @@ def validate_string(
         RootlyValidationError: If validation fails
     """
     if not isinstance(value, str):
-        raise RootlyValidationError(
-            f"{field_name} must be a string, got {type(value).__name__}"
-        )
+        raise RootlyValidationError(f"{field_name} must be a string, got {type(value).__name__}")
 
     if len(value) < min_length:
-        raise RootlyValidationError(
-            f"{field_name} must be at least {min_length} characters"
-        )
+        raise RootlyValidationError(f"{field_name} must be at least {min_length} characters")
 
     if max_length and len(value) > max_length:
-        raise RootlyValidationError(
-            f"{field_name} must be at most {max_length} characters"
-        )
+        raise RootlyValidationError(f"{field_name} must be at most {max_length} characters")
 
     if pattern:
         import re
@@ -83,9 +75,7 @@ def validate_string(
     return value
 
 
-def validate_dict(
-    value: dict, field_name: str, required_keys: list[str] | None = None
-) -> dict:
+def validate_dict(value: dict, field_name: str, required_keys: list[str] | None = None) -> dict:
     """
     Validate a dictionary value.
 
@@ -101,9 +91,7 @@ def validate_dict(
         RootlyValidationError: If validation fails
     """
     if not isinstance(value, dict):
-        raise RootlyValidationError(
-            f"{field_name} must be a dict, got {type(value).__name__}"
-        )
+        raise RootlyValidationError(f"{field_name} must be a dict, got {type(value).__name__}")
 
     if required_keys:
         missing_keys = set(required_keys) - set(value.keys())
@@ -131,9 +119,7 @@ def validate_enum(value: Any, field_name: str, allowed_values: list[Any]) -> Any
         RootlyValidationError: If validation fails
     """
     if value not in allowed_values:
-        raise RootlyValidationError(
-            f"{field_name} must be one of {allowed_values}, got {value}"
-        )
+        raise RootlyValidationError(f"{field_name} must be one of {allowed_values}, got {value}")
 
     return value
 
