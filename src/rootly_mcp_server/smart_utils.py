@@ -546,7 +546,9 @@ class SolutionExtractor:
                     base_pattern = (
                         pattern.split("(")[0].replace("(?:ed)?", "").replace("(?:d)?", "")
                     )
-                    action = f"{base_pattern.replace(r'\s+', ' ')} {match}".strip()
+                    # Extract replacement outside f-string for Python 3.10 compatibility
+                    cleaned_pattern = base_pattern.replace(r'\s+', ' ')
+                    action = f"{cleaned_pattern} {match}".strip()
                 actions.append(action)
 
         # Look for explicit steps
