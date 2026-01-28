@@ -6,26 +6,25 @@ the Rootly API's OpenAPI (Swagger) specification using FastMCP's OpenAPI integra
 """
 
 import json
-import os
 import logging
+import os
 from copy import deepcopy
 from pathlib import Path
-import requests
+from typing import Annotated, Any
+
 import httpx
-from typing import Any, Dict, List, Optional, Annotated
-
+import requests
 from fastmcp import FastMCP
-
 from pydantic import Field
 
+from .smart_utils import SolutionExtractor, TextSimilarityAnalyzer
 from .utils import sanitize_parameters_in_spec
-from .smart_utils import TextSimilarityAnalyzer, SolutionExtractor
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
 
-def strip_heavy_nested_data(data: Dict[str, Any]) -> Dict[str, Any]:
+def strip_heavy_nested_data(data: dict[str, Any]) -> dict[str, Any]:
     """
     Strip heavy nested relationship data from incident responses to reduce payload size.
     Removes embedded user objects, roles, permissions, schedules, etc.
@@ -109,9 +108,9 @@ def strip_heavy_nested_data(data: Dict[str, Any]) -> Dict[str, Any]:
 
 class MCPError:
     """Enhanced error handling for MCP protocol compliance."""
-    
+
     @staticmethod
-    def protocol_error(code: int, message: str, data: Optional[Dict] = None):
+    def protocol_error(code: int, message: str, data: dict | None = None):
         """Create a JSON-RPC protocol-level error response."""
         error_response = {
             "jsonrpc": "2.0",
@@ -123,9 +122,9 @@ class MCPError:
         if data:
             error_response["error"]["data"] = data
         return error_response
-    
+
     @staticmethod
-    def tool_error(error_message: str, error_type: str = "execution_error", details: Optional[Dict] = None):
+    def tool_error(error_message: str, error_type: str = "execution_error", details: dict | None = None):
         """Create a tool-level error response (returned as successful tool result)."""
         error_response = {
             "error": True,
@@ -135,31 +134,31 @@ class MCPError:
         if details:
             error_response["details"] = details
         return error_response
-    
+
     @staticmethod
     def categorize_error(exception: Exception) -> tuple[str, str]:
         """Categorize an exception into error type and appropriate message."""
         error_str = str(exception)
         exception_type = type(exception).__name__
-        
+
         # Authentication/Authorization errors
         if any(keyword in error_str.lower() for keyword in ["401", "unauthorized", "authentication", "token", "forbidden"]):
             return "authentication_error", f"Authentication failed: {error_str}"
-        
-        # Network/Connection errors  
+
+        # Network/Connection errors
         if any(keyword in exception_type.lower() for keyword in ["connection", "timeout", "network"]):
             return "network_error", f"Network error: {error_str}"
-        
+
         # HTTP errors
         if "40" in error_str[:10]:  # 4xx client errors
             return "client_error", f"Client error: {error_str}"
         elif "50" in error_str[:10]:  # 5xx server errors
             return "server_error", f"Server error: {error_str}"
-        
+
         # Validation errors
         if any(keyword in exception_type.lower() for keyword in ["validation", "pydantic", "field"]):
             return "validation_error", f"Input validation error: {error_str}"
-            
+
         # Generic execution errors
         return "execution_error", f"Tool execution error: {error_str}"
 
@@ -171,31 +170,31 @@ def _generate_recommendation(solution_data: dict) -> str:
     """Generate a high-level recommendation based on solution analysis."""
     solutions = solution_data.get("solutions", [])
     avg_time = solution_data.get("average_resolution_time")
-    
+
     if not solutions:
         return "No similar incidents found. This may be a novel issue requiring escalation."
-    
+
     recommendation_parts = []
-    
+
     # Time expectation
     if avg_time:
         if avg_time < 1:
             recommendation_parts.append("Similar incidents typically resolve quickly (< 1 hour).")
         elif avg_time > 4:
             recommendation_parts.append("Similar incidents typically require more time (> 4 hours).")
-    
+
     # Top solution
     if solutions:
         top_solution = solutions[0]
         if top_solution.get("suggested_actions"):
             actions = top_solution["suggested_actions"][:2]  # Top 2 actions
             recommendation_parts.append(f"Consider trying: {', '.join(actions)}")
-    
+
     # Pattern insights
     patterns = solution_data.get("common_patterns", [])
     if patterns:
         recommendation_parts.append(f"Common patterns: {patterns[0]}")
-    
+
     return " ".join(recommendation_parts) if recommendation_parts else "Review similar incidents above for resolution guidance."
 
 
@@ -257,7 +256,7 @@ DEFAULT_ALLOWED_PATHS = [
 class AuthenticatedHTTPXClient:
     """An HTTPX client wrapper that handles Rootly API authentication and parameter transformation."""
 
-    def __init__(self, base_url: str = "https://api.rootly.com", hosted: bool = False, parameter_mapping: Optional[Dict[str, str]] = None):
+    def __init__(self, base_url: str = "https://api.rootly.com", hosted: bool = False, parameter_mapping: dict[str, str] | None = None):
         self._base_url = base_url
         self.hosted = hosted
         self._api_token = None
@@ -266,9 +265,9 @@ class AuthenticatedHTTPXClient:
         if not self.hosted:
             self._api_token = self._get_api_token()
 
-        # Create the HTTPX client  
+        # Create the HTTPX client
         headers = {
-            "Content-Type": "application/vnd.api+json", 
+            "Content-Type": "application/vnd.api+json",
             "Accept": "application/vnd.api+json"
             # Let httpx handle Accept-Encoding automatically with all supported formats
         }
@@ -284,7 +283,7 @@ class AuthenticatedHTTPXClient:
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
         )
 
-    def _get_api_token(self) -> Optional[str]:
+    def _get_api_token(self) -> str | None:
         """Get the API token from environment variables."""
         api_token = os.getenv("ROOTLY_API_TOKEN")
         if not api_token:
@@ -292,7 +291,7 @@ class AuthenticatedHTTPXClient:
             return None
         return api_token
 
-    def _transform_params(self, params: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    def _transform_params(self, params: dict[str, Any] | None) -> dict[str, Any] | None:
         """Transform sanitized parameter names back to original names."""
         if not params or not self.parameter_mapping:
             return params
@@ -347,22 +346,22 @@ class AuthenticatedHTTPXClient:
             # Use our overridden methods instead
             return getattr(self, name)
         return getattr(self.client, name)
-    
-    @property 
+
+    @property
     def base_url(self):
         return self._base_url
-        
+
     @property
     def headers(self):
         return self.client.headers
 
 
 def create_rootly_mcp_server(
-    swagger_path: Optional[str] = None,
+    swagger_path: str | None = None,
     name: str = "Rootly",
-    allowed_paths: Optional[List[str]] = None,
+    allowed_paths: list[str] | None = None,
     hosted: bool = False,
-    base_url: Optional[str] = None,
+    base_url: str | None = None,
 ) -> FastMCP:
     """
     Create a Rootly MCP Server using FastMCP's OpenAPI integration.
@@ -424,13 +423,13 @@ def create_rootly_mcp_server(
         timeout=30.0,
         tags={"rootly", "incident-management"},
     )
-    
+
     @mcp.custom_route("/healthz", methods=["GET"])
     @mcp.custom_route("/health", methods=["GET"])
     async def health_check(request):
         from starlette.responses import PlainTextResponse
         return PlainTextResponse("OK")
-    
+
     # Add some custom tools for enhanced functionality
 
     @mcp.tool()
@@ -467,9 +466,11 @@ def create_rootly_mcp_server(
                     if "headers" not in kwargs:
                         kwargs["headers"] = {}
                     kwargs["headers"]["Authorization"] = auth_header
-            except Exception:
-                pass  # Fallback to default client behavior
-        
+            except Exception:  # noqa: S110
+                # Intentionally broad exception handling: fallback to default client behavior
+                # if token extraction fails for any reason (missing env var, invalid format, etc.)
+                pass
+
         # Use our custom client with proper error handling instead of bypassing it
         return await http_client.request(method, url, **kwargs)
 
@@ -532,19 +533,19 @@ def create_rootly_mcp_server(
                         if not incidents:
                             # No more incidents available
                             break
-                        
+
                         # Check if we got fewer incidents than requested (last page)
                         if len(incidents) < effective_page_size:
                             all_incidents.extend(incidents)
                             break
-                        
+
                         all_incidents.extend(incidents)
 
                         # Check metadata if available
                         meta = response_data.get("meta", {})
                         current_page_meta = meta.get("current_page", current_page)
                         total_pages = meta.get("total_pages")
-                        
+
                         # If we have reliable metadata, use it
                         if total_pages and current_page_meta >= total_pages:
                             break
@@ -594,17 +595,17 @@ def create_rootly_mcp_server(
         """Find similar incidents to help with context and resolution strategies. Provide either incident_id OR incident_description (e.g., 'website is down', 'database timeout errors'). Use status_filter to limit to specific incident statuses or leave empty for all incidents."""
         try:
             target_incident = {}
-            
+
             if incident_id:
                 # Get the target incident details by ID
                 target_response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
                 target_response.raise_for_status()
                 target_incident_data = strip_heavy_nested_data({"data": [target_response.json().get("data", {})]})
                 target_incident = target_incident_data.get("data", [{}])[0]
-                
+
                 if not target_incident:
                     return MCPError.tool_error("Incident not found", "not_found")
-                    
+
             elif incident_description:
                 # Create synthetic incident for analysis from descriptive text
                 target_incident = {
@@ -617,7 +618,7 @@ def create_rootly_mcp_server(
                 }
             else:
                 return MCPError.tool_error("Must provide either incident_id or incident_description", "validation_error")
-            
+
             # Get historical incidents for comparison
             params = {
                 "page[size]": 100,  # Get more incidents for better matching
@@ -625,20 +626,20 @@ def create_rootly_mcp_server(
                 "include": "",
                 "fields[incidents]": "id,title,summary,status,created_at,url"
             }
-            
+
             # Only add status filter if specified
             if status_filter:
                 params["filter[status]"] = status_filter
-                
+
             historical_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
             historical_response.raise_for_status()
             historical_data = strip_heavy_nested_data(historical_response.json())
             historical_incidents = historical_data.get("data", [])
-            
+
             # Filter out the target incident itself if it exists
             if incident_id:
                 historical_incidents = [inc for inc in historical_incidents if str(inc.get('id')) != str(incident_id)]
-            
+
             if not historical_incidents:
                 return {
                     "related_incidents": [],
@@ -648,16 +649,16 @@ def create_rootly_mcp_server(
                         "title": target_incident.get("attributes", {}).get("title", incident_description)
                     }
                 }
-            
+
             # Calculate similarities
             similar_incidents = similarity_analyzer.calculate_similarity(historical_incidents, target_incident)
-            
+
             # Filter by threshold and limit results
             filtered_incidents = [
-                inc for inc in similar_incidents 
+                inc for inc in similar_incidents
                 if inc.similarity_score >= similarity_threshold
             ][:max_results]
-            
+
             # Format response
             related_incidents = []
             for incident in filtered_incidents:
@@ -670,7 +671,7 @@ def create_rootly_mcp_server(
                     "resolution_summary": incident.resolution_summary,
                     "resolution_time_hours": incident.resolution_time_hours
                 })
-            
+
             return {
                 "target_incident": {
                     "id": incident_id or "synthetic",
@@ -681,7 +682,7 @@ def create_rootly_mcp_server(
                 "similarity_threshold": similarity_threshold,
                 "analysis_summary": f"Found {len(filtered_incidents)} similar incidents out of {len(historical_incidents)} historical incidents"
             }
-            
+
         except Exception as e:
             error_type, error_message = MCPError.categorize_error(e)
             return MCPError.tool_error(f"Failed to find related incidents: {error_message}", error_type)
@@ -697,17 +698,17 @@ def create_rootly_mcp_server(
         """Suggest solutions based on similar incidents. Provide either incident_id OR title/description. Defaults to resolved incidents for solution mining, but can search all statuses."""
         try:
             target_incident = {}
-            
+
             if incident_id:
                 # Get incident details by ID
                 response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
                 response.raise_for_status()
                 incident_data = strip_heavy_nested_data({"data": [response.json().get("data", {})]})
                 target_incident = incident_data.get("data", [{}])[0]
-                
+
                 if not target_incident:
                     return MCPError.tool_error("Incident not found", "not_found")
-                    
+
             elif incident_title or incident_description:
                 # Create synthetic incident for analysis
                 target_incident = {
@@ -720,50 +721,50 @@ def create_rootly_mcp_server(
                 }
             else:
                 return MCPError.tool_error("Must provide either incident_id or incident_title/description", "validation_error")
-            
+
             # Get incidents for solution mining
             params = {
                 "page[size]": 150,  # Get more incidents for better solution matching
                 "page[number]": 1,
                 "include": ""
             }
-            
+
             # Only add status filter if specified
             if status_filter:
                 params["filter[status]"] = status_filter
-                
+
             historical_response = await make_authenticated_request("GET", "/v1/incidents", params=params)
             historical_response.raise_for_status()
             historical_data = strip_heavy_nested_data(historical_response.json())
             historical_incidents = historical_data.get("data", [])
-            
+
             # Filter out target incident if it exists
             if incident_id:
                 historical_incidents = [inc for inc in historical_incidents if str(inc.get('id')) != str(incident_id)]
-            
+
             if not historical_incidents:
                 status_msg = f" with status '{status_filter}'" if status_filter else ""
                 return {
                     "solutions": [],
                     "message": f"No historical incidents found{status_msg} for solution mining"
                 }
-            
+
             # Find similar incidents
             similar_incidents = similarity_analyzer.calculate_similarity(historical_incidents, target_incident)
-            
+
             # Filter to reasonably similar incidents (lower threshold for solution suggestions)
             relevant_incidents = [inc for inc in similar_incidents if inc.similarity_score >= 0.2][:max_solutions * 2]
-            
+
             if not relevant_incidents:
                 return {
                     "solutions": [],
                     "message": "No sufficiently similar incidents found for solution suggestions",
                     "suggestion": "This appears to be a unique incident. Consider escalating or consulting documentation."
                 }
-            
+
             # Extract solutions
             solution_data = solution_extractor.extract_solutions(relevant_incidents)
-            
+
             # Format response
             return {
                 "target_incident": {
@@ -779,7 +780,7 @@ def create_rootly_mcp_server(
                 },
                 "recommendation": _generate_recommendation(solution_data)
             }
-            
+
         except Exception as e:
             error_type, error_message = MCPError.categorize_error(e)
             return MCPError.tool_error(f"Failed to suggest solutions: {error_message}", error_type)
@@ -803,12 +804,12 @@ def create_rootly_mcp_server(
         - Specific team: team_ids='team-1' (will query schedules for that team first)
         """
         try:
-            from datetime import datetime, timedelta
             from collections import defaultdict
-            from typing import Any, Dict
+            from datetime import datetime, timedelta
+            from typing import Any
 
             # Build query parameters
-            params: Dict[str, Any] = {
+            params: dict[str, Any] = {
                 "from": start_date,
                 "to": end_date,
             }
@@ -913,7 +914,7 @@ def create_rootly_mcp_server(
                     on_call_roles_map[resource.get("id")] = resource
 
             # Calculate metrics
-            metrics: Dict[str, Dict[str, Any]] = defaultdict(lambda: {
+            metrics: dict[str, dict[str, Any]] = defaultdict(lambda: {
                 "shift_count": 0,
                 "total_hours": 0.0,
                 "override_count": 0,
@@ -1735,16 +1736,16 @@ def create_rootly_mcp_server(
             # Format incident data as readable text
             incident = incident_data.get("data", [{}])[0]
             attributes = incident.get("attributes", {})
-            
+
             text_content = f"""Incident #{incident_id}
 Title: {attributes.get('title', 'N/A')}
-Status: {attributes.get('status', 'N/A')}  
+Status: {attributes.get('status', 'N/A')}
 Severity: {attributes.get('severity', 'N/A')}
 Created: {attributes.get('created_at', 'N/A')}
 Updated: {attributes.get('updated_at', 'N/A')}
 Summary: {attributes.get('summary', 'N/A')}
 URL: {attributes.get('url', 'N/A')}"""
-            
+
             return {
                 "uri": f"incident://{incident_id}",
                 "name": f"Incident #{incident_id}",
@@ -1767,18 +1768,18 @@ URL: {attributes.get('url', 'N/A')}"""
             response = await make_authenticated_request("GET", f"/v1/teams/{team_id}")
             response.raise_for_status()
             team_data = response.json()
-            
+
             # Format team data as readable text
             team = team_data.get("data", {})
             attributes = team.get("attributes", {})
-            
+
             text_content = f"""Team #{team_id}
 Name: {attributes.get('name', 'N/A')}
 Color: {attributes.get('color', 'N/A')}
 Slug: {attributes.get('slug', 'N/A')}
 Created: {attributes.get('created_at', 'N/A')}
 Updated: {attributes.get('updated_at', 'N/A')}"""
-            
+
             return {
                 "uri": f"team://{team_id}",
                 "name": f"Team: {attributes.get('name', team_id)}",
@@ -1806,14 +1807,14 @@ Updated: {attributes.get('updated_at', 'N/A')}"""
             })
             response.raise_for_status()
             data = strip_heavy_nested_data(response.json())
-            
+
             incidents = data.get("data", [])
             text_lines = ["Recent Incidents:\n"]
-            
+
             for incident in incidents:
                 attrs = incident.get("attributes", {})
                 text_lines.append(f"• #{incident.get('id', 'N/A')} - {attrs.get('title', 'N/A')} [{attrs.get('status', 'N/A')}]")
-            
+
             return {
                 "uri": "rootly://incidents",
                 "name": "Recent Incidents",
@@ -1823,7 +1824,7 @@ Updated: {attributes.get('updated_at', 'N/A')}"""
         except Exception as e:
             error_type, error_message = MCPError.categorize_error(e)
             return {
-                "uri": "rootly://incidents", 
+                "uri": "rootly://incidents",
                 "name": "Recent Incidents (Error)",
                 "text": f"Error ({error_type}): {error_message}",
                 "mimeType": "text/plain"
@@ -1835,7 +1836,7 @@ Updated: {attributes.get('updated_at', 'N/A')}"""
     return mcp
 
 
-def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
+def _load_swagger_spec(swagger_path: str | None = None) -> dict[str, Any]:
     """
     Load the Swagger specification from a file or URL.
 
@@ -1850,7 +1851,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
         logger.info(f"Using provided Swagger path: {swagger_path}")
         if not os.path.isfile(swagger_path):
             raise FileNotFoundError(f"Swagger file not found at {swagger_path}")
-        with open(swagger_path, "r", encoding="utf-8") as f:
+        with open(swagger_path, encoding="utf-8") as f:
             return json.load(f)
     else:
         # First, check in the package data directory
@@ -1858,7 +1859,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
             package_data_path = Path(__file__).parent / "data" / "swagger.json"
             if package_data_path.is_file():
                 logger.info(f"Found Swagger file in package data: {package_data_path}")
-                with open(package_data_path, "r", encoding="utf-8") as f:
+                with open(package_data_path, encoding="utf-8") as f:
                     return json.load(f)
         except Exception as e:
             logger.debug(f"Could not load Swagger file from package data: {e}")
@@ -1871,7 +1872,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
         local_swagger_path = current_dir / "swagger.json"
         if local_swagger_path.is_file():
             logger.info(f"Found Swagger file at {local_swagger_path}")
-            with open(local_swagger_path, "r", encoding="utf-8") as f:
+            with open(local_swagger_path, encoding="utf-8") as f:
                 return json.load(f)
 
         # Check parent directories
@@ -1879,7 +1880,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
             parent_swagger_path = parent / "swagger.json"
             if parent_swagger_path.is_file():
                 logger.info(f"Found Swagger file at {parent_swagger_path}")
-                with open(parent_swagger_path, "r", encoding="utf-8") as f:
+                with open(parent_swagger_path, encoding="utf-8") as f:
                     return json.load(f)
 
         # If the file wasn't found, fetch it from the URL and save it
@@ -1899,7 +1900,7 @@ def _load_swagger_spec(swagger_path: Optional[str] = None) -> Dict[str, Any]:
         return swagger_spec
 
 
-def _fetch_swagger_from_url(url: str = SWAGGER_URL) -> Dict[str, Any]:
+def _fetch_swagger_from_url(url: str = SWAGGER_URL) -> dict[str, Any]:
     """
     Fetch the Swagger specification from the specified URL.
 
@@ -1911,7 +1912,7 @@ def _fetch_swagger_from_url(url: str = SWAGGER_URL) -> Dict[str, Any]:
     """
     logger.info(f"Fetching Swagger specification from {url}")
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=30)
         response.raise_for_status()
         return response.json()
     except requests.RequestException as e:
@@ -1922,7 +1923,7 @@ def _fetch_swagger_from_url(url: str = SWAGGER_URL) -> Dict[str, Any]:
         raise Exception(f"Failed to parse Swagger specification: {e}")
 
 
-def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict[str, Any]:
+def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict[str, Any]:
     """
     Filter an OpenAPI specification to only include specified paths and clean up schema references.
 
@@ -1957,7 +1958,7 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
             if "requestBody" in operation:
                 request_body = operation["requestBody"]
                 if "content" in request_body:
-                    for content_type, content_info in request_body["content"].items():
+                    for _content_type, content_info in request_body["content"].items():
                         if "schema" in content_info:
                             schema = content_info["schema"]
                             # Remove problematic $ref references
@@ -1972,9 +1973,9 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
             # Remove response schemas to avoid validation issues
             # FastMCP will still return the data, just without strict validation
             if "responses" in operation:
-                for status_code, response in operation["responses"].items():
+                for _status_code, response in operation["responses"].items():
                     if "content" in response:
-                        for content_type, content_info in response["content"].items():
+                        for _content_type, content_info in response["content"].items():
                             if "schema" in content_info:
                                 # Replace with a simple schema that accepts any response
                                 content_info["schema"] = {
@@ -1998,17 +1999,17 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
             if method.lower() == "get" and ("alerts" in path.lower() or "incident" in path.lower()):
                 if "parameters" not in operation:
                     operation["parameters"] = []
-                
+
                 # Find existing pagination parameters and update them with limits
                 page_size_param = None
                 page_number_param = None
-                
+
                 for param in operation["parameters"]:
                     if param.get("name") == "page[size]":
                         page_size_param = param
                     elif param.get("name") == "page[number]":
                         page_number_param = param
-                
+
                 # Update or add page[size] parameter with limits
                 if page_size_param:
                     # Update existing parameter with limits
@@ -2035,10 +2036,10 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                             "description": "Number of results per page (max: 20)"
                         }
                     })
-                
+
                 # Update or add page[number] parameter with defaults
                 if page_number_param:
-                    # Update existing parameter 
+                    # Update existing parameter
                     if "schema" not in page_number_param:
                         page_number_param["schema"] = {}
                     page_number_param["schema"].update({
@@ -2051,7 +2052,7 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                     # Add new parameter
                     operation["parameters"].append({
                         "name": "page[number]",
-                        "in": "query", 
+                        "in": "query",
                         "required": False,
                         "schema": {
                             "type": "integer",
@@ -2060,7 +2061,7 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                             "description": "Page number to retrieve"
                         }
                     })
-                
+
                 # Add sparse fieldsets for alerts endpoints to reduce payload size
                 if "alert" in path.lower():
                     # Add fields[alerts] parameter with essential fields only - make it required with default
@@ -2074,7 +2075,7 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                             "description": "Comma-separated list of alert fields to include (reduces payload size)"
                         }
                     })
-                
+
                 # Add include parameter for alerts endpoints to minimize relationships
                 if "alert" in path.lower():
                     # Check if include parameter already exists
@@ -2090,12 +2091,12 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                                 "description": "Related resources to include (empty for minimal payload)"
                             }
                         })
-                
+
                 # Add sparse fieldsets for incidents endpoints to reduce payload size
                 if "incident" in path.lower():
                     # Add fields[incidents] parameter with essential fields only - make it required with default
                     operation["parameters"].append({
-                        "name": "fields[incidents]", 
+                        "name": "fields[incidents]",
                         "in": "query",
                         "required": True,
                         "schema": {
@@ -2104,7 +2105,7 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                             "description": "Comma-separated list of incident fields to include (reduces payload size)"
                         }
                     })
-                
+
                 # Add include parameter for incidents endpoints to minimize relationships
                 if "incident" in path.lower():
                     # Check if include parameter already exists
@@ -2115,7 +2116,7 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                             "in": "query",
                             "required": True,
                             "schema": {
-                                "type": "string", 
+                                "type": "string",
                                 "default": "",
                                 "description": "Related resources to include (empty for minimal payload)"
                             }
@@ -2137,20 +2138,20 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
     # Clean up any operation-level references to removed schemas
     removed_schemas = set()
     if "components" in filtered_spec and "schemas" in filtered_spec["components"]:
-        removed_schemas = {"new_workflow", "update_workflow", "workflow", "workflow_task", 
-                          "workflow_response", "workflow_list", "new_workflow_task", 
+        removed_schemas = {"new_workflow", "update_workflow", "workflow", "workflow_task",
+                          "workflow_response", "workflow_list", "new_workflow_task",
                           "update_workflow_task", "workflow_task_response", "workflow_task_list"}
-    
+
     for path, path_item in filtered_spec.get("paths", {}).items():
         for method, operation in path_item.items():
             if method.lower() not in ["get", "post", "put", "delete", "patch"]:
                 continue
-                
+
             # Clean request body references
             if "requestBody" in operation:
                 request_body = operation["requestBody"]
                 if "content" in request_body:
-                    for content_type, content_info in request_body["content"].items():
+                    for _content_type, content_info in request_body["content"].items():
                         if "schema" in content_info and "$ref" in content_info["schema"]:
                             ref_path = content_info["schema"]["$ref"]
                             schema_name = ref_path.split("/")[-1]
@@ -2162,12 +2163,12 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
                                     "additionalProperties": True
                                 }
                                 logger.debug(f"Cleaned broken reference in {method.upper()} {path} request body: {ref_path}")
-            
-            # Clean response references 
+
+            # Clean response references
             if "responses" in operation:
-                for status_code, response in operation["responses"].items():
+                for _status_code, response in operation["responses"].items():
                     if "content" in response:
-                        for content_type, content_info in response["content"].items():
+                        for _content_type, content_info in response["content"].items():
                             if "schema" in content_info and "$ref" in content_info["schema"]:
                                 ref_path = content_info["schema"]["$ref"]
                                 schema_name = ref_path.split("/")[-1]
@@ -2183,7 +2184,7 @@ def _filter_openapi_spec(spec: Dict[str, Any], allowed_paths: List[str]) -> Dict
     return filtered_spec
 
 
-def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
+def _has_broken_references(schema_def: dict[str, Any]) -> bool:
     """Check if a schema definition has broken references."""
     if "$ref" in schema_def:
         ref_path = schema_def["$ref"]
@@ -2191,7 +2192,7 @@ def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
         broken_refs = [
             "incident_trigger_params",
             "new_workflow",
-            "update_workflow", 
+            "update_workflow",
             "workflow",
             "new_workflow_task",
             "update_workflow_task",
@@ -2202,7 +2203,7 @@ def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
             "workflow_list",
             "workflow_custom_field_selection_response",
             "workflow_custom_field_selection_list",
-            "workflow_form_field_condition_response", 
+            "workflow_form_field_condition_response",
             "workflow_form_field_condition_list",
             "workflow_group_response",
             "workflow_group_list",
@@ -2213,7 +2214,7 @@ def _has_broken_references(schema_def: Dict[str, Any]) -> bool:
             return True
 
     # Recursively check nested schemas
-    for key, value in schema_def.items():
+    for _key, value in schema_def.items():
         if isinstance(value, dict):
             if _has_broken_references(value):
                 return True
@@ -2235,10 +2236,10 @@ class RootlyMCPServer(FastMCP):
 
     def __init__(
         self,
-        swagger_path: Optional[str] = None,
+        swagger_path: str | None = None,
         name: str = "Rootly",
         default_page_size: int = 10,
-        allowed_paths: Optional[List[str]] = None,
+        allowed_paths: list[str] | None = None,
         hosted: bool = False,
         *args,
         **kwargs,

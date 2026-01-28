@@ -10,9 +10,10 @@ import logging
 import os
 import sys
 from pathlib import Path
-from .server import create_rootly_mcp_server
-from .exceptions import RootlyMCPError, RootlyConfigurationError
+
+from .exceptions import RootlyConfigurationError, RootlyMCPError
 from .security import validate_api_token
+from .server import create_rootly_mcp_server
 
 
 def parse_args():
@@ -78,22 +79,22 @@ def setup_logging(log_level, debug=False):
     """Set up logging configuration."""
     if debug or os.getenv("DEBUG", "").lower() in ("true", "1", "yes"):
         log_level = "DEBUG"
-    
+
     numeric_level = getattr(logging, log_level.upper(), None)
     if not isinstance(numeric_level, int):
         raise ValueError(f"Invalid log level: {log_level}")
-    
+
     # Configure root logger
     logging.basicConfig(
         level=numeric_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[logging.StreamHandler(sys.stderr)],  # Log to stderr for stdio transport
     )
-    
+
     # Set specific logger levels
     logging.getLogger("rootly_mcp_server").setLevel(numeric_level)
     logging.getLogger("mcp").setLevel(numeric_level)
-    
+
     # Log the configuration
     logger = logging.getLogger(__name__)
     logger.info(f"Logging configured with level: {log_level}")
@@ -127,13 +128,13 @@ def get_server():
     server_name = os.getenv("ROOTLY_SERVER_NAME", "Rootly")
     hosted = os.getenv("ROOTLY_HOSTED", "false").lower() in ("true", "1", "yes")
     base_url = os.getenv("ROOTLY_BASE_URL")
-    
+
     # Parse allowed paths from environment variable
     allowed_paths = None
     allowed_paths_env = os.getenv("ROOTLY_ALLOWED_PATHS")
     if allowed_paths_env:
         allowed_paths = [path.strip() for path in allowed_paths_env.split(",")]
-    
+
     # Create and return the server
     return create_rootly_mcp_server(
         swagger_path=swagger_path,
@@ -152,20 +153,20 @@ def main():
     """Main entry point for the Rootly MCP Server."""
     args = parse_args()
     setup_logging(args.log_level, args.debug)
-    
+
     logger = logging.getLogger(__name__)
     logger.info("Starting Rootly MCP Server")
-    
+
     # Handle backward compatibility for --host argument
     hosted_mode = args.hosted
     if args.host:
         logger.warning("--host argument is deprecated, use --hosted instead")
         hosted_mode = True
-    
+
     # Only check API token if not in hosted mode
     if not hosted_mode:
         check_api_token()
-    
+
     try:
         # Parse allowed paths from command line argument
         allowed_paths = None

@@ -14,11 +14,11 @@ Features:
 - Input validation and sensitive data masking
 """
 
-from .server import RootlyMCPServer
 from .client import RootlyClient
+from .server import RootlyMCPServer
 
 __version__ = "2.1.0"
 __all__ = [
     'RootlyMCPServer',
     'RootlyClient',
-] 
+]
