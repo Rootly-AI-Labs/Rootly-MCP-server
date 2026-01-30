@@ -241,6 +241,55 @@ class TestAuthenticationModeComparison:
         """Test that hosted property is consistent across initialization."""
         local_client = AuthenticatedHTTPXClient(hosted=False)
         hosted_client = AuthenticatedHTTPXClient(hosted=True)
-        
+
         assert local_client.hosted is False
         assert hosted_client.hosted is True
+
+
+@pytest.mark.unit
+class TestParameterTransformation:
+    """Test parameter transformation functionality."""
+
+    def test_transform_params_with_mapping(self):
+        """Test that sanitized parameter names are transformed back to original names."""
+        mapping = {
+            "filter_status": "filter[status]",
+            "filter_services": "filter[services]",
+            "sort_created_at": "sort[created_at]",
+        }
+        client = AuthenticatedHTTPXClient(hosted=True, parameter_mapping=mapping)
+
+        params = {
+            "filter_status": "acknowledged",
+            "filter_services": "my-service",
+            "page_size": 10,  # Not in mapping, should remain unchanged
+        }
+
+        transformed = client._transform_params(params)
+
+        assert transformed["filter[status]"] == "acknowledged"
+        assert transformed["filter[services]"] == "my-service"
+        assert transformed["page_size"] == 10
+        assert "filter_status" not in transformed
+        assert "filter_services" not in transformed
+
+    def test_transform_params_without_mapping(self):
+        """Test that params are unchanged when no mapping exists."""
+        client = AuthenticatedHTTPXClient(hosted=True, parameter_mapping={})
+
+        params = {"filter_status": "acknowledged", "page_size": 10}
+        transformed = client._transform_params(params)
+
+        assert transformed == params
+
+    def test_transform_params_with_none(self):
+        """Test that None params return None."""
+        client = AuthenticatedHTTPXClient(hosted=True, parameter_mapping={"a": "b"})
+
+        assert client._transform_params(None) is None
+
+    def test_transform_params_with_empty_dict(self):
+        """Test that empty params return empty dict."""
+        client = AuthenticatedHTTPXClient(hosted=True, parameter_mapping={"a": "b"})
+
+        assert client._transform_params({}) == {}
