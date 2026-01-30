@@ -1,0 +1,134 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras
+          uv pip install --system pytest pytest-cov pytest-asyncio pytest-mock pytest-timeout respx sseclient-py
+
+      - name: Run tests with pytest
+        run: |
+          uv run pytest tests/ -v --cov=src/rootly_mcp_server --cov-report=term --cov-report=xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system ruff mypy black isort
+
+      - name: Run ruff
+        run: |
+          ruff check src/ tests/
+
+      - name: Run black check
+        run: |
+          black --check src/ tests/
+
+      - name: Run isort check
+        run: |
+          isort --check-only src/ tests/
+
+      - name: Run mypy
+        run: |
+          mypy src/rootly_mcp_server --ignore-missing-imports
+        continue-on-error: true
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install security tools
+        run: |
+          pip install bandit safety
+
+      - name: Run bandit
+        run: |
+          bandit -r src/ -f json -o bandit-report.json || true
+          bandit -r src/
+
+      - name: Run safety check
+        run: |
+          safety check --json || true
+        continue-on-error: true
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: [test, lint, security]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Build package
+        run: |
+          uv build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/

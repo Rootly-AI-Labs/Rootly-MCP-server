@@ -1,19 +1,40 @@
 [project]
 name = "rootly-mcp-server"
-version = "2.0.15"
-description = "A Model Context Protocol server for Rootly APIs using OpenAPI spec"
+version = "2.1.0"
+description = "Secure Model Context Protocol server for Rootly APIs with AI SRE capabilities, comprehensive error handling, and input validation"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 authors = [{ name = "Rootly AI Labs", email = "support@rootly.com" }]
-keywords = ["rootly", "mcp", "llm", "automation", "incidents"]
+keywords = [
+    "rootly",
+    "mcp",
+    "llm",
+    "ai-sre",
+    "automation",
+    "incidents",
+    "incident-management",
+    "on-call",
+    "security",
+    "rate-limiting",
+    "sre",
+    "devops",
+]
 license = "Apache-2.0"
 license-files = ["LICEN[CS]E*"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
     "Topic :: Software Development :: Build Tools",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Security",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
     "fastmcp>=2.9.0",
@@ -49,7 +70,13 @@ allow-direct-references = true
 rootly-mcp-server = "rootly_mcp_server.__main__:main"
 
 [project.optional-dependencies]
-dev = ["black>=23.0.0", "isort>=5.0.0"]
+dev = [
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "mypy>=1.0.0",
+    "bandit>=1.7.0",
+    "safety>=2.0.0",
+]
 
 [tool.uv]
 dev-dependencies = [
@@ -62,6 +89,9 @@ dev-dependencies = [
     "pytest-timeout>=2.2.0", # Test timeout handling
     "respx>=0.20.0", # HTTP request mocking
     "sseclient-py>=1.8.0", # Server-Sent Events client for remote tests
+    "bandit>=1.7.0", # Security linter
+    "safety>=2.0.0", # Dependency vulnerability checker
+    "mypy>=1.0.0", # Static type checker
 ]
 
 [tool.pytest.ini_options]
@@ -79,8 +109,75 @@ addopts = [
 ]
 markers = [
     "unit: Unit tests",
-    "integration: Integration tests", 
+    "integration: Integration tests",
     "remote: Remote server tests (require API token)",
     "slow: Tests that take longer to run",
+    "security: Security-focused tests",
 ]
 asyncio_mode = "auto"              # Auto-detect async tests
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501", # line too long (handled by formatter)
+    "B008", # do not perform function calls in argument defaults
+    "B904", # raise from None
+]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"] # Unused imports in __init__.py
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "build", "dist"]
+skips = ["B101"] # Use of assert detected (OK in tests)
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true

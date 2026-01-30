@@ -10,9 +10,10 @@ Tests cover:
 - Error handling
 """
 
-import pytest
-from unittest.mock import patch
 from datetime import datetime
+from unittest.mock import patch
+
+import pytest
 
 
 @pytest.fixture
@@ -28,13 +29,9 @@ def mock_shifts_response():
                     "rotation_id": "rotation-1",
                     "starts_at": "2025-10-01T08:00:00.000-07:00",
                     "ends_at": "2025-10-01T16:00:00.000-07:00",
-                    "is_override": False
+                    "is_override": False,
                 },
-                "relationships": {
-                    "user": {
-                        "data": {"id": "user-1", "type": "users"}
-                    }
-                }
+                "relationships": {"user": {"data": {"id": "user-1", "type": "users"}}},
             },
             {
                 "id": "shift-2",
@@ -44,13 +41,9 @@ def mock_shifts_response():
                     "rotation_id": "rotation-1",
                     "starts_at": "2025-10-02T08:00:00.000-07:00",
                     "ends_at": "2025-10-02T16:00:00.000-07:00",
-                    "is_override": True
+                    "is_override": True,
                 },
-                "relationships": {
-                    "user": {
-                        "data": {"id": "user-2", "type": "users"}
-                    }
-                }
+                "relationships": {"user": {"data": {"id": "user-2", "type": "users"}}},
             },
             {
                 "id": "shift-3",
@@ -60,33 +53,23 @@ def mock_shifts_response():
                     "rotation_id": "rotation-2",
                     "starts_at": "2025-10-03T20:00:00.000-07:00",
                     "ends_at": "2025-10-04T04:00:00.000-07:00",
-                    "is_override": False
+                    "is_override": False,
                 },
-                "relationships": {
-                    "user": {
-                        "data": {"id": "user-1", "type": "users"}
-                    }
-                }
-            }
+                "relationships": {"user": {"data": {"id": "user-1", "type": "users"}}},
+            },
         ],
         "included": [
             {
                 "id": "user-1",
                 "type": "users",
-                "attributes": {
-                    "full_name": "John Doe",
-                    "email": "john@example.com"
-                }
+                "attributes": {"full_name": "John Doe", "email": "john@example.com"},
             },
             {
                 "id": "user-2",
                 "type": "users",
-                "attributes": {
-                    "full_name": "Jane Smith",
-                    "email": "jane@example.com"
-                }
-            }
-        ]
+                "attributes": {"full_name": "Jane Smith", "email": "jane@example.com"},
+            },
+        ],
     }
 
 
@@ -98,27 +81,15 @@ def mock_schedules_response():
             {
                 "id": "schedule-1",
                 "type": "schedules",
-                "attributes": {
-                    "name": "Backend On-Call"
-                },
-                "relationships": {
-                    "team": {
-                        "data": {"id": "team-1", "type": "teams"}
-                    }
-                }
+                "attributes": {"name": "Backend On-Call"},
+                "relationships": {"team": {"data": {"id": "team-1", "type": "teams"}}},
             },
             {
                 "id": "schedule-2",
                 "type": "schedules",
-                "attributes": {
-                    "name": "Frontend On-Call"
-                },
-                "relationships": {
-                    "team": {
-                        "data": {"id": "team-2", "type": "teams"}
-                    }
-                }
-            }
+                "attributes": {"name": "Frontend On-Call"},
+                "relationships": {"team": {"data": {"id": "team-2", "type": "teams"}}},
+            },
         ]
     }
 
@@ -132,12 +103,12 @@ class TestGetOncallShiftMetrics:
         """Test basic metrics calculation with grouping by user."""
         from rootly_mcp_server.server import create_rootly_mcp_server
 
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Test API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -150,24 +121,26 @@ class TestGetOncallShiftMetrics:
             tools = await server.get_tools()
             tool_names = []
             for t in tools:
-                if hasattr(t, 'name'):
+                if hasattr(t, "name"):
                     tool_names.append(t.name)  # type: ignore[attr-defined]
                 else:
                     tool_names.append(str(t))
 
             # Check if our tool is registered
-            assert "get_oncall_shift_metrics" in tool_names, "get_oncall_shift_metrics tool not found"
+            assert (
+                "get_oncall_shift_metrics" in tool_names
+            ), "get_oncall_shift_metrics tool not found"
 
     async def test_metrics_grouped_by_user(self, mock_shifts_response):
         """Test metrics calculation grouped by user."""
         # Import after patching to ensure module loads correctly
 
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Test API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -192,12 +165,12 @@ class TestGetOncallShiftMetrics:
         """Test that date range is properly passed to API."""
         from rootly_mcp_server.server import create_rootly_mcp_server
 
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Test API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
@@ -243,17 +216,18 @@ class TestGetOncallShiftMetrics:
     async def test_team_filtering_requires_schedule_query(self, mock_schedules_response):
         """Test that team filtering triggers schedule query."""
 
-        with patch('rootly_mcp_server.server._load_swagger_spec') as mock_load_spec:
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
             mock_spec = {
                 "openapi": "3.0.0",
                 "info": {"title": "Test API", "version": "1.0.0"},
                 "paths": {},
-                "components": {"schemas": {}}
+                "components": {"schemas": {}},
             }
             mock_load_spec.return_value = mock_spec
 
             # Verify that schedules endpoint exists in allowed paths
             from rootly_mcp_server.server import DEFAULT_ALLOWED_PATHS
+
             schedule_paths = [p for p in DEFAULT_ALLOWED_PATHS if "schedule" in p.lower()]
             assert len(schedule_paths) > 0
 
@@ -271,7 +245,7 @@ class TestGetOncallShiftMetrics:
         metrics = [
             {"shift_count": 5, "total_hours": 40.0, "regular_shifts": 4, "override_shifts": 1},
             {"shift_count": 3, "total_hours": 24.0, "regular_shifts": 2, "override_shifts": 1},
-            {"shift_count": 2, "total_hours": 16.0, "regular_shifts": 2, "override_shifts": 0}
+            {"shift_count": 2, "total_hours": 16.0, "regular_shifts": 2, "override_shifts": 0},
         ]
 
         # Calculate summary
@@ -305,11 +279,7 @@ class TestOncallMetricsInputValidation:
 
     def test_date_format_handling(self):
         """Test that ISO 8601 date formats are properly handled."""
-        valid_formats = [
-            "2025-10-01",
-            "2025-10-01T00:00:00Z",
-            "2025-10-01T00:00:00.000-07:00"
-        ]
+        valid_formats = ["2025-10-01", "2025-10-01T00:00:00Z", "2025-10-01T00:00:00.000-07:00"]
 
         for date_str in valid_formats:
             # All formats should be parseable
