@@ -5,6 +5,13 @@ All notable changes to the Rootly MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.1] - 2026-02-04
+
+### Fixed
+- Fixed parameter transformation bug where filter parameters (e.g., `filter_status`, `filter_services`) were not being transformed back to their API format (`filter[status]`, `filter[services]`) when making requests to the Rootly API
+- Root cause: The inner httpx client was being passed to FastMCP instead of the AuthenticatedHTTPXClient wrapper, bypassing the `_transform_params` method
+- Thanks to @smoya for reporting this issue in PR #29
+
 ## [2.1.0] - 2026-01-27
 
 ### Added
