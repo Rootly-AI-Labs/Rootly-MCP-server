@@ -487,9 +487,12 @@ def create_rootly_mcp_server(
 
     # Create the MCP server using OpenAPI integration
     # By default, all routes become tools which is what we want
+    # NOTE: We pass http_client (the wrapper) instead of http_client.client (the inner httpx client)
+    # so that parameter transformation (e.g., filter_status -> filter[status]) is applied.
+    # The wrapper implements the same interface as httpx.AsyncClient (duck typing).
     mcp = FastMCP.from_openapi(
         openapi_spec=filtered_spec,
-        client=http_client.client,
+        client=http_client,  # type: ignore[arg-type]
         name=name,
         timeout=30.0,
         tags={"rootly", "incident-management"},
