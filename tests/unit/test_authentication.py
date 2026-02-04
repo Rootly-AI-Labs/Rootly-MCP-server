@@ -238,3 +238,52 @@ class TestAuthenticationModeComparison:
 
         assert local_client.hosted is False
         assert hosted_client.hosted is True
+
+
+class TestParameterTransformation:
+    """Test suite for parameter transformation functionality."""
+
+    def test_transform_params_with_mapping(self):
+        """Test that parameters are transformed according to mapping."""
+        mapping = {
+            "filter_status": "filter[status]",
+            "filter_services": "filter[services]",
+        }
+        client = AuthenticatedHTTPXClient(parameter_mapping=mapping)
+
+        params = {"filter_status": "active", "filter_services": "api,web", "page": 1}
+        result = client._transform_params(params)
+
+        assert result is not None
+        assert result["filter[status]"] == "active"
+        assert result["filter[services]"] == "api,web"
+        assert result["page"] == 1
+        assert "filter_status" not in result
+        assert "filter_services" not in result
+
+    def test_transform_params_without_mapping(self):
+        """Test that params pass through unchanged when no mapping exists."""
+        client = AuthenticatedHTTPXClient(parameter_mapping={})
+
+        params = {"filter_status": "active", "page": 1}
+        result = client._transform_params(params)
+
+        assert result is not None
+        assert result["filter_status"] == "active"
+        assert result["page"] == 1
+
+    def test_transform_params_with_none(self):
+        """Test that None params return None."""
+        client = AuthenticatedHTTPXClient(parameter_mapping={"foo": "bar"})
+
+        result = client._transform_params(None)
+
+        assert result is None
+
+    def test_transform_params_with_empty_dict(self):
+        """Test that empty dict returns empty dict."""
+        client = AuthenticatedHTTPXClient(parameter_mapping={"foo": "bar"})
+
+        result = client._transform_params({})
+
+        assert result == {}
