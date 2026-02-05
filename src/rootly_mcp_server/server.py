@@ -381,10 +381,20 @@ class AuthenticatedHTTPXClient:
         return transformed
 
     async def request(self, method: str, url: str, **kwargs):
-        """Override request to transform parameters."""
+        """Override request to transform parameters and ensure correct headers."""
         # Transform query parameters
         if "params" in kwargs:
             kwargs["params"] = self._transform_params(kwargs["params"])
+
+        # Ensure Content-Type and Accept headers are always set correctly for Rootly API
+        # This is critical because FastMCP may pass headers from the MCP client request
+        # (e.g., Content-Type: application/json from SSE) which would override our defaults
+        if "headers" in kwargs:
+            headers = dict(kwargs["headers"]) if kwargs["headers"] else {}
+            # Always use JSON-API content type for Rootly API
+            headers["Content-Type"] = "application/vnd.api+json"
+            headers["Accept"] = "application/vnd.api+json"
+            kwargs["headers"] = headers
 
         # Call the underlying client's request method and let it handle everything
         return await self.client.request(method, url, **kwargs)
