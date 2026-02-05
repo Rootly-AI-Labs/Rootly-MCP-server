@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from copy import deepcopy
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -18,6 +19,7 @@ import requests
 from fastmcp import FastMCP
 from pydantic import Field
 
+from .och_client import OnCallHealthClient
 from .smart_utils import SolutionExtractor, TextSimilarityAnalyzer
 from .utils import sanitize_parameters_in_spec
 
@@ -3154,6 +3156,303 @@ Updated: {attributes.get("updated_at", "N/A")}"""
                 "text": f"Error ({error_type}): {error_message}",
                 "mimeType": "text/plain",
             }
+
+    @mcp.tool()
+    async def check_oncall_burnout_risk(
+        start_date: Annotated[
+            str,
+            Field(description="Start date for the on-call period (ISO 8601, e.g., '2026-02-09')"),
+        ],
+        end_date: Annotated[
+            str,
+            Field(description="End date for the on-call period (ISO 8601, e.g., '2026-02-15')"),
+        ],
+        och_analysis_id: Annotated[
+            int | None,
+            Field(
+                description="On-Call Health analysis ID. If not provided, uses the latest analysis"
+            ),
+        ] = None,
+        och_threshold: Annotated[
+            float,
+            Field(description="OCH score threshold for at-risk classification (default: 50.0)"),
+        ] = 50.0,
+        include_replacements: Annotated[
+            bool,
+            Field(description="Include recommended replacement responders (default: true)"),
+        ] = True,
+    ) -> dict:
+        """Check if any at-risk responders (based on On-Call Health burnout analysis) are scheduled for on-call.
+
+        Integrates with On-Call Health (oncallhealth.ai) to identify responders at risk of burnout
+        and checks if they are scheduled during the specified period. Optionally recommends
+        safe replacement responders.
+
+        Requires ONCALLHEALTH_API_KEY environment variable.
+        """
+        try:
+            # Validate OCH API key is configured
+            if not os.environ.get("ONCALLHEALTH_API_KEY"):
+                raise PermissionError(
+                    "ONCALLHEALTH_API_KEY environment variable required. "
+                    "Get your key from oncallhealth.ai/settings/api-keys"
+                )
+
+            och_client = OnCallHealthClient()
+
+            # 1. Get OCH analysis (by ID or latest)
+            try:
+                if och_analysis_id:
+                    analysis = await och_client.get_analysis(och_analysis_id)
+                else:
+                    analysis = await och_client.get_latest_analysis()
+                    och_analysis_id = analysis.get("id")
+            except httpx.HTTPStatusError as e:
+                raise ConnectionError(f"Failed to fetch On-Call Health data: {e}")
+            except ValueError as e:
+                raise ValueError(str(e))
+
+            # 2. Extract at-risk and safe users
+            at_risk_users, safe_users = och_client.extract_at_risk_users(
+                analysis, threshold=och_threshold
+            )
+
+            if not at_risk_users:
+                return {
+                    "period": {"start": start_date, "end": end_date},
+                    "och_analysis_id": och_analysis_id,
+                    "och_threshold": och_threshold,
+                    "at_risk_scheduled": [],
+                    "at_risk_not_scheduled": [],
+                    "recommended_replacements": [],
+                    "summary": {
+                        "total_at_risk": 0,
+                        "at_risk_scheduled": 0,
+                        "action_required": False,
+                        "message": "No users above burnout threshold.",
+                    },
+                }
+
+            # 3. Get shifts for the period
+            all_shifts = []
+            users_map = {}
+            schedules_map = {}
+
+            # Fetch lookup maps
+            lookup_users, lookup_schedules, lookup_teams = await _fetch_users_and_schedules_maps()
+            users_map.update({str(k): v for k, v in lookup_users.items()})
+            schedules_map.update({str(k): v for k, v in lookup_schedules.items()})
+
+            # Fetch shifts
+            page = 1
+            while page <= 10:
+                shifts_response = await make_authenticated_request(
+                    "GET",
+                    "/v1/shifts",
+                    params={
+                        "filter[starts_at_lte]": (
+                            end_date if "T" in end_date else f"{end_date}T23:59:59Z"
+                        ),
+                        "filter[ends_at_gte]": (
+                            start_date if "T" in start_date else f"{start_date}T00:00:00Z"
+                        ),
+                        "page[size]": 100,
+                        "page[number]": page,
+                        "include": "user,schedule",
+                    },
+                )
+                if shifts_response is None:
+                    break
+                shifts_response.raise_for_status()
+                shifts_data = shifts_response.json()
+
+                shifts = shifts_data.get("data", [])
+                included = shifts_data.get("included", [])
+
+                for resource in included:
+                    if resource.get("type") == "users":
+                        users_map[str(resource.get("id"))] = resource
+                    elif resource.get("type") == "schedules":
+                        schedules_map[str(resource.get("id"))] = resource
+
+                if not shifts:
+                    break
+
+                all_shifts.extend(shifts)
+
+                meta = shifts_data.get("meta", {})
+                total_pages = meta.get("total_pages", 1)
+                if page >= total_pages:
+                    break
+                page += 1
+
+            # 5. Correlate: which at-risk users are scheduled?
+            at_risk_scheduled = []
+            at_risk_not_scheduled = []
+
+            for user in at_risk_users:
+                rootly_id = user.get("rootly_user_id")
+                if not rootly_id:
+                    continue
+
+                rootly_id_str = str(rootly_id)
+
+                # Find shifts for this user
+                user_shifts = []
+                for shift in all_shifts:
+                    relationships = shift.get("relationships", {})
+                    user_rel = relationships.get("user", {}).get("data") or {}
+                    shift_user_id = str(user_rel.get("id", ""))
+
+                    if shift_user_id == rootly_id_str:
+                        attrs = shift.get("attributes", {})
+                        schedule_rel = relationships.get("schedule", {}).get("data") or {}
+                        schedule_id = str(schedule_rel.get("id", ""))
+                        schedule_info = schedules_map.get(schedule_id, {})
+                        schedule_name = schedule_info.get("attributes", {}).get("name", "Unknown")
+
+                        starts_at = attrs.get("starts_at")
+                        ends_at = attrs.get("ends_at")
+                        hours = 0.0
+                        if starts_at and ends_at:
+                            try:
+                                start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                                end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
+                                hours = (end_dt - start_dt).total_seconds() / 3600
+                            except (ValueError, AttributeError):
+                                pass
+
+                        user_shifts.append(
+                            {
+                                "schedule_id": schedule_id,
+                                "schedule_name": schedule_name,
+                                "starts_at": starts_at,
+                                "ends_at": ends_at,
+                                "hours": round(hours, 1),
+                            }
+                        )
+
+                if user_shifts:
+                    total_hours = sum(s["hours"] for s in user_shifts)
+                    at_risk_scheduled.append(
+                        {
+                            "user_name": user["user_name"],
+                            "user_id": int(rootly_id),
+                            "och_score": user["och_score"],
+                            "risk_level": user["risk_level"],
+                            "burnout_score": user["burnout_score"],
+                            "total_hours": round(total_hours, 1),
+                            "shifts": user_shifts,
+                        }
+                    )
+                else:
+                    at_risk_not_scheduled.append(
+                        {
+                            "user_name": user["user_name"],
+                            "user_id": int(rootly_id) if rootly_id else None,
+                            "och_score": user["och_score"],
+                            "risk_level": user["risk_level"],
+                        }
+                    )
+
+            # 6. Get recommended replacements (if requested)
+            recommended_replacements = []
+            if include_replacements and safe_users:
+                safe_rootly_ids = [
+                    str(u["rootly_user_id"]) for u in safe_users[:10] if u.get("rootly_user_id")
+                ]
+
+                if safe_rootly_ids:
+                    # Calculate current hours for safe users
+                    for user in safe_users[:5]:
+                        rootly_id = user.get("rootly_user_id")
+                        if not rootly_id:
+                            continue
+
+                        rootly_id_str = str(rootly_id)
+                        user_hours = 0.0
+
+                        for shift in all_shifts:
+                            relationships = shift.get("relationships", {})
+                            user_rel = relationships.get("user", {}).get("data") or {}
+                            shift_user_id = str(user_rel.get("id", ""))
+
+                            if shift_user_id == rootly_id_str:
+                                attrs = shift.get("attributes", {})
+                                starts_at = attrs.get("starts_at")
+                                ends_at = attrs.get("ends_at")
+                                if starts_at and ends_at:
+                                    try:
+                                        start_dt = datetime.fromisoformat(
+                                            starts_at.replace("Z", "+00:00")
+                                        )
+                                        end_dt = datetime.fromisoformat(
+                                            ends_at.replace("Z", "+00:00")
+                                        )
+                                        user_hours += (end_dt - start_dt).total_seconds() / 3600
+                                    except (ValueError, AttributeError):
+                                        pass
+
+                        recommended_replacements.append(
+                            {
+                                "user_name": user["user_name"],
+                                "user_id": int(rootly_id),
+                                "och_score": user["och_score"],
+                                "risk_level": user["risk_level"],
+                                "current_hours_in_period": round(user_hours, 1),
+                            }
+                        )
+
+            # 7. Build summary
+            total_scheduled_hours = sum(u["total_hours"] for u in at_risk_scheduled)
+            action_required = len(at_risk_scheduled) > 0
+
+            if action_required:
+                message = (
+                    f"{len(at_risk_scheduled)} at-risk user(s) scheduled for "
+                    f"{total_scheduled_hours} hours. Consider reassignment."
+                )
+            else:
+                message = "No at-risk users are scheduled for the period."
+
+            return {
+                "period": {"start": start_date, "end": end_date},
+                "och_analysis_id": och_analysis_id,
+                "och_threshold": och_threshold,
+                "at_risk_scheduled": at_risk_scheduled,
+                "at_risk_not_scheduled": at_risk_not_scheduled,
+                "recommended_replacements": recommended_replacements,
+                "summary": {
+                    "total_at_risk": len(at_risk_users),
+                    "at_risk_scheduled": len(at_risk_scheduled),
+                    "action_required": action_required,
+                    "message": message,
+                },
+            }
+
+        except PermissionError as e:
+            return MCPError.tool_error(str(e), "permission_error")
+        except ConnectionError as e:
+            return MCPError.tool_error(str(e), "connection_error")
+        except ValueError as e:
+            return MCPError.tool_error(str(e), "validation_error")
+        except Exception as e:
+            import traceback
+
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(
+                f"Failed to check burnout risk: {error_message}",
+                error_type,
+                details={
+                    "params": {
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "och_analysis_id": och_analysis_id,
+                    },
+                    "exception_type": type(e).__name__,
+                    "traceback": traceback.format_exc(),
+                },
+            )
 
     # Log server creation (tool count will be shown when tools are accessed)
     logger.info("Created Rootly MCP Server successfully")

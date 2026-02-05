@@ -108,6 +108,41 @@ Alternatively, connect directly to our hosted MCP server:
   - **`suggest_solutions`**: Mines past incident resolutions to recommend actionable solutions
 - **MCP Resources**: Exposes incident and team data as structured resources for easy AI reference
 - **Intelligent Pattern Recognition**: Automatically identifies services, error types, and resolution patterns
+- **On-Call Health Integration**: Detects burnout risk in scheduled responders
+
+## On-Call Health Integration
+
+Rootly MCP integrates with [On-Call Health](https://oncallhealth.ai) to detect burnout risk in scheduled responders.
+
+### Setup
+
+Set the `ONCALLHEALTH_API_KEY` environment variable:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "uvx",
+      "args": ["rootly-mcp-server"],
+      "env": {
+        "ROOTLY_API_TOKEN": "your_rootly_token",
+        "ONCALLHEALTH_API_KEY": "och_live_your_key"
+      }
+    }
+  }
+}
+```
+
+### Usage
+
+```
+check_oncall_burnout_risk(
+    start_date="2026-02-09",
+    end_date="2026-02-15"
+)
+```
+
+Returns at-risk users who are scheduled, recommended safe replacements, and action summaries.
 
 ## Example Skills
 
