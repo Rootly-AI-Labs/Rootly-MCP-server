@@ -1,18 +1,19 @@
 """On-Call Health API client for burnout risk analysis."""
 
 import os
+from typing import Any
 
 import httpx
 
 
 class OnCallHealthClient:
-    def __init__(self, api_key: str = None, base_url: str = None):
-        self.api_key = api_key or os.environ.get("ONCALLHEALTH_API_KEY")
-        self.base_url = base_url or os.environ.get(
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
+        self.api_key: str = api_key or os.environ.get("ONCALLHEALTH_API_KEY", "")
+        self.base_url: str = base_url or os.environ.get(
             "ONCALLHEALTH_API_URL", "https://api.oncallhealth.ai"
         )
 
-    async def get_analysis(self, analysis_id: int) -> dict:
+    async def get_analysis(self, analysis_id: int) -> dict[str, Any]:
         """Fetch analysis by ID."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -23,7 +24,7 @@ class OnCallHealthClient:
             response.raise_for_status()
             return response.json()
 
-    async def get_latest_analysis(self) -> dict:
+    async def get_latest_analysis(self) -> dict[str, Any]:
         """Fetch most recent analysis."""
         async with httpx.AsyncClient() as client:
             response = await client.get(
@@ -39,15 +40,17 @@ class OnCallHealthClient:
                 raise ValueError("No analyses found")
             return analyses[0]
 
-    def extract_at_risk_users(self, analysis: dict, threshold: float = 50.0) -> tuple[list, list]:
+    def extract_at_risk_users(
+        self, analysis: dict[str, Any], threshold: float = 50.0
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """Extract at-risk and safe users from analysis."""
         members = analysis.get("analysis_data", {}).get("team_analysis", {}).get("members", [])
 
-        at_risk = []
-        safe = []
+        at_risk: list[dict[str, Any]] = []
+        safe: list[dict[str, Any]] = []
 
         for member in members:
-            user_data = {
+            user_data: dict[str, Any] = {
                 "user_name": member.get("user_name"),
                 "rootly_user_id": member.get("rootly_user_id"),
                 "och_score": member.get("och_score", 0),
