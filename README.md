@@ -74,27 +74,6 @@ Configure your MCP-compatible editor (tested with Cursor) with one of the config
 }
 ```
 
-To customize `allowed_paths` and access additional Rootly API paths, clone the repository and use this configuration:
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "command": "uv",
-      "args": [
-        "run",
-        "--directory",
-        "/path/to/rootly-mcp-server",
-        "rootly-mcp-server"
-      ],
-      "env": {
-        "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
-      }
-    }
-  }
-}
-```
-
 ### Connect to Hosted MCP Server
 
 Alternatively, connect directly to our hosted MCP server:
@@ -157,103 +136,6 @@ cp examples/skills/rootly-incident-responder.md .claude/skills/
 
 This skill demonstrates a complete incident response workflow using Rootly's intelligent tools combined with GitHub integration for code correlation.
 
-### Available Tools
-
-**Alerts**
-- `listIncidentAlerts`
-- `listAlerts`
-- `attachAlert`
-- `createAlert`
-
-**Environments**
-- `listEnvironments`
-- `createEnvironment`
-
-**Functionalities**
-- `listFunctionalities`
-- `createFunctionality`
-
-**Workflows**
-- `listWorkflows`
-- `createWorkflow`
-
-**Incidents**
-- `listIncidentActionItems`
-- `createIncidentActionItem`
-- `listIncident_Types`
-- `createIncidentType`
-- `search_incidents`
-- `find_related_incidents`
-- `suggest_solutions`
-
-**On-Call**
-- `get_oncall_shift_metrics`
-- `get_oncall_handoff_summary`
-- `get_shift_incidents`
-
-**Services & Severities**
-- `listServices`
-- `createService`
-- `listSeverities`
-- `createSeverity`
-
-**Teams & Users**
-- `listTeams`
-- `createTeam`
-- `listUsers`
-- `getCurrentUser`
-
-**Meta**
-- `list_endpoints`
-
-### Why Path Limiting?
-
-We limit exposed API paths for two key reasons:
-
-1. **Context Management**: Rootly's comprehensive API can overwhelm AI agents, affecting their ability to perform simple tasks effectively
-2. **Security**: Controls which information and actions are accessible through the MCP server
-
-To expose additional paths, modify the `allowed_paths` variable in `src/rootly_mcp_server/server.py`.
-
-### Smart Analysis Tools
-
-The MCP server includes intelligent tools that analyze historical incident data to provide actionable insights:
-
-#### `find_related_incidents`
-Finds historically similar incidents using text similarity analysis:
-```
-find_related_incidents(incident_id="12345", similarity_threshold=0.15, max_results=5)
-```
-- **Input**: Incident ID, similarity threshold (0.0-1.0), max results
-- **Output**: Similar incidents with confidence scores, matched services, and resolution times
-- **Use Case**: Get context from past incidents to understand patterns and solutions
-
-#### `suggest_solutions` 
-Recommends solutions by analyzing how similar incidents were resolved:
-```
-suggest_solutions(incident_id="12345", max_solutions=3)
-# OR for new incidents:
-suggest_solutions(incident_title="Payment API errors", incident_description="Users getting 500 errors during checkout")
-```
-- **Input**: Either incident ID OR title/description text
-- **Output**: Actionable solution recommendations with confidence scores and time estimates  
-- **Use Case**: Get intelligent suggestions based on successful past resolutions
-
-#### How It Works
-- **Text Similarity**: Uses TF-IDF vectorization and cosine similarity (scikit-learn)
-- **Service Detection**: Automatically identifies affected services from incident text
-- **Pattern Recognition**: Finds common error types, resolution patterns, and time estimates
-- **Fallback Mode**: Works without ML libraries using keyword-based similarity
-- **Solution Mining**: Extracts actionable steps from resolution summaries
-
-#### Data Requirements
-For optimal results, ensure your Rootly incidents have descriptive:
-- **Titles**: Clear, specific incident descriptions
-- **Summaries**: Detailed resolution steps when closing incidents
-- **Service Tags**: Proper service identification
-
-Example good resolution summary: `"Restarted auth-service, cleared Redis cache, and increased connection pool from 10 to 50"`
-
 ### On-Call Shift Metrics
 
 Get on-call shift metrics for any time period, grouped by user, team, or schedule. Includes primary/secondary role tracking, shift counts, hours, and days on-call.
@@ -305,52 +187,9 @@ get_shift_incidents(
 Returns: `incidents` list + `summary` (counts, avg resolution time, grouping)
 
 
-## Developer Setup & Troubleshooting
+## Contributing
 
-### Prerequisites
-- Python 3.12 or higher
-- [`uv`](https://github.com/astral-sh/uv) for dependency management
-
-### 1. Set Up Virtual Environment
-
-Create and activate a virtual environment:
-
-```bash
-uv venv .venv
-source .venv/bin/activate  # Always activate before running scripts
-```
-
-### 2. Install Dependencies
-
-Install all project dependencies:
-
-```bash
-uv pip install .
-```
-
-To add new dependencies during development:
-```bash
-uv pip install <package>
-```
-
-### 3. Set Up Git Hooks (Recommended for Contributors)
-
-Install pre-commit hooks to automatically run linting and tests before commits:
-
-```bash
-./scripts/setup-hooks.sh
-```
-
-This ensures code quality by running:
-- Ruff linting
-- Pyright type checking
-- Unit tests
-
-### 4. Verify Installation
-
-The server should now be ready to use with your MCP-compatible editor.
-
-**For developers:** Additional testing tools are available in the `tests/` directory.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for developer setup and guidelines.
 
 ## Play with it on Postman
 [<img src="https://run.pstmn.io/button.svg" alt="Run In Postman" style="width: 128px; height: 32px;">](https://god.gw.postman.com/run-collection/45004446-1074ba3c-44fe-40e3-a932-af7c071b96eb?action=collection%2Ffork&source=rip_markdown&collection-url=entityId%3D45004446-1074ba3c-44fe-40e3-a932-af7c071b96eb%26entityType%3Dcollection%26workspaceId%3D4bec6e3c-50a0-4746-85f1-00a703c32f24)

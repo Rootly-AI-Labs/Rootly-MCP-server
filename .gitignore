@@ -189,6 +189,8 @@ swagger.json
 test_output/
 *.tmp
 
-# Markdown files (exclude all except README)
+# Markdown files (exclude all except README and CONTRIBUTING)
 *.md
-!README.md.beads/
+!README.md
+!CONTRIBUTING.md
+!CHANGELOG.md.beads/
