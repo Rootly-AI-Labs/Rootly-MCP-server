@@ -189,9 +189,7 @@ class TestListShifts:
 
         # Should only include shifts for users 2381 and 94178
         assert len(filtered_shifts) == 2
-        user_ids = [
-            s["relationships"]["user"]["data"]["id"] for s in filtered_shifts
-        ]
+        user_ids = [s["relationships"]["user"]["data"]["id"] for s in filtered_shifts]
         assert "2381" in user_ids
         assert "94178" in user_ids
         assert "27965" not in user_ids
@@ -205,9 +203,9 @@ class TestGetOncallScheduleSummary:
         """Test hours are correctly aggregated per user per schedule."""
         from collections import defaultdict
 
-        schedule_coverage = defaultdict(lambda: {
-            "responders": defaultdict(lambda: {"total_hours": 0.0, "shift_count": 0})
-        })
+        schedule_coverage = defaultdict(
+            lambda: {"responders": defaultdict(lambda: {"total_hours": 0.0, "shift_count": 0})}
+        )
 
         for shift in mock_shifts_response["data"]:
             attrs = shift.get("attributes", {})
@@ -423,9 +421,17 @@ class TestEnrichedShiftData:
         }
 
         required_fields = [
-            "shift_id", "user_id", "schedule_id", "starts_at", "ends_at",
-            "is_override", "total_hours", "user_name", "user_email",
-            "schedule_name", "team_name"
+            "shift_id",
+            "user_id",
+            "schedule_id",
+            "starts_at",
+            "ends_at",
+            "is_override",
+            "total_hours",
+            "user_name",
+            "user_email",
+            "schedule_name",
+            "team_name",
         ]
 
         for field in required_fields:
@@ -449,7 +455,9 @@ class TestEnrichedShiftData:
 class TestScheduleToTeamMapping:
     """Test schedule to team mapping logic."""
 
-    def test_schedule_team_mapping_from_owner_group_ids(self, mock_schedules_response, mock_teams_response):
+    def test_schedule_team_mapping_from_owner_group_ids(
+        self, mock_schedules_response, mock_teams_response
+    ):
         """Test schedule-to-team mapping is built from owner_group_ids."""
         schedules_map = {s["id"]: s for s in mock_schedules_response["data"]}
         teams_map = {t["id"]: t for t in mock_teams_response["data"]}
@@ -531,7 +539,10 @@ class TestEmptyRotationUsersWarning:
         elif not recommendations:
             warning = "All rotation users are either excluded or the original user. No recommendations available."
 
-        assert warning == "No rotation users found for this schedule. The schedule may not have any rotations configured."
+        assert (
+            warning
+            == "No rotation users found for this schedule. The schedule may not have any rotations configured."
+        )
 
     def test_all_users_excluded_warning(self):
         """Test warning when all rotation users are excluded."""
@@ -544,7 +555,10 @@ class TestEmptyRotationUsersWarning:
         elif not recommendations:
             warning = "All rotation users are either excluded or the original user. No recommendations available."
 
-        assert warning == "All rotation users are either excluded or the original user. No recommendations available."
+        assert (
+            warning
+            == "All rotation users are either excluded or the original user. No recommendations available."
+        )
 
     def test_no_warning_when_recommendations_exist(self):
         """Test no warning when recommendations are available."""
@@ -588,10 +602,7 @@ class TestCacheBehavior:
         }
 
         now = time.time()
-        is_valid = (
-            cache["data"] is not None
-            and (now - cache["timestamp"]) < cache["ttl_seconds"]
-        )
+        is_valid = cache["data"] is not None and (now - cache["timestamp"]) < cache["ttl_seconds"]
 
         assert is_valid is True  # 100s < 300s TTL
 
@@ -606,10 +617,7 @@ class TestCacheBehavior:
         }
 
         now = time.time()
-        is_valid = (
-            cache["data"] is not None
-            and (now - cache["timestamp"]) < cache["ttl_seconds"]
-        )
+        is_valid = cache["data"] is not None and (now - cache["timestamp"]) < cache["ttl_seconds"]
 
         assert is_valid is False  # 400s > 300s TTL
 

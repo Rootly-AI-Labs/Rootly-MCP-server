@@ -2425,24 +2425,30 @@ def create_rootly_mcp_server(
                 page += 1
 
             # Aggregate by schedule and user
-            schedule_coverage: dict[str, dict] = defaultdict(lambda: {
-                "schedule_name": "",
-                "team_name": "",
-                "responders": defaultdict(lambda: {
+            schedule_coverage: dict[str, dict] = defaultdict(
+                lambda: {
+                    "schedule_name": "",
+                    "team_name": "",
+                    "responders": defaultdict(
+                        lambda: {
+                            "user_name": "",
+                            "user_id": None,
+                            "total_hours": 0.0,
+                            "shift_count": 0,
+                            "is_override": False,
+                        }
+                    ),
+                }
+            )
+
+            responder_load: dict[str, dict] = defaultdict(
+                lambda: {
                     "user_name": "",
                     "user_id": None,
                     "total_hours": 0.0,
-                    "shift_count": 0,
-                    "is_override": False,
-                })
-            })
-
-            responder_load: dict[str, dict] = defaultdict(lambda: {
-                "user_name": "",
-                "user_id": None,
-                "total_hours": 0.0,
-                "schedules": set(),
-            })
+                    "schedules": set(),
+                }
+            )
 
             for shift in all_shifts:
                 attrs = shift.get("attributes", {})
@@ -2521,11 +2527,13 @@ def create_rootly_mcp_server(
                 # Sort by hours descending
                 responders_list.sort(key=lambda x: x["total_hours"], reverse=True)
 
-                formatted_coverage.append({
-                    "schedule_name": sched_data["schedule_name"],
-                    "team_name": sched_data["team_name"],
-                    "responders": responders_list,
-                })
+                formatted_coverage.append(
+                    {
+                        "schedule_name": sched_data["schedule_name"],
+                        "team_name": sched_data["team_name"],
+                        "responders": responders_list,
+                    }
+                )
 
             # Format responder load with warnings
             formatted_load = []
@@ -2543,7 +2551,9 @@ def create_rootly_mcp_server(
 
                 # Add warnings for high load
                 if len(schedules_list) >= 4:
-                    responder_entry["warning"] = f"High load: {len(schedules_list)} concurrent schedules"
+                    responder_entry["warning"] = (
+                        f"High load: {len(schedules_list)} concurrent schedules"
+                    )
                 elif hours >= 168:  # 7 days * 24 hours
                     responder_entry["warning"] = f"High load: {hours} hours in period"
 
@@ -2587,7 +2597,9 @@ def create_rootly_mcp_server(
         ],
         user_ids: Annotated[
             str,
-            Field(description="Comma-separated Rootly user IDs to check (e.g., '2381,94178,27965')"),
+            Field(
+                description="Comma-separated Rootly user IDs to check (e.g., '2381,94178,27965')"
+            ),
         ],
     ) -> dict:
         """
@@ -2702,12 +2714,14 @@ def create_rootly_mcp_server(
                     except (ValueError, AttributeError):
                         pass
 
-                user_shifts[user_id].append({
-                    "schedule_name": sched_info.get("schedule_name", "Unknown"),
-                    "starts_at": starts_at,
-                    "ends_at": ends_at,
-                    "hours": hours,
-                })
+                user_shifts[user_id].append(
+                    {
+                        "schedule_name": sched_info.get("schedule_name", "Unknown"),
+                        "starts_at": starts_at,
+                        "ends_at": ends_at,
+                        "hours": hours,
+                    }
+                )
                 user_hours[user_id] += hours
 
             # Format results
@@ -2721,17 +2735,21 @@ def create_rootly_mcp_server(
 
                 shifts = user_shifts.get(user_id, [])
                 if shifts:
-                    scheduled.append({
-                        "user_id": int(user_id) if user_id.isdigit() else user_id,
-                        "user_name": user_name,
-                        "total_hours": round(user_hours[user_id], 1),
-                        "shifts": shifts,
-                    })
+                    scheduled.append(
+                        {
+                            "user_id": int(user_id) if user_id.isdigit() else user_id,
+                            "user_name": user_name,
+                            "total_hours": round(user_hours[user_id], 1),
+                            "shifts": shifts,
+                        }
+                    )
                 else:
-                    not_scheduled.append({
-                        "user_id": int(user_id) if user_id.isdigit() else user_id,
-                        "user_name": user_name,
-                    })
+                    not_scheduled.append(
+                        {
+                            "user_id": int(user_id) if user_id.isdigit() else user_id,
+                            "user_name": user_name,
+                        }
+                    )
 
             # Sort scheduled by hours descending
             scheduled.sort(key=lambda x: x["total_hours"], reverse=True)
@@ -2751,7 +2769,11 @@ def create_rootly_mcp_server(
                 f"Failed to check responder availability: {error_message}",
                 error_type,
                 details={
-                    "params": {"start_date": start_date, "end_date": end_date, "user_ids": user_ids},
+                    "params": {
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "user_ids": user_ids,
+                    },
                     "exception_type": type(e).__name__,
                     "traceback": traceback.format_exc(),
                 },
@@ -2808,7 +2830,9 @@ def create_rootly_mcp_server(
             # Get original user info
             original_user = users_map.get(str(original_user_id), {})
             original_user_attrs = original_user.get("attributes", {})
-            original_user_name = original_user_attrs.get("full_name") or original_user_attrs.get("name") or "Unknown"
+            original_user_name = (
+                original_user_attrs.get("full_name") or original_user_attrs.get("name") or "Unknown"
+            )
 
             # Fetch schedule rotations to find rotation users
             rotation_users = set()
@@ -2831,6 +2855,7 @@ def create_rootly_mcp_server(
 
                 # Fetch all rotation users in parallel
                 if rotation_ids:
+
                     async def fetch_rotation_users(rotation_id: str):
                         response = await make_authenticated_request(
                             "GET",
@@ -2843,15 +2868,16 @@ def create_rootly_mcp_server(
 
                     # Execute all rotation user fetches in parallel
                     rotation_results = await asyncio.gather(
-                        *[fetch_rotation_users(rid) for rid in rotation_ids],
-                        return_exceptions=True
+                        *[fetch_rotation_users(rid) for rid in rotation_ids], return_exceptions=True
                     )
 
                     # Process results
                     for result in rotation_results:
                         if isinstance(result, list):
                             for ru in result:
-                                user_rel = ru.get("relationships", {}).get("user", {}).get("data", {})
+                                user_rel = (
+                                    ru.get("relationships", {}).get("user", {}).get("data", {})
+                                )
                                 user_id = user_rel.get("id")
                                 if user_id:
                                     rotation_users.add(str(user_id))
@@ -2946,12 +2972,14 @@ def create_rootly_mcp_server(
                 else:
                     reason = "In rotation, but higher load"
 
-                recommendations.append({
-                    "user_id": int(user_id) if user_id.isdigit() else user_id,
-                    "user_name": user_name,
-                    "current_hours_in_period": current_hours,
-                    "reason": reason,
-                })
+                recommendations.append(
+                    {
+                        "user_id": int(user_id) if user_id.isdigit() else user_id,
+                        "user_name": user_name,
+                        "current_hours_in_period": current_hours,
+                        "reason": reason,
+                    }
+                )
 
             # Sort by load (lowest first)
             recommendations.sort(key=lambda x: x["current_hours_in_period"])
@@ -2988,9 +3016,13 @@ def create_rootly_mcp_server(
 
             # Add warning if no recommendations available
             if not rotation_users:
-                response["warning"] = "No rotation users found for this schedule. The schedule may not have any rotations configured."
+                response["warning"] = (
+                    "No rotation users found for this schedule. The schedule may not have any rotations configured."
+                )
             elif not recommendations:
-                response["warning"] = "All rotation users are either excluded or the original user. No recommendations available."
+                response["warning"] = (
+                    "All rotation users are either excluded or the original user. No recommendations available."
+                )
 
             return response
 
