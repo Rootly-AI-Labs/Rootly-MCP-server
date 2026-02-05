@@ -275,3 +275,44 @@ class TestFastMCPIntegrationScenario:
             call_kwargs = mock_httpx_client.request.call_args[1]
             assert call_kwargs["headers"]["Content-Type"] == "application/vnd.api+json"
             assert call_kwargs["headers"]["Accept"] == "application/vnd.api+json"
+
+    @pytest.mark.asyncio
+    async def test_lowercase_headers_removed_not_duplicated(self, mock_httpx_client):
+        """Test that lowercase headers from FastMCP are removed, not duplicated.
+
+        FastMCP's get_http_headers() returns lowercase keys like 'content-type'.
+        If we only SET 'Content-Type' without removing 'content-type', the dict
+        would have BOTH keys, causing the 415 error on the hosted server.
+
+        This is the ROOT CAUSE of the 415 error that only happens on hosted MCP:
+        - Local (stdio): No HTTP request context, get_http_headers() returns {}
+        - Hosted (SSE): HTTP request context exists, get_http_headers() returns lowercase headers
+        """
+        from rootly_mcp_server.server import AuthenticatedHTTPXClient
+
+        with patch.object(AuthenticatedHTTPXClient, "_get_api_token", return_value="test-token"):
+            client = AuthenticatedHTTPXClient()
+            client.client = mock_httpx_client
+
+            # FastMCP returns lowercase header keys from get_http_headers()
+            fastmcp_headers = {
+                "content-type": "application/json",  # lowercase from FastMCP!
+                "accept": "application/json",  # lowercase from FastMCP!
+                "authorization": "Bearer token",
+            }
+
+            await client.request("GET", "/v1/teams", headers=fastmcp_headers)
+
+            call_kwargs = mock_httpx_client.request.call_args[1]
+            headers = call_kwargs["headers"]
+
+            # Should have correct Content-Type (mixed case)
+            assert headers["Content-Type"] == "application/vnd.api+json"
+            assert headers["Accept"] == "application/vnd.api+json"
+
+            # Should NOT have lowercase duplicates - this is the key assertion!
+            assert "content-type" not in headers, "lowercase content-type should be removed"
+            assert "accept" not in headers, "lowercase accept should be removed"
+
+            # Other headers should be preserved
+            assert headers["authorization"] == "Bearer token"

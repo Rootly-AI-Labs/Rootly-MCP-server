@@ -388,10 +388,15 @@ class AuthenticatedHTTPXClient:
 
         # ALWAYS ensure Content-Type and Accept headers are set correctly for Rootly API
         # This is critical because:
-        # 1. FastMCP may pass headers from the MCP client request (e.g., Content-Type: application/json)
-        # 2. Per-request headers override httpx client defaults
-        # 3. We must force JSON-API content type regardless of what's passed in
+        # 1. FastMCP's get_http_headers() returns LOWERCASE header keys (e.g., "content-type")
+        # 2. We must remove any existing content-type/accept and set the correct JSON-API values
+        # 3. Handle both lowercase and mixed-case variants to be safe
         headers = dict(kwargs.get("headers") or {})
+        # Remove any existing content-type and accept headers (case-insensitive)
+        headers_to_remove = [k for k in headers if k.lower() in ("content-type", "accept")]
+        for key in headers_to_remove:
+            del headers[key]
+        # Set the correct JSON-API headers
         headers["Content-Type"] = "application/vnd.api+json"
         headers["Accept"] = "application/vnd.api+json"
         kwargs["headers"] = headers
