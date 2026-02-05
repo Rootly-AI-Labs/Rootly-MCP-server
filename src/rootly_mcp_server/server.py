@@ -5,6 +5,7 @@ This module implements a server that dynamically generates MCP tools based on
 the Rootly API's OpenAPI (Swagger) specification using FastMCP's OpenAPI integration.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -2504,9 +2505,9 @@ def create_rootly_mcp_server(
 
             # Format schedule coverage
             formatted_coverage = []
-            for schedule_id, sched_data in schedule_coverage.items():
+            for _schedule_id, sched_data in schedule_coverage.items():
                 responders_list = []
-                for user_key, resp_data in sched_data["responders"].items():
+                for _user_key, resp_data in sched_data["responders"].items():
                     responder = {
                         "user_name": resp_data["user_name"],
                         "total_hours": round(resp_data["total_hours"], 1),
@@ -2528,7 +2529,7 @@ def create_rootly_mcp_server(
 
             # Format responder load with warnings
             formatted_load = []
-            for user_key, load_data in responder_load.items():
+            for _user_key, load_data in responder_load.items():
                 schedules_list = list(load_data["schedules"])
                 hours = round(load_data["total_hours"], 1)
 
@@ -2669,7 +2670,7 @@ def create_rootly_mcp_server(
 
             # Group shifts by user
             user_shifts: dict[str, list] = {uid: [] for uid in user_id_list}
-            user_hours: dict[str, float] = {uid: 0.0 for uid in user_id_list}
+            user_hours: dict[str, float] = dict.fromkeys(user_id_list, 0.0)
 
             for shift in all_shifts:
                 attrs = shift.get("attributes", {})
