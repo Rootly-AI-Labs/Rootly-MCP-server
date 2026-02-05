@@ -1,9 +1,12 @@
-"""On-Call Health API client for burnout risk analysis."""
+"""On-Call Health API client for workload health risk analysis."""
 
 import os
 from typing import Any
 
 import httpx
+
+# External API field mapping (On-Call Health API response field)
+_OCH_RISK_SCORE_FIELD = "burnout_score"
 
 
 class OnCallHealthClient:
@@ -55,7 +58,7 @@ class OnCallHealthClient:
                 "rootly_user_id": member.get("rootly_user_id"),
                 "och_score": member.get("och_score", 0),
                 "risk_level": member.get("risk_level", "unknown"),
-                "burnout_score": member.get("burnout_score", 0),
+                "health_risk_score": member.get(_OCH_RISK_SCORE_FIELD, 0),
                 "incident_count": member.get("incident_count", 0),
             }
 

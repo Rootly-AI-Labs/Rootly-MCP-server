@@ -3168,7 +3168,7 @@ Updated: {attributes.get("updated_at", "N/A")}"""
             }
 
     @mcp.tool()
-    async def check_oncall_burnout_risk(
+    async def check_oncall_health_risk(
         start_date: Annotated[
             str,
             Field(description="Start date for the on-call period (ISO 8601, e.g., '2026-02-09')"),
@@ -3192,11 +3192,11 @@ Updated: {attributes.get("updated_at", "N/A")}"""
             Field(description="Include recommended replacement responders (default: true)"),
         ] = True,
     ) -> dict:
-        """Check if any at-risk responders (based on On-Call Health burnout analysis) are scheduled for on-call.
+        """Check if any at-risk responders (based on On-Call Health analysis) are scheduled for on-call.
 
-        Integrates with On-Call Health (oncallhealth.ai) to identify responders at risk of burnout
-        and checks if they are scheduled during the specified period. Optionally recommends
-        safe replacement responders.
+        Integrates with On-Call Health (oncallhealth.ai) to identify responders with elevated
+        workload health risk and checks if they are scheduled during the specified period.
+        Optionally recommends safe replacement responders.
 
         Requires ONCALLHEALTH_API_KEY environment variable.
         """
@@ -3239,7 +3239,7 @@ Updated: {attributes.get("updated_at", "N/A")}"""
                         "total_at_risk": 0,
                         "at_risk_scheduled": 0,
                         "action_required": False,
-                        "message": "No users above burnout threshold.",
+                        "message": "No users above health risk threshold.",
                     },
                 }
 
@@ -3350,7 +3350,7 @@ Updated: {attributes.get("updated_at", "N/A")}"""
                             "user_id": int(rootly_id),
                             "och_score": user["och_score"],
                             "risk_level": user["risk_level"],
-                            "burnout_score": user["burnout_score"],
+                            "health_risk_score": user["health_risk_score"],
                             "total_hours": round(total_hours, 1),
                             "shifts": user_shifts,
                         }
@@ -3451,7 +3451,7 @@ Updated: {attributes.get("updated_at", "N/A")}"""
 
             error_type, error_message = MCPError.categorize_error(e)
             return MCPError.tool_error(
-                f"Failed to check burnout risk: {error_message}",
+                f"Failed to check health risk: {error_message}",
                 error_type,
                 details={
                     "params": {
