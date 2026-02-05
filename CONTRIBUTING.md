@@ -1,5 +1,14 @@
 # Contributing to Rootly MCP Server
 
+## Submitting Changes
+
+1. Fork the repository and create a feature branch
+2. Make your changes with clear, atomic commits
+3. Open a Pull Request with a description that clearly explains:
+   - What the change does
+   - Why it's needed
+   - Any breaking changes or migration steps
+
 ## Developer Setup
 
 ### Prerequisites
