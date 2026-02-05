@@ -2025,6 +2025,7 @@ def create_rootly_mcp_server(
         "timestamp": 0.0,
         "ttl_seconds": 300,  # 5 minutes
     }
+    _lookup_maps_lock = asyncio.Lock()
 
     # Helper function to fetch users and schedules for enrichment
     async def _fetch_users_and_schedules_maps() -> tuple[dict, dict, dict]:
@@ -2034,7 +2035,7 @@ def create_rootly_mcp_server(
         """
         import time
 
-        # Check cache
+        # Check cache (fast path without lock)
         now = time.time()
         if (
             _lookup_maps_cache["data"] is not None
@@ -2042,64 +2043,74 @@ def create_rootly_mcp_server(
         ):
             return _lookup_maps_cache["data"]
 
-        users_map = {}
-        schedules_map = {}
-        teams_map = {}
+        # Acquire lock to prevent concurrent fetches
+        async with _lookup_maps_lock:
+            # Re-check cache after acquiring lock
+            now = time.time()
+            if (
+                _lookup_maps_cache["data"] is not None
+                and (now - _lookup_maps_cache["timestamp"]) < _lookup_maps_cache["ttl_seconds"]
+            ):
+                return _lookup_maps_cache["data"]
 
-        # Fetch all users with pagination
-        page = 1
-        while page <= 10:
-            users_response = await make_authenticated_request(
-                "GET", "/v1/users", params={"page[size]": 100, "page[number]": page}
-            )
-            if users_response and users_response.status_code == 200:
-                users_data = users_response.json()
-                for user in users_data.get("data", []):
-                    users_map[user.get("id")] = user
-                if len(users_data.get("data", [])) < 100:
+            users_map = {}
+            schedules_map = {}
+            teams_map = {}
+
+            # Fetch all users with pagination
+            page = 1
+            while page <= 10:
+                users_response = await make_authenticated_request(
+                    "GET", "/v1/users", params={"page[size]": 100, "page[number]": page}
+                )
+                if users_response and users_response.status_code == 200:
+                    users_data = users_response.json()
+                    for user in users_data.get("data", []):
+                        users_map[user.get("id")] = user
+                    if len(users_data.get("data", [])) < 100:
+                        break
+                    page += 1
+                else:
                     break
-                page += 1
-            else:
-                break
 
-        # Fetch all schedules with pagination
-        page = 1
-        while page <= 10:
-            schedules_response = await make_authenticated_request(
-                "GET", "/v1/schedules", params={"page[size]": 100, "page[number]": page}
-            )
-            if schedules_response and schedules_response.status_code == 200:
-                schedules_data = schedules_response.json()
-                for schedule in schedules_data.get("data", []):
-                    schedules_map[schedule.get("id")] = schedule
-                if len(schedules_data.get("data", [])) < 100:
+            # Fetch all schedules with pagination
+            page = 1
+            while page <= 10:
+                schedules_response = await make_authenticated_request(
+                    "GET", "/v1/schedules", params={"page[size]": 100, "page[number]": page}
+                )
+                if schedules_response and schedules_response.status_code == 200:
+                    schedules_data = schedules_response.json()
+                    for schedule in schedules_data.get("data", []):
+                        schedules_map[schedule.get("id")] = schedule
+                    if len(schedules_data.get("data", [])) < 100:
+                        break
+                    page += 1
+                else:
                     break
-                page += 1
-            else:
-                break
 
-        # Fetch all teams with pagination
-        page = 1
-        while page <= 10:
-            teams_response = await make_authenticated_request(
-                "GET", "/v1/teams", params={"page[size]": 100, "page[number]": page}
-            )
-            if teams_response and teams_response.status_code == 200:
-                teams_data = teams_response.json()
-                for team in teams_data.get("data", []):
-                    teams_map[team.get("id")] = team
-                if len(teams_data.get("data", [])) < 100:
+            # Fetch all teams with pagination
+            page = 1
+            while page <= 10:
+                teams_response = await make_authenticated_request(
+                    "GET", "/v1/teams", params={"page[size]": 100, "page[number]": page}
+                )
+                if teams_response and teams_response.status_code == 200:
+                    teams_data = teams_response.json()
+                    for team in teams_data.get("data", []):
+                        teams_map[team.get("id")] = team
+                    if len(teams_data.get("data", [])) < 100:
+                        break
+                    page += 1
+                else:
                     break
-                page += 1
-            else:
-                break
 
-        # Cache the result
-        result = (users_map, schedules_map, teams_map)
-        _lookup_maps_cache["data"] = result
-        _lookup_maps_cache["timestamp"] = now
+            # Cache the result
+            result = (users_map, schedules_map, teams_map)
+            _lookup_maps_cache["data"] = result
+            _lookup_maps_cache["timestamp"] = now
 
-        return result
+            return result
 
     @mcp.tool()
     async def list_shifts(
