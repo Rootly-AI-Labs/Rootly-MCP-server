@@ -191,4 +191,4 @@ test_output/
 
 # Markdown files (exclude all except README)
 *.md
-!README.md
+!README.md.beads/
