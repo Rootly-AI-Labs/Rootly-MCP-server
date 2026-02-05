@@ -5,6 +5,7 @@ This module implements a server that dynamically generates MCP tools based on
 the Rootly API's OpenAPI (Swagger) specification using FastMCP's OpenAPI integration.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -2018,6 +2019,1029 @@ def create_rootly_mcp_server(
         return await _fetch_shift_incidents_internal(
             start_time, end_time, schedule_ids, severity, status, tags
         )
+
+    # Cache for lookup maps (TTL: 5 minutes)
+    _lookup_maps_cache: dict[str, Any] = {
+        "data": None,
+        "timestamp": 0.0,
+        "ttl_seconds": 300,  # 5 minutes
+    }
+    _lookup_maps_lock = asyncio.Lock()
+
+    # Helper function to fetch users and schedules for enrichment
+    async def _fetch_users_and_schedules_maps() -> tuple[dict, dict, dict]:
+        """Fetch all users, schedules, and teams to build lookup maps.
+
+        Results are cached for 5 minutes to avoid repeated API calls.
+        """
+        import time
+
+        # Check cache (fast path without lock)
+        now = time.time()
+        if (
+            _lookup_maps_cache["data"] is not None
+            and (now - _lookup_maps_cache["timestamp"]) < _lookup_maps_cache["ttl_seconds"]
+        ):
+            return _lookup_maps_cache["data"]
+
+        # Acquire lock to prevent concurrent fetches
+        async with _lookup_maps_lock:
+            # Re-check cache after acquiring lock
+            now = time.time()
+            if (
+                _lookup_maps_cache["data"] is not None
+                and (now - _lookup_maps_cache["timestamp"]) < _lookup_maps_cache["ttl_seconds"]
+            ):
+                return _lookup_maps_cache["data"]
+
+            users_map = {}
+            schedules_map = {}
+            teams_map = {}
+
+            # Fetch all users with pagination
+            page = 1
+            while page <= 10:
+                users_response = await make_authenticated_request(
+                    "GET", "/v1/users", params={"page[size]": 100, "page[number]": page}
+                )
+                if users_response and users_response.status_code == 200:
+                    users_data = users_response.json()
+                    for user in users_data.get("data", []):
+                        users_map[user.get("id")] = user
+                    if len(users_data.get("data", [])) < 100:
+                        break
+                    page += 1
+                else:
+                    break
+
+            # Fetch all schedules with pagination
+            page = 1
+            while page <= 10:
+                schedules_response = await make_authenticated_request(
+                    "GET", "/v1/schedules", params={"page[size]": 100, "page[number]": page}
+                )
+                if schedules_response and schedules_response.status_code == 200:
+                    schedules_data = schedules_response.json()
+                    for schedule in schedules_data.get("data", []):
+                        schedules_map[schedule.get("id")] = schedule
+                    if len(schedules_data.get("data", [])) < 100:
+                        break
+                    page += 1
+                else:
+                    break
+
+            # Fetch all teams with pagination
+            page = 1
+            while page <= 10:
+                teams_response = await make_authenticated_request(
+                    "GET", "/v1/teams", params={"page[size]": 100, "page[number]": page}
+                )
+                if teams_response and teams_response.status_code == 200:
+                    teams_data = teams_response.json()
+                    for team in teams_data.get("data", []):
+                        teams_map[team.get("id")] = team
+                    if len(teams_data.get("data", [])) < 100:
+                        break
+                    page += 1
+                else:
+                    break
+
+            # Cache the result
+            result = (users_map, schedules_map, teams_map)
+            _lookup_maps_cache["data"] = result
+            _lookup_maps_cache["timestamp"] = now
+
+            return result
+
+    @mcp.tool()
+    async def list_shifts(
+        from_date: Annotated[
+            str,
+            Field(
+                description="Start date/time for shift query (ISO 8601 format, e.g., '2026-02-09T00:00:00Z')"
+            ),
+        ],
+        to_date: Annotated[
+            str,
+            Field(
+                description="End date/time for shift query (ISO 8601 format, e.g., '2026-02-15T23:59:59Z')"
+            ),
+        ],
+        user_ids: Annotated[
+            str,
+            Field(
+                description="Comma-separated list of user IDs to filter by (e.g., '2381,94178'). Only returns shifts for these users."
+            ),
+        ] = "",
+        schedule_ids: Annotated[
+            str,
+            Field(description="Comma-separated list of schedule IDs to filter by (optional)"),
+        ] = "",
+        include_user_details: Annotated[
+            bool,
+            Field(description="Include user name and email in response (default: True)"),
+        ] = True,
+    ) -> dict:
+        """
+        List on-call shifts with proper user filtering and enriched data.
+
+        Unlike the raw API, this tool:
+        - Actually filters by user_ids (client-side filtering)
+        - Includes user_name, user_email, schedule_name, team_name
+        - Calculates total_hours for each shift
+
+        Use this instead of the auto-generated listShifts when you need user filtering.
+        """
+        try:
+            from datetime import datetime
+
+            # Build query parameters
+            params: dict[str, Any] = {
+                "from": from_date,
+                "to": to_date,
+                "include": "user,on_call_role,schedule_rotation",
+                "page[size]": 100,
+            }
+
+            if schedule_ids:
+                schedule_id_list = [sid.strip() for sid in schedule_ids.split(",") if sid.strip()]
+                params["schedule_ids[]"] = schedule_id_list
+
+            # Parse user_ids for filtering
+            user_id_filter = set()
+            if user_ids:
+                user_id_filter = {uid.strip() for uid in user_ids.split(",") if uid.strip()}
+
+            # Fetch lookup maps for enrichment
+            users_map, schedules_map, teams_map = await _fetch_users_and_schedules_maps()
+
+            # Build schedule -> team mapping
+            schedule_to_team = {}
+            for schedule_id, schedule in schedules_map.items():
+                owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
+                if owner_group_ids:
+                    team_id = owner_group_ids[0]
+                    team = teams_map.get(team_id, {})
+                    schedule_to_team[schedule_id] = {
+                        "team_id": team_id,
+                        "team_name": team.get("attributes", {}).get("name", "Unknown Team"),
+                    }
+
+            # Fetch all shifts with pagination
+            all_shifts = []
+            page = 1
+            while page <= 10:
+                params["page[number]"] = page
+                shifts_response = await make_authenticated_request(
+                    "GET", "/v1/shifts", params=params
+                )
+
+                if shifts_response is None:
+                    break
+
+                shifts_response.raise_for_status()
+                shifts_data = shifts_response.json()
+
+                shifts = shifts_data.get("data", [])
+                included = shifts_data.get("included", [])
+
+                # Update users_map from included data
+                for resource in included:
+                    if resource.get("type") == "users":
+                        users_map[resource.get("id")] = resource
+
+                if not shifts:
+                    break
+
+                all_shifts.extend(shifts)
+
+                meta = shifts_data.get("meta", {})
+                total_pages = meta.get("total_pages", 1)
+                if page >= total_pages:
+                    break
+                page += 1
+
+            # Process and filter shifts
+            enriched_shifts = []
+            for shift in all_shifts:
+                attrs = shift.get("attributes", {})
+                relationships = shift.get("relationships", {})
+
+                # Get user info
+                user_rel = relationships.get("user", {}).get("data") or {}
+                user_id = user_rel.get("id")
+
+                # Skip shifts without a user
+                if not user_id:
+                    continue
+
+                # Apply user_ids filter
+                if user_id_filter and str(user_id) not in user_id_filter:
+                    continue
+
+                user_info = users_map.get(user_id, {})
+                user_attrs = user_info.get("attributes", {})
+                user_name = user_attrs.get("full_name") or user_attrs.get("name") or "Unknown"
+                user_email = user_attrs.get("email", "")
+
+                # Get schedule info
+                schedule_id = attrs.get("schedule_id")
+                schedule_info = schedules_map.get(schedule_id, {})
+                schedule_name = schedule_info.get("attributes", {}).get("name", "Unknown Schedule")
+
+                # Get team info
+                team_info = schedule_to_team.get(schedule_id, {})
+                team_name = team_info.get("team_name", "Unknown Team")
+
+                # Calculate total hours
+                starts_at = attrs.get("starts_at")
+                ends_at = attrs.get("ends_at")
+                total_hours = 0.0
+                if starts_at and ends_at:
+                    try:
+                        start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                        end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
+                        total_hours = round((end_dt - start_dt).total_seconds() / 3600, 2)
+                    except (ValueError, AttributeError):
+                        pass
+
+                enriched_shift = {
+                    "shift_id": shift.get("id"),
+                    "user_id": user_id,
+                    "schedule_id": schedule_id,
+                    "starts_at": starts_at,
+                    "ends_at": ends_at,
+                    "is_override": attrs.get("is_override", False),
+                    "total_hours": total_hours,
+                }
+
+                if include_user_details:
+                    enriched_shift["user_name"] = user_name
+                    enriched_shift["user_email"] = user_email
+                    enriched_shift["schedule_name"] = schedule_name
+                    enriched_shift["team_name"] = team_name
+
+                enriched_shifts.append(enriched_shift)
+
+            return {
+                "period": {"from": from_date, "to": to_date},
+                "total_shifts": len(enriched_shifts),
+                "filters_applied": {
+                    "user_ids": list(user_id_filter) if user_id_filter else None,
+                    "schedule_ids": schedule_ids if schedule_ids else None,
+                },
+                "shifts": enriched_shifts,
+            }
+
+        except Exception as e:
+            import traceback
+
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(
+                f"Failed to list shifts: {error_message}",
+                error_type,
+                details={
+                    "params": {"from": from_date, "to": to_date},
+                    "exception_type": type(e).__name__,
+                    "traceback": traceback.format_exc(),
+                },
+            )
+
+    @mcp.tool()
+    async def get_oncall_schedule_summary(
+        start_date: Annotated[
+            str,
+            Field(description="Start date (ISO 8601, e.g., '2026-02-09')"),
+        ],
+        end_date: Annotated[
+            str,
+            Field(description="End date (ISO 8601, e.g., '2026-02-15')"),
+        ],
+        schedule_ids: Annotated[
+            str,
+            Field(description="Comma-separated schedule IDs to filter (optional)"),
+        ] = "",
+        team_ids: Annotated[
+            str,
+            Field(description="Comma-separated team IDs to filter (optional)"),
+        ] = "",
+        include_user_ids: Annotated[
+            bool,
+            Field(description="Include numeric user IDs for cross-platform correlation"),
+        ] = True,
+    ) -> dict:
+        """
+        Get compact on-call schedule summary for a date range.
+
+        Returns one entry per user per schedule (not raw shifts), with
+        aggregated hours. Optimized for AI agent context windows.
+
+        Use this instead of listShifts when you need:
+        - Aggregated hours per responder
+        - Schedule coverage overview
+        - Responder load analysis with warnings
+        """
+        try:
+            from collections import defaultdict
+            from datetime import datetime
+
+            # Parse filter IDs
+            schedule_id_filter = set()
+            if schedule_ids:
+                schedule_id_filter = {sid.strip() for sid in schedule_ids.split(",") if sid.strip()}
+
+            team_id_filter = set()
+            if team_ids:
+                team_id_filter = {tid.strip() for tid in team_ids.split(",") if tid.strip()}
+
+            # Fetch lookup maps
+            users_map, schedules_map, teams_map = await _fetch_users_and_schedules_maps()
+
+            # Build schedule -> team mapping and apply team filter
+            schedule_to_team = {}
+            filtered_schedule_ids = set()
+            for schedule_id, schedule in schedules_map.items():
+                owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
+                team_id = owner_group_ids[0] if owner_group_ids else None
+                team = teams_map.get(team_id, {}) if team_id else {}
+                team_name = team.get("attributes", {}).get("name", "Unknown Team")
+
+                schedule_to_team[schedule_id] = {
+                    "team_id": team_id,
+                    "team_name": team_name,
+                    "schedule_name": schedule.get("attributes", {}).get("name", "Unknown Schedule"),
+                }
+
+                # Apply filters
+                if schedule_id_filter and schedule_id not in schedule_id_filter:
+                    continue
+                if team_id_filter and (not team_id or team_id not in team_id_filter):
+                    continue
+                filtered_schedule_ids.add(schedule_id)
+
+            # If no filters, include all schedules
+            if not schedule_id_filter and not team_id_filter:
+                filtered_schedule_ids = set(schedules_map.keys())
+
+            # Fetch shifts
+            params: dict[str, Any] = {
+                "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
+                "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
+                "include": "user,on_call_role",
+                "page[size]": 100,
+            }
+
+            all_shifts = []
+            page = 1
+            while page <= 10:
+                params["page[number]"] = page
+                shifts_response = await make_authenticated_request(
+                    "GET", "/v1/shifts", params=params
+                )
+
+                if shifts_response is None:
+                    break
+
+                shifts_response.raise_for_status()
+                shifts_data = shifts_response.json()
+
+                shifts = shifts_data.get("data", [])
+                included = shifts_data.get("included", [])
+
+                # Update users_map from included data
+                for resource in included:
+                    if resource.get("type") == "users":
+                        users_map[resource.get("id")] = resource
+
+                if not shifts:
+                    break
+
+                all_shifts.extend(shifts)
+
+                meta = shifts_data.get("meta", {})
+                total_pages = meta.get("total_pages", 1)
+                if page >= total_pages:
+                    break
+                page += 1
+
+            # Aggregate by schedule and user
+            schedule_coverage: dict[str, dict] = defaultdict(
+                lambda: {
+                    "schedule_name": "",
+                    "team_name": "",
+                    "responders": defaultdict(
+                        lambda: {
+                            "user_name": "",
+                            "user_id": None,
+                            "total_hours": 0.0,
+                            "shift_count": 0,
+                            "is_override": False,
+                        }
+                    ),
+                }
+            )
+
+            responder_load: dict[str, dict] = defaultdict(
+                lambda: {
+                    "user_name": "",
+                    "user_id": None,
+                    "total_hours": 0.0,
+                    "schedules": set(),
+                }
+            )
+
+            for shift in all_shifts:
+                attrs = shift.get("attributes", {})
+                schedule_id = attrs.get("schedule_id")
+
+                # Apply schedule filter
+                if filtered_schedule_ids and schedule_id not in filtered_schedule_ids:
+                    continue
+
+                # Get user info
+                relationships = shift.get("relationships", {})
+                user_rel = relationships.get("user", {}).get("data") or {}
+                user_id = user_rel.get("id")
+
+                # Skip shifts without a user
+                if not user_id:
+                    continue
+
+                user_info = users_map.get(user_id, {})
+                user_attrs = user_info.get("attributes", {})
+                user_name = user_attrs.get("full_name") or user_attrs.get("name") or "Unknown"
+
+                # Get schedule/team info
+                sched_info = schedule_to_team.get(schedule_id, {})
+                schedule_name = sched_info.get("schedule_name", "Unknown Schedule")
+                team_name = sched_info.get("team_name", "Unknown Team")
+
+                # Calculate hours
+                starts_at = attrs.get("starts_at")
+                ends_at = attrs.get("ends_at")
+                hours = 0.0
+                if starts_at and ends_at:
+                    try:
+                        start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                        end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
+                        hours = (end_dt - start_dt).total_seconds() / 3600
+                    except (ValueError, AttributeError):
+                        pass
+
+                is_override = attrs.get("is_override", False)
+
+                # Update schedule coverage
+                sched_data = schedule_coverage[schedule_id]
+                sched_data["schedule_name"] = schedule_name
+                sched_data["team_name"] = team_name
+
+                user_key = str(user_id)
+                sched_data["responders"][user_key]["user_name"] = user_name
+                sched_data["responders"][user_key]["user_id"] = user_id
+                sched_data["responders"][user_key]["total_hours"] += hours
+                sched_data["responders"][user_key]["shift_count"] += 1
+                if is_override:
+                    sched_data["responders"][user_key]["is_override"] = True
+
+                # Update responder load
+                responder_load[user_key]["user_name"] = user_name
+                responder_load[user_key]["user_id"] = user_id
+                responder_load[user_key]["total_hours"] += hours
+                responder_load[user_key]["schedules"].add(schedule_name)
+
+            # Format schedule coverage
+            formatted_coverage = []
+            for _schedule_id, sched_data in schedule_coverage.items():
+                responders_list = []
+                for _user_key, resp_data in sched_data["responders"].items():
+                    responder = {
+                        "user_name": resp_data["user_name"],
+                        "total_hours": round(resp_data["total_hours"], 1),
+                        "shift_count": resp_data["shift_count"],
+                        "is_override": resp_data["is_override"],
+                    }
+                    if include_user_ids:
+                        responder["user_id"] = resp_data["user_id"]
+                    responders_list.append(responder)
+
+                # Sort by hours descending
+                responders_list.sort(key=lambda x: x["total_hours"], reverse=True)
+
+                formatted_coverage.append(
+                    {
+                        "schedule_name": sched_data["schedule_name"],
+                        "team_name": sched_data["team_name"],
+                        "responders": responders_list,
+                    }
+                )
+
+            # Format responder load with warnings
+            formatted_load = []
+            for _user_key, load_data in responder_load.items():
+                schedules_list = list(load_data["schedules"])
+                hours = round(load_data["total_hours"], 1)
+
+                responder_entry = {
+                    "user_name": load_data["user_name"],
+                    "total_hours": hours,
+                    "schedules": schedules_list,
+                }
+                if include_user_ids:
+                    responder_entry["user_id"] = load_data["user_id"]
+
+                # Add warnings for high load
+                if len(schedules_list) >= 4:
+                    responder_entry["warning"] = (
+                        f"High load: {len(schedules_list)} concurrent schedules"
+                    )
+                elif hours >= 168:  # 7 days * 24 hours
+                    responder_entry["warning"] = f"High load: {hours} hours in period"
+
+                formatted_load.append(responder_entry)
+
+            # Sort by hours descending
+            formatted_load.sort(key=lambda x: x["total_hours"], reverse=True)
+            formatted_coverage.sort(key=lambda x: x["schedule_name"])
+
+            return {
+                "period": {"start": start_date, "end": end_date},
+                "total_schedules": len(formatted_coverage),
+                "total_responders": len(formatted_load),
+                "schedule_coverage": formatted_coverage,
+                "responder_load": formatted_load,
+            }
+
+        except Exception as e:
+            import traceback
+
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(
+                f"Failed to get on-call schedule summary: {error_message}",
+                error_type,
+                details={
+                    "params": {"start_date": start_date, "end_date": end_date},
+                    "exception_type": type(e).__name__,
+                    "traceback": traceback.format_exc(),
+                },
+            )
+
+    @mcp.tool()
+    async def check_responder_availability(
+        start_date: Annotated[
+            str,
+            Field(description="Start date (ISO 8601, e.g., '2026-02-09')"),
+        ],
+        end_date: Annotated[
+            str,
+            Field(description="End date (ISO 8601, e.g., '2026-02-15')"),
+        ],
+        user_ids: Annotated[
+            str,
+            Field(
+                description="Comma-separated Rootly user IDs to check (e.g., '2381,94178,27965')"
+            ),
+        ],
+    ) -> dict:
+        """
+        Check if specific users are scheduled for on-call in a date range.
+
+        Use this to verify if at-risk users (from On-Call Health) are scheduled,
+        or to check availability before assigning new shifts.
+
+        Returns scheduled users with their shifts and total hours,
+        plus users who are not scheduled.
+        """
+        try:
+            from datetime import datetime
+
+            if not user_ids:
+                return MCPError.tool_error(
+                    "user_ids parameter is required",
+                    "validation_error",
+                )
+
+            # Parse user IDs
+            user_id_list = [uid.strip() for uid in user_ids.split(",") if uid.strip()]
+            user_id_set = set(user_id_list)
+
+            # Fetch lookup maps
+            users_map, schedules_map, teams_map = await _fetch_users_and_schedules_maps()
+
+            # Build schedule -> team mapping
+            schedule_to_team = {}
+            for schedule_id, schedule in schedules_map.items():
+                owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
+                if owner_group_ids:
+                    team_id = owner_group_ids[0]
+                    team = teams_map.get(team_id, {})
+                    schedule_to_team[schedule_id] = {
+                        "schedule_name": schedule.get("attributes", {}).get("name", "Unknown"),
+                        "team_name": team.get("attributes", {}).get("name", "Unknown Team"),
+                    }
+
+            # Fetch shifts
+            params: dict[str, Any] = {
+                "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
+                "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
+                "include": "user,on_call_role",
+                "page[size]": 100,
+            }
+
+            all_shifts = []
+            page = 1
+            while page <= 10:
+                params["page[number]"] = page
+                shifts_response = await make_authenticated_request(
+                    "GET", "/v1/shifts", params=params
+                )
+
+                if shifts_response is None:
+                    break
+
+                shifts_response.raise_for_status()
+                shifts_data = shifts_response.json()
+
+                shifts = shifts_data.get("data", [])
+                included = shifts_data.get("included", [])
+
+                # Update users_map from included data
+                for resource in included:
+                    if resource.get("type") == "users":
+                        users_map[resource.get("id")] = resource
+
+                if not shifts:
+                    break
+
+                all_shifts.extend(shifts)
+
+                meta = shifts_data.get("meta", {})
+                total_pages = meta.get("total_pages", 1)
+                if page >= total_pages:
+                    break
+                page += 1
+
+            # Group shifts by user
+            user_shifts: dict[str, list] = {uid: [] for uid in user_id_list}
+            user_hours: dict[str, float] = dict.fromkeys(user_id_list, 0.0)
+
+            for shift in all_shifts:
+                attrs = shift.get("attributes", {})
+                relationships = shift.get("relationships", {})
+
+                user_rel = relationships.get("user", {}).get("data") or {}
+                raw_user_id = user_rel.get("id")
+
+                # Skip shifts without a user
+                if not raw_user_id:
+                    continue
+
+                user_id = str(raw_user_id)
+
+                if user_id not in user_id_set:
+                    continue
+
+                schedule_id = attrs.get("schedule_id")
+                sched_info = schedule_to_team.get(schedule_id, {})
+
+                starts_at = attrs.get("starts_at")
+                ends_at = attrs.get("ends_at")
+                hours = 0.0
+                if starts_at and ends_at:
+                    try:
+                        start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                        end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
+                        hours = round((end_dt - start_dt).total_seconds() / 3600, 1)
+                    except (ValueError, AttributeError):
+                        pass
+
+                user_shifts[user_id].append(
+                    {
+                        "schedule_name": sched_info.get("schedule_name", "Unknown"),
+                        "starts_at": starts_at,
+                        "ends_at": ends_at,
+                        "hours": hours,
+                    }
+                )
+                user_hours[user_id] += hours
+
+            # Format results
+            scheduled = []
+            not_scheduled = []
+
+            for user_id in user_id_list:
+                user_info = users_map.get(user_id, {})
+                user_attrs = user_info.get("attributes", {})
+                user_name = user_attrs.get("full_name") or user_attrs.get("name") or "Unknown"
+
+                shifts = user_shifts.get(user_id, [])
+                if shifts:
+                    scheduled.append(
+                        {
+                            "user_id": int(user_id) if user_id.isdigit() else user_id,
+                            "user_name": user_name,
+                            "total_hours": round(user_hours[user_id], 1),
+                            "shifts": shifts,
+                        }
+                    )
+                else:
+                    not_scheduled.append(
+                        {
+                            "user_id": int(user_id) if user_id.isdigit() else user_id,
+                            "user_name": user_name,
+                        }
+                    )
+
+            # Sort scheduled by hours descending
+            scheduled.sort(key=lambda x: x["total_hours"], reverse=True)
+
+            return {
+                "period": {"start": start_date, "end": end_date},
+                "checked_users": len(user_id_list),
+                "scheduled": scheduled,
+                "not_scheduled": not_scheduled,
+            }
+
+        except Exception as e:
+            import traceback
+
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(
+                f"Failed to check responder availability: {error_message}",
+                error_type,
+                details={
+                    "params": {
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "user_ids": user_ids,
+                    },
+                    "exception_type": type(e).__name__,
+                    "traceback": traceback.format_exc(),
+                },
+            )
+
+    @mcp.tool()
+    async def create_override_recommendation(
+        schedule_id: Annotated[
+            str,
+            Field(description="Schedule ID to create override for"),
+        ],
+        original_user_id: Annotated[
+            int,
+            Field(description="User ID being replaced"),
+        ],
+        start_date: Annotated[
+            str,
+            Field(description="Override start (ISO 8601, e.g., '2026-02-09')"),
+        ],
+        end_date: Annotated[
+            str,
+            Field(description="Override end (ISO 8601, e.g., '2026-02-15')"),
+        ],
+        exclude_user_ids: Annotated[
+            str,
+            Field(description="Comma-separated user IDs to exclude (e.g., other at-risk users)"),
+        ] = "",
+    ) -> dict:
+        """
+        Recommend replacement responders for an override shift.
+
+        Finds users in the same schedule rotation who are not already
+        heavily loaded during the period.
+
+        Returns recommended replacements sorted by current load (lowest first),
+        plus a ready-to-use override payload for the top recommendation.
+        """
+        try:
+            from datetime import datetime
+
+            # Parse exclusions
+            exclude_set = set()
+            if exclude_user_ids:
+                exclude_set = {uid.strip() for uid in exclude_user_ids.split(",") if uid.strip()}
+            exclude_set.add(str(original_user_id))
+
+            # Fetch lookup maps
+            users_map, schedules_map, teams_map = await _fetch_users_and_schedules_maps()
+
+            # Get schedule info
+            schedule = schedules_map.get(schedule_id, {})
+            schedule_name = schedule.get("attributes", {}).get("name", "Unknown Schedule")
+
+            # Get original user info
+            original_user = users_map.get(str(original_user_id), {})
+            original_user_attrs = original_user.get("attributes", {})
+            original_user_name = (
+                original_user_attrs.get("full_name") or original_user_attrs.get("name") or "Unknown"
+            )
+
+            # Fetch schedule rotations to find rotation users
+            rotation_users = set()
+
+            # First, get the schedule to find its rotations
+            schedule_response = await make_authenticated_request(
+                "GET", f"/v1/schedules/{schedule_id}"
+            )
+
+            if schedule_response and schedule_response.status_code == 200:
+                import asyncio
+
+                schedule_data = schedule_response.json()
+                schedule_obj = schedule_data.get("data", {})
+                relationships = schedule_obj.get("relationships", {})
+
+                # Get schedule rotations
+                rotations = relationships.get("schedule_rotations", {}).get("data", [])
+                rotation_ids = [r.get("id") for r in rotations if r.get("id")]
+
+                # Fetch all rotation users in parallel
+                if rotation_ids:
+
+                    async def fetch_rotation_users(rotation_id: str):
+                        response = await make_authenticated_request(
+                            "GET",
+                            f"/v1/schedule_rotations/{rotation_id}/schedule_rotation_users",
+                            params={"page[size]": 100},
+                        )
+                        if response and response.status_code == 200:
+                            return response.json().get("data", [])
+                        return []
+
+                    # Execute all rotation user fetches in parallel
+                    rotation_results = await asyncio.gather(
+                        *[fetch_rotation_users(rid) for rid in rotation_ids], return_exceptions=True
+                    )
+
+                    # Process results
+                    for result in rotation_results:
+                        if isinstance(result, list):
+                            for ru in result:
+                                user_rel = (
+                                    ru.get("relationships", {}).get("user", {}).get("data", {})
+                                )
+                                user_id = user_rel.get("id")
+                                if user_id:
+                                    rotation_users.add(str(user_id))
+
+            # Fetch shifts to calculate current load for rotation users
+            params: dict[str, Any] = {
+                "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
+                "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
+                "include": "user",
+                "page[size]": 100,
+            }
+
+            all_shifts = []
+            page = 1
+            while page <= 10:
+                params["page[number]"] = page
+                shifts_response = await make_authenticated_request(
+                    "GET", "/v1/shifts", params=params
+                )
+
+                if shifts_response is None:
+                    break
+
+                shifts_response.raise_for_status()
+                shifts_data = shifts_response.json()
+
+                shifts = shifts_data.get("data", [])
+                included = shifts_data.get("included", [])
+
+                for resource in included:
+                    if resource.get("type") == "users":
+                        users_map[resource.get("id")] = resource
+
+                if not shifts:
+                    break
+
+                all_shifts.extend(shifts)
+
+                meta = shifts_data.get("meta", {})
+                total_pages = meta.get("total_pages", 1)
+                if page >= total_pages:
+                    break
+                page += 1
+
+            # Calculate load per user
+            user_load: dict[str, float] = {}
+            for shift in all_shifts:
+                attrs = shift.get("attributes", {})
+                relationships = shift.get("relationships", {})
+
+                user_rel = relationships.get("user", {}).get("data") or {}
+                raw_user_id = user_rel.get("id")
+
+                # Skip shifts without a user
+                if not raw_user_id:
+                    continue
+
+                user_id = str(raw_user_id)
+
+                starts_at = attrs.get("starts_at")
+                ends_at = attrs.get("ends_at")
+                hours = 0.0
+                if starts_at and ends_at:
+                    try:
+                        start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
+                        end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
+                        hours = (end_dt - start_dt).total_seconds() / 3600
+                    except (ValueError, AttributeError):
+                        pass
+
+                user_load[user_id] = user_load.get(user_id, 0.0) + hours
+
+            # Find recommendations from rotation users
+            recommendations = []
+            for user_id in rotation_users:
+                if user_id in exclude_set:
+                    continue
+
+                user_info = users_map.get(user_id, {})
+                user_attrs = user_info.get("attributes", {})
+                user_name = user_attrs.get("full_name") or user_attrs.get("name") or "Unknown"
+
+                current_hours = round(user_load.get(user_id, 0.0), 1)
+
+                # Generate reason based on load
+                if current_hours == 0:
+                    reason = "Already in rotation, no current load"
+                elif current_hours < 24:
+                    reason = "Already in rotation, low load"
+                elif current_hours < 48:
+                    reason = "Same team, moderate availability"
+                else:
+                    reason = "In rotation, but higher load"
+
+                recommendations.append(
+                    {
+                        "user_id": int(user_id) if user_id.isdigit() else user_id,
+                        "user_name": user_name,
+                        "current_hours_in_period": current_hours,
+                        "reason": reason,
+                    }
+                )
+
+            # Sort by load (lowest first)
+            recommendations.sort(key=lambda x: x["current_hours_in_period"])
+
+            # Build override payload for top recommendation
+            override_payload = None
+            if recommendations:
+                top_rec = recommendations[0]
+                # Format dates for API
+                override_starts = f"{start_date}T00:00:00Z" if "T" not in start_date else start_date
+                override_ends = f"{end_date}T23:59:59Z" if "T" not in end_date else end_date
+
+                override_payload = {
+                    "schedule_id": schedule_id,
+                    "user_id": top_rec["user_id"],
+                    "starts_at": override_starts,
+                    "ends_at": override_ends,
+                }
+
+            # Build response with optional warning
+            response = {
+                "schedule_name": schedule_name,
+                "original_user": {
+                    "id": original_user_id,
+                    "name": original_user_name,
+                },
+                "period": {
+                    "start": start_date,
+                    "end": end_date,
+                },
+                "recommended_replacements": recommendations[:5],  # Top 5
+                "override_payload": override_payload,
+            }
+
+            # Add warning if no recommendations available
+            if not rotation_users:
+                response["warning"] = (
+                    "No rotation users found for this schedule. The schedule may not have any rotations configured."
+                )
+            elif not recommendations:
+                response["warning"] = (
+                    "All rotation users are either excluded or the original user. No recommendations available."
+                )
+
+            return response
+
+        except Exception as e:
+            import traceback
+
+            error_type, error_message = MCPError.categorize_error(e)
+            return MCPError.tool_error(
+                f"Failed to create override recommendation: {error_message}",
+                error_type,
+                details={
+                    "params": {
+                        "schedule_id": schedule_id,
+                        "original_user_id": original_user_id,
+                    },
+                    "exception_type": type(e).__name__,
+                    "traceback": traceback.format_exc(),
+                },
+            )
 
     # Add MCP resources for incidents and teams
     @mcp.resource("incident://{incident_id}")
