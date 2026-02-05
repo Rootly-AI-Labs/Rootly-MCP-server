@@ -194,3 +194,4 @@ test_output/
 !README.md
 !CONTRIBUTING.md
 !CHANGELOG.md.beads/
+.mcp.json

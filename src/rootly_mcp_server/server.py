@@ -386,15 +386,15 @@ class AuthenticatedHTTPXClient:
         if "params" in kwargs:
             kwargs["params"] = self._transform_params(kwargs["params"])
 
-        # Ensure Content-Type and Accept headers are always set correctly for Rootly API
-        # This is critical because FastMCP may pass headers from the MCP client request
-        # (e.g., Content-Type: application/json from SSE) which would override our defaults
-        if "headers" in kwargs:
-            headers = dict(kwargs["headers"]) if kwargs["headers"] else {}
-            # Always use JSON-API content type for Rootly API
-            headers["Content-Type"] = "application/vnd.api+json"
-            headers["Accept"] = "application/vnd.api+json"
-            kwargs["headers"] = headers
+        # ALWAYS ensure Content-Type and Accept headers are set correctly for Rootly API
+        # This is critical because:
+        # 1. FastMCP may pass headers from the MCP client request (e.g., Content-Type: application/json)
+        # 2. Per-request headers override httpx client defaults
+        # 3. We must force JSON-API content type regardless of what's passed in
+        headers = dict(kwargs.get("headers") or {})
+        headers["Content-Type"] = "application/vnd.api+json"
+        headers["Accept"] = "application/vnd.api+json"
+        kwargs["headers"] = headers
 
         # Call the underlying client's request method and let it handle everything
         return await self.client.request(method, url, **kwargs)
