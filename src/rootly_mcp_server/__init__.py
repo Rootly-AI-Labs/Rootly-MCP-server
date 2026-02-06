@@ -14,10 +14,15 @@ Features:
 - Input validation and sensitive data masking
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 from .client import RootlyClient
 from .server import RootlyMCPServer
 
-__version__ = "2.1.0"
+try:
+    __version__ = version("rootly-mcp-server")
+except PackageNotFoundError:
+    __version__ = "dev"
 __all__ = [
     "RootlyMCPServer",
     "RootlyClient",

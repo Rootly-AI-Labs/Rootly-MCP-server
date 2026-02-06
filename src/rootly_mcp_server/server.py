@@ -386,6 +386,11 @@ class AuthenticatedHTTPXClient:
         if "params" in kwargs:
             kwargs["params"] = self._transform_params(kwargs["params"])
 
+        # Log incoming headers for debugging (before transformation)
+        incoming_headers = kwargs.get("headers", {})
+        if incoming_headers:
+            logger.debug(f"Incoming headers for {method} {url}: {list(incoming_headers.keys())}")
+
         # ALWAYS ensure Content-Type and Accept headers are set correctly for Rootly API
         # This is critical because:
         # 1. FastMCP's get_http_headers() returns LOWERCASE header keys (e.g., "content-type")
@@ -395,14 +400,27 @@ class AuthenticatedHTTPXClient:
         # Remove any existing content-type and accept headers (case-insensitive)
         headers_to_remove = [k for k in headers if k.lower() in ("content-type", "accept")]
         for key in headers_to_remove:
+            logger.debug(f"Removing header '{key}' with value '{headers[key]}'")
             del headers[key]
         # Set the correct JSON-API headers
         headers["Content-Type"] = "application/vnd.api+json"
         headers["Accept"] = "application/vnd.api+json"
         kwargs["headers"] = headers
 
-        # Call the underlying client's request method and let it handle everything
-        return await self.client.request(method, url, **kwargs)
+        # Log outgoing request
+        logger.debug(f"Request: {method} {url}")
+
+        response = await self.client.request(method, url, **kwargs)
+        logger.debug(f"Response: {method} {url} -> {response.status_code}")
+
+        # Log error responses (4xx/5xx)
+        if response.is_error:
+            logger.error(
+                f"HTTP {response.status_code} error for {method} {url}: "
+                f"{response.text[:500] if response.text else 'No response body'}"
+            )
+
+        return response
 
     async def get(self, url: str, **kwargs):
         """Proxy to request with GET method."""
@@ -547,6 +565,20 @@ def create_rootly_mcp_server(
                 )
 
         return endpoints
+
+    @mcp.tool()
+    def get_server_version() -> dict:
+        """Get the Rootly MCP server version.
+
+        Returns the current version of the deployed MCP server.
+        Useful for checking if the server has been updated.
+        """
+        from rootly_mcp_server import __version__
+
+        return {
+            "version": __version__,
+            "package": "rootly-mcp-server",
+        }
 
     async def make_authenticated_request(method: str, url: str, **kwargs):
         """Make an authenticated request, extracting token from MCP headers in hosted mode."""
