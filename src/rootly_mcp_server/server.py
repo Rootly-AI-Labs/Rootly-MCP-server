@@ -344,7 +344,6 @@ class AuthenticatedHTTPXClient:
         headers = {
             "Content-Type": "application/vnd.api+json",
             "Accept": "application/vnd.api+json",
-            # Let httpx handle Accept-Encoding automatically with all supported formats
         }
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
@@ -354,9 +353,19 @@ class AuthenticatedHTTPXClient:
             headers=headers,
             timeout=30.0,
             follow_redirects=True,
-            # Ensure proper handling of compressed responses
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            event_hooks={"request": [self._enforce_jsonapi_headers]},
         )
+
+    @staticmethod
+    async def _enforce_jsonapi_headers(request: httpx.Request):
+        """Event hook to enforce JSON-API Content-Type and Accept on every outgoing request.
+
+        This runs on ALL requests regardless of how they are initiated (request(), send(), etc.),
+        ensuring the Rootly API always receives the correct Content-Type header.
+        """
+        request.headers["content-type"] = "application/vnd.api+json"
+        request.headers["accept"] = "application/vnd.api+json"
 
     def _get_api_token(self) -> str | None:
         """Get the API token from environment variables."""
@@ -442,6 +451,13 @@ class AuthenticatedHTTPXClient:
         """Proxy to request with DELETE method."""
         return await self.request("DELETE", url, **kwargs)
 
+    async def send(self, request: httpx.Request, **kwargs):
+        """Proxy send() for newer fastmcp versions that build requests and call send() directly.
+
+        Headers are enforced by the event hook, so we just delegate to the inner client.
+        """
+        return await self.client.send(request, **kwargs)
+
     async def __aenter__(self):
         return self
 
@@ -457,7 +473,7 @@ class AuthenticatedHTTPXClient:
 
     @property
     def base_url(self):
-        return self._base_url
+        return self.client.base_url
 
     @property
     def headers(self):
