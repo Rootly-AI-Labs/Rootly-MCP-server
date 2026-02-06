@@ -566,6 +566,20 @@ def create_rootly_mcp_server(
 
         return endpoints
 
+    @mcp.tool()
+    def get_server_version() -> dict:
+        """Get the Rootly MCP server version.
+
+        Returns the current version of the deployed MCP server.
+        Useful for checking if the server has been updated.
+        """
+        from rootly_mcp_server import __version__
+
+        return {
+            "version": __version__,
+            "package": "rootly-mcp-server",
+        }
+
     async def make_authenticated_request(method: str, url: str, **kwargs):
         """Make an authenticated request, extracting token from MCP headers in hosted mode."""
         # In hosted mode, get token from MCP request headers
