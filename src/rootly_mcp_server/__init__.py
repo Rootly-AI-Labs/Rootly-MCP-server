@@ -14,7 +14,7 @@ Features:
 - Input validation and sensitive data masking
 """
 
-from importlib.metadata import version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError, version
 
 from .client import RootlyClient
 from .server import RootlyMCPServer
