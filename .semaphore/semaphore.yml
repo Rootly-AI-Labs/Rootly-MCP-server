@@ -42,4 +42,4 @@ promotions:
     deployment_target: production
 
     auto_promote:
-      when: branch = 'master' AND result = 'passed'
+      when: branch = 'main' AND result = 'passed'
