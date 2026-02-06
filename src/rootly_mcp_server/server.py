@@ -410,17 +410,17 @@ class AuthenticatedHTTPXClient:
         # Log outgoing request
         logger.debug(f"Request: {method} {url}")
 
-        # Call the underlying client's request method with error logging
-        try:
-            response = await self.client.request(method, url, **kwargs)
-            logger.debug(f"Response: {method} {url} -> {response.status_code}")
-            return response
-        except httpx.HTTPStatusError as e:
+        response = await self.client.request(method, url, **kwargs)
+        logger.debug(f"Response: {method} {url} -> {response.status_code}")
+
+        # Log error responses (4xx/5xx)
+        if response.is_error:
             logger.error(
-                f"HTTP {e.response.status_code} error for {method} {url}: "
-                f"{e.response.text[:500] if e.response.text else 'No response body'}"
+                f"HTTP {response.status_code} error for {method} {url}: "
+                f"{response.text[:500] if response.text else 'No response body'}"
             )
-            raise
+
+        return response
 
     async def get(self, url: str, **kwargs):
         """Proxy to request with GET method."""
