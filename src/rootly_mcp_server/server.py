@@ -546,7 +546,6 @@ def create_rootly_mcp_server(
         openapi_spec=filtered_spec,
         client=http_client,  # type: ignore[arg-type]
         name=name,
-        timeout=30.0,
         tags={"rootly", "incident-management"},
     )
 
