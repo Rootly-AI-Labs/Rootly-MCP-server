@@ -1,3 +1,4 @@
+<!-- mcp-name: com.rootly/mcp-server -->
 # Rootly MCP Server
 
 [![PyPI version](https://badge.fury.io/py/rootly-mcp-server.svg)](https://pypi.org/project/rootly-mcp-server/)
