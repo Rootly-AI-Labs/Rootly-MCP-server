@@ -3544,8 +3544,8 @@ Updated: {attributes.get("updated_at", "N/A")}"""
                     "/v1/alerts",
                     params={
                         "page[number]": page,
-                        "page[size]": 20,
-                        "fields[alerts]": "id,summary,status,started_at,ended_at,short_id,source,description,noise,alert_urgency_id",
+                        "page[size]": 100,
+                        "fields[alerts]": "id,summary,status,started_at,ended_at,short_id,source,description,noise,alert_urgency_id,url,created_at",
                     },
                 )
                 response.raise_for_status()
