@@ -169,6 +169,65 @@ def strip_heavy_nested_data(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+# Essential alert attributes to keep (whitelist approach).
+# Everything else is stripped to reduce payload size.
+ALERT_ESSENTIAL_ATTRIBUTES = {
+    "source",
+    "status",
+    "summary",
+    "description",
+    "noise",
+    "alert_urgency_id",
+    "short_id",
+    "url",
+    "external_url",
+    "created_at",
+    "updated_at",
+    "started_at",
+    "ended_at",
+}
+
+
+def strip_heavy_alert_data(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Strip heavy nested data from alert responses to reduce payload size.
+    Uses a whitelist approach: only essential attributes are kept.
+    Handles both list responses (data: [...]) and single-resource responses (data: {...}).
+    """
+    if not isinstance(data, dict) or "data" not in data:
+        return data
+
+    def _strip_single_alert(alert: dict[str, Any]) -> None:
+        if not isinstance(alert, dict):
+            return
+        if "attributes" in alert:
+            attrs = alert["attributes"]
+            keys_to_remove = [k for k in attrs if k not in ALERT_ESSENTIAL_ATTRIBUTES]
+            for k in keys_to_remove:
+                del attrs[k]
+        # Collapse relationships to counts
+        if "relationships" in alert:
+            rels = alert["relationships"]
+            for rel_key in list(rels.keys()):
+                if (
+                    isinstance(rels[rel_key], dict)
+                    and "data" in rels[rel_key]
+                    and isinstance(rels[rel_key]["data"], list)
+                ):
+                    rels[rel_key] = {"count": len(rels[rel_key]["data"])}
+
+    if isinstance(data["data"], list):
+        for alert in data["data"]:
+            _strip_single_alert(alert)
+    elif isinstance(data["data"], dict):
+        _strip_single_alert(data["data"])
+
+    # Remove sideloaded relationship data
+    data.pop("included", None)
+
+    return data
+
+
 class MCPError:
     """Enhanced error handling for MCP protocol compliance."""
 
@@ -272,7 +331,7 @@ def _generate_recommendation(solution_data: dict) -> str:
 DEFAULT_ALLOWED_PATHS = [
     "/incidents/{incident_id}/alerts",
     "/alerts",
-    "/alerts/{alert_id}",
+    "/alerts/{id}",
     "/severities",
     "/severities/{severity_id}",
     "/teams",
@@ -341,9 +400,12 @@ class AuthenticatedHTTPXClient:
             self._api_token = self._get_api_token()
 
         # Create the HTTPX client
+        from rootly_mcp_server import __version__
+
         headers = {
             "Content-Type": "application/vnd.api+json",
             "Accept": "application/vnd.api+json",
+            "User-Agent": f"rootly-mcp-server/{__version__}",
         }
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
@@ -429,6 +491,42 @@ class AuthenticatedHTTPXClient:
                 f"{response.text[:500] if response.text else 'No response body'}"
             )
 
+        # Post-process alert GET responses to reduce payload size.
+        # Modifies response._content (private httpx attr) because FastMCP's
+        # OpenAPITool.run() calls response.json() after this returns, and
+        # there is no other interception point for auto-generated tools.
+        response = self._maybe_strip_alert_response(method, url, response)
+
+        return response
+
+    @staticmethod
+    def _is_alert_endpoint(url: str) -> bool:
+        """Check if a URL is an alert endpoint (but not alert sub-resources like events)."""
+        url_str = str(url)
+        # Match /alerts or /alerts/{id} but not /alert_urgencies, /alert_events, etc.
+        # Also matches /incidents/{id}/alerts
+        return "/alerts" in url_str and not any(
+            sub in url_str
+            for sub in ["/alert_urgencies", "/alert_events", "/alert_sources", "/alert_routing"]
+        )
+
+    @staticmethod
+    def _maybe_strip_alert_response(
+        method: str, url: str, response: httpx.Response
+    ) -> httpx.Response:
+        """Strip heavy data from alert GET responses."""
+        if method.upper() != "GET":
+            return response
+        if not response.is_success:
+            return response
+        if not AuthenticatedHTTPXClient._is_alert_endpoint(url):
+            return response
+        try:
+            data = response.json()
+            stripped = strip_heavy_alert_data(data)
+            response._content = json.dumps(stripped).encode()  # noqa: SLF001
+        except Exception:
+            logger.debug(f"Could not strip alert response for {url}", exc_info=True)
         return response
 
     async def get(self, url: str, **kwargs):
@@ -455,8 +553,11 @@ class AuthenticatedHTTPXClient:
         """Proxy send() for newer fastmcp versions that build requests and call send() directly.
 
         Headers are enforced by the event hook, so we just delegate to the inner client.
+        Alert response stripping is also applied here for forward compatibility.
         """
-        return await self.client.send(request, **kwargs)
+        response = await self.client.send(request, **kwargs)
+        response = self._maybe_strip_alert_response(request.method, str(request.url), response)
+        return response
 
     async def __aenter__(self):
         return self

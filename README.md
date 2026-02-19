@@ -4,7 +4,7 @@
 [![PyPI version](https://badge.fury.io/py/rootly-mcp-server.svg)](https://pypi.org/project/rootly-mcp-server/)
 [![PyPI - Downloads](https://img.shields.io/pypi/dm/rootly-mcp-server)](https://pypi.org/project/rootly-mcp-server/)
 [![Python Version](https://img.shields.io/pypi/pyversions/rootly-mcp-server.svg)](https://pypi.org/project/rootly-mcp-server/)
-[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=rootly&config=eyJjb21tYW5kIjoibnB4IC15IG1jcC1yZW1vdGUgaHR0cHM6Ly9tY3Aucm9vdGx5LmNvbS9zc2UgLS1oZWFkZXIgQXV0aG9yaXphdGlvbjoke1JPT1RMWV9BVVRIX0hFQURFUn0iLCJlbnYiOnsiUk9PVExZX0FVVEhfSEVBREVSIjoiQmVhcmVyIDxZT1VSX1JPT1RMWV9BUElfVE9LRU4%2BIn19)
+[![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=rootly&config=eyJ1cmwiOiJodHRwczovL21jcC5yb290bHkuY29tL3NzZSIsImhlYWRlcnMiOnsiQXV0aG9yaXphdGlvbiI6IkJlYXJlciA8WU9VUl9ST09UTFlfQVBJX1RPS0VOPiJ9fQ==)
 
 An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overview) that integrates seamlessly with MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
 
@@ -29,9 +29,33 @@ The MCP server requires a Rootly API token. Choose the appropriate token type ba
 
 For full functionality of tools like `get_oncall_handoff_summary`, `get_oncall_shift_metrics`, and organization-wide incident search, a **Global API Key** is recommended.
 
-## Installation
+## Quick Start
 
-Configure your MCP-compatible editor (tested with Cursor) with one of the configurations below. The package will be automatically downloaded and installed when you first open your editor.
+The fastest way to get started is to connect to our hosted MCP server — no installation required, just add the configuration to your editor:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "url": "https://mcp.rootly.com/sse",
+      "headers": {
+        "Authorization": "Bearer <YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+For **Claude Code**, run:
+
+```bash
+claude mcp add rootly --transport sse https://mcp.rootly.com/sse \
+  --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
+```
+
+## Alternative Installation (Local)
+
+If you prefer to run the MCP server locally, configure your editor with one of the options below. The package will be automatically downloaded and installed when you first open your editor.
 
 ### With uv
 
@@ -46,7 +70,7 @@ Configure your MCP-compatible editor (tested with Cursor) with one of the config
         "--from",
         "rootly-mcp-server",
         "rootly-mcp-server"
-      ],      
+      ],
       "env": {
         "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
       }
@@ -66,33 +90,9 @@ Configure your MCP-compatible editor (tested with Cursor) with one of the config
         "--from",
         "rootly-mcp-server",
         "rootly-mcp-server"
-      ],      
-      "env": {
-        "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
-      }
-    }
-  }
-}
-```
-
-### Connect to Hosted MCP Server
-
-Alternatively, connect directly to our hosted MCP server:
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "https://mcp.rootly.com/sse",
-        "--header",
-        "Authorization:${ROOTLY_AUTH_HEADER}"
       ],
       "env": {
-        "ROOTLY_AUTH_HEADER": "Bearer <YOUR_ROOTLY_API_TOKEN>"
+        "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
       }
     }
   }
