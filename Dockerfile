@@ -19,7 +19,7 @@ COPY . .
 RUN uv pip install --system --no-cache-dir -e .
 
 # Create non-root user
-RUN useradd -m -u 1000 appuser
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 
 # Expose the port the app runs on
 EXPOSE 8000
