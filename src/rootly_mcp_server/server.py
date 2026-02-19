@@ -390,6 +390,7 @@ class AuthenticatedHTTPXClient:
         base_url: str = "https://api.rootly.com",
         hosted: bool = False,
         parameter_mapping: dict[str, str] | None = None,
+        transport: str = "stdio",
     ):
         self._base_url = base_url
         self.hosted = hosted
@@ -402,10 +403,11 @@ class AuthenticatedHTTPXClient:
         # Create the HTTPX client
         from rootly_mcp_server import __version__
 
+        mode = "hosted" if hosted else "self-hosted"
         headers = {
             "Content-Type": "application/vnd.api+json",
             "Accept": "application/vnd.api+json",
-            "User-Agent": f"rootly-mcp-server/{__version__}",
+            "User-Agent": f"rootly-mcp-server/{__version__} ({transport}; {mode})",
         }
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
@@ -587,6 +589,7 @@ def create_rootly_mcp_server(
     allowed_paths: list[str] | None = None,
     hosted: bool = False,
     base_url: str | None = None,
+    transport: str = "stdio",
 ) -> FastMCP:
     """
     Create a Rootly MCP Server using FastMCP's OpenAPI integration.
@@ -597,6 +600,7 @@ def create_rootly_mcp_server(
         allowed_paths: List of API paths to include. If None, includes default paths.
         hosted: Whether the server is hosted (affects authentication).
         base_url: Base URL for Rootly API. If None, uses ROOTLY_BASE_URL env var or default.
+        transport: Transport protocol (stdio or sse).
 
     Returns:
         A FastMCP server instance.
@@ -635,7 +639,7 @@ def create_rootly_mcp_server(
     # Create the authenticated HTTP client with parameter mapping
 
     http_client = AuthenticatedHTTPXClient(
-        base_url=base_url, hosted=hosted, parameter_mapping=parameter_mapping
+        base_url=base_url, hosted=hosted, parameter_mapping=parameter_mapping, transport=transport
     )
 
     # Create the MCP server using OpenAPI integration

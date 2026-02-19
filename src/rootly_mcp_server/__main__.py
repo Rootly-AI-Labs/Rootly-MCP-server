@@ -128,6 +128,7 @@ def get_server():
     server_name = os.getenv("ROOTLY_SERVER_NAME", "Rootly")
     hosted = os.getenv("ROOTLY_HOSTED", "false").lower() in ("true", "1", "yes")
     base_url = os.getenv("ROOTLY_BASE_URL")
+    transport = os.getenv("ROOTLY_TRANSPORT", "stdio")
 
     # Parse allowed paths from environment variable
     allowed_paths = None
@@ -142,6 +143,7 @@ def get_server():
         allowed_paths=allowed_paths,
         hosted=hosted,
         base_url=base_url,
+        transport=transport,
     )
 
 
@@ -180,6 +182,7 @@ def main():
             allowed_paths=allowed_paths,
             hosted=hosted_mode,
             base_url=args.base_url,
+            transport=args.transport,
         )
 
         logger.info(f"Running server with transport: {args.transport}...")
