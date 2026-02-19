@@ -18,6 +18,9 @@ COPY . .
 # Install the package and its dependencies
 RUN uv pip install --system --no-cache-dir -e .
 
+# Create non-root user
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+
 # Expose the port the app runs on
 EXPOSE 8000
 
@@ -25,6 +28,9 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 ENV FASTMCP_HOST=0.0.0.0
 ENV FASTMCP_PORT=8000
+
+# Switch to non-root user
+USER appuser
 
 # Run the application
 CMD ["rootly-mcp-server", "--transport", "sse", "--log-level", "INFO", "--hosted"]
