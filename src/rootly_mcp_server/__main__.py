@@ -189,6 +189,9 @@ def main():
         server.run(
             transport=args.transport,
             middleware=get_hosted_auth_middleware(),
+            # Override FastMCP's default of 0s to allow active SSE connections
+            # to finish gracefully during deployments (avoids 502s).
+            uvicorn_config={"timeout_graceful_shutdown": 30},
         )
 
     except FileNotFoundError as e:
