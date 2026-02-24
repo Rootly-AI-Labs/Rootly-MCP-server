@@ -621,9 +621,22 @@ class AuthenticatedHTTPXClient:
     async def send(self, request: httpx.Request, **kwargs):
         """Proxy send() for newer fastmcp versions that build requests and call send() directly.
 
-        Headers are enforced by the event hook, so we just delegate to the inner client.
-        Alert response stripping is also applied here for forward compatibility.
+        FastMCP 3.x OpenAPI tools call send() instead of request(), so auth
+        injection must happen here too. The event hook handles Content-Type/Accept.
         """
+        # In hosted mode, inject auth from ContextVar if missing
+        if self.hosted:
+            has_auth = "authorization" in request.headers
+            if not has_auth:
+                session_token = _session_auth_token.get("")
+                if session_token:
+                    request.headers["authorization"] = session_token
+                    logger.debug("Injected auth from session ContextVar (send)")
+                else:
+                    logger.warning(
+                        f"No authorization header available for {request.method} {request.url} (send)"
+                    )
+
         # Transform URL query parameters from sanitized names to original names
         # FastMCP builds requests with sanitized parameter names (e.g., filter_status)
         # but the API expects original names (e.g., filter[status])
