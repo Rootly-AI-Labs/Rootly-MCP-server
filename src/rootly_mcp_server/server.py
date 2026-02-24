@@ -50,15 +50,24 @@ class AuthCaptureMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
+        if scope["type"] == "http" and scope.get("path") == "/sse":
             from starlette.requests import Request
 
             request = Request(scope)
             auth = request.headers.get("authorization", "")
             if auth:
                 _session_auth_token.set(auth)
-                logger.debug("Set session auth token from incoming request")
+                logger.debug("Set session auth token from SSE connection")
         await self.app(scope, receive, send)
+
+
+# Module-level storage for hosted auth middleware, set by create_rootly_mcp_server().
+_hosted_auth_middleware: list | None = None
+
+
+def get_hosted_auth_middleware() -> list | None:
+    """Return the ASGI auth middleware list if in hosted mode, else None."""
+    return _hosted_auth_middleware
 
 
 def strip_heavy_nested_data(data: dict[str, Any]) -> dict[str, Any]:
@@ -467,7 +476,10 @@ class AuthenticatedHTTPXClient:
         ensuring the Rootly API always receives the correct Content-Type header.
         """
         has_auth = "authorization" in request.headers
-        logger.info(f"Outgoing request to {request.url} - has authorization: {has_auth}")
+        if has_auth:
+            logger.debug(f"Outgoing request to {request.url} - has authorization: True")
+        else:
+            logger.error(f"Outgoing request to {request.url} - has authorization: False")
         request.headers["content-type"] = "application/vnd.api+json"
         request.headers["accept"] = "application/vnd.api+json"
 
@@ -523,9 +535,7 @@ class AuthenticatedHTTPXClient:
                     headers["authorization"] = session_token
                     logger.debug("Injected auth from session ContextVar")
                 else:
-                    logger.warning(
-                        f"No authorization header available for {method} {url}"
-                    )
+                    logger.warning(f"No authorization header available for {method} {url}")
 
         # Remove any existing content-type and accept headers (case-insensitive)
         headers_to_remove = [k for k in headers if k.lower() in ("content-type", "accept")]
@@ -3785,14 +3795,15 @@ Updated: {attributes.get("updated_at", "N/A")}"""
                 f"Failed to get alert by short_id: {error_message}", error_type
             )
 
-    # In hosted SSE mode, attach ASGI middleware for auth token capture.
-    # Callers pass this to server.run(middleware=...) for proper ASGI registration.
+    # In hosted SSE mode, configure ASGI middleware for auth token capture.
+    # Callers retrieve via get_hosted_auth_middleware() and pass to server.run(middleware=...).
+    global _hosted_auth_middleware
     if hosted:
         from starlette.middleware import Middleware
 
-        mcp._auth_middleware = [Middleware(AuthCaptureMiddleware)]
+        _hosted_auth_middleware = [Middleware(AuthCaptureMiddleware)]
     else:
-        mcp._auth_middleware = []
+        _hosted_auth_middleware = None
 
     # Log server creation (tool count will be shown when tools are accessed)
     logger.info("Created Rootly MCP Server successfully")

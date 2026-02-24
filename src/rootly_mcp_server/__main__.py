@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .exceptions import RootlyConfigurationError, RootlyMCPError
 from .security import validate_api_token
-from .server import create_rootly_mcp_server
+from .server import create_rootly_mcp_server, get_hosted_auth_middleware
 
 
 def parse_args():
@@ -188,7 +188,7 @@ def main():
         logger.info(f"Running server with transport: {args.transport}...")
         server.run(
             transport=args.transport,
-            middleware=getattr(server, "_auth_middleware", None) or None,
+            middleware=get_hosted_auth_middleware(),
         )
 
     except FileNotFoundError as e:
