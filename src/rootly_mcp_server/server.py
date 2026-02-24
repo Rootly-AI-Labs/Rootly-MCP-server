@@ -738,7 +738,11 @@ def create_rootly_mcp_server(
 
                 request_headers = get_http_headers()
                 # Get client IP from headers (may be in x-forwarded-for or similar)
-                client_ip = request_headers.get("x-forwarded-for", "unknown") if request_headers else "unknown"
+                client_ip = (
+                    request_headers.get("x-forwarded-for", "unknown")
+                    if request_headers
+                    else "unknown"
+                )
                 logger.info(
                     f"make_authenticated_request: client_ip={client_ip}, headers_keys={list(request_headers.keys()) if request_headers else []}"
                 )
