@@ -412,7 +412,9 @@ class AuthenticatedHTTPXClient:
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
 
-        logger.info(f"AuthenticatedHTTPXClient init: hosted={hosted}, has_api_token={bool(self._api_token)}")
+        logger.info(
+            f"AuthenticatedHTTPXClient init: hosted={hosted}, has_api_token={bool(self._api_token)}"
+        )
 
         self.client = httpx.AsyncClient(
             base_url=base_url,
@@ -735,7 +737,9 @@ def create_rootly_mcp_server(
                 from fastmcp.server.dependencies import get_http_headers
 
                 request_headers = get_http_headers()
-                logger.info(f"make_authenticated_request: get_http_headers() returned: {request_headers}")
+                logger.info(
+                    f"make_authenticated_request: get_http_headers() returned: {request_headers}"
+                )
                 auth_header = request_headers.get("authorization", "")
                 if auth_header:
                     logger.info("make_authenticated_request: Found auth header, adding to request")
@@ -744,7 +748,9 @@ def create_rootly_mcp_server(
                         kwargs["headers"] = {}
                     kwargs["headers"]["Authorization"] = auth_header
                 else:
-                    logger.warning("make_authenticated_request: No authorization header found in MCP headers")
+                    logger.warning(
+                        "make_authenticated_request: No authorization header found in MCP headers"
+                    )
             except Exception as e:
                 logger.warning(f"make_authenticated_request: Failed to get headers: {e}")
 
