@@ -815,11 +815,11 @@ def create_rootly_mcp_server(
                         kwargs["headers"] = {}
                     kwargs["headers"]["Authorization"] = auth_header
                 else:
-                    logger.warning(
+                    logger.error(
                         "make_authenticated_request: No authorization header found in MCP headers"
                     )
             except Exception as e:
-                logger.warning(f"make_authenticated_request: Failed to get headers: {e}")
+                logger.error(f"make_authenticated_request: Failed to get headers: {e}")
 
         # Use our custom client with proper error handling instead of bypassing it
         return await http_client.request(method, url, **kwargs)
