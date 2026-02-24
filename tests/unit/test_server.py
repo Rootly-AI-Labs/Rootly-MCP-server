@@ -357,6 +357,39 @@ class TestOpenAPISpecFiltering:
             param_names = [p["name"] for p in users_get["parameters"]]
             assert "page[size]" not in param_names
 
+    def test_filter_spec_adds_filter_params_to_alerts(self):
+        """Test that filter parameters are added to alerts endpoints."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/alerts": {"get": {"operationId": "listAlerts"}},
+            },
+            "components": {"schemas": {}},
+        }
+
+        allowed_paths = ["/alerts"]
+        filtered_spec = _filter_openapi_spec(original_spec, allowed_paths)
+
+        # Verify filter params were added to alerts endpoints
+        alerts_get = filtered_spec["paths"]["/alerts"]["get"]
+        assert "parameters" in alerts_get
+        param_names = [p["name"] for p in alerts_get["parameters"]]
+
+        # Check for the new filter parameters
+        assert "filter[status]" in param_names
+        assert "filter[groups]" in param_names
+        assert "filter[services]" in param_names
+        assert "filter[environments]" in param_names
+        assert "filter[labels]" in param_names
+        assert "filter[source]" in param_names
+        assert "filter[started_at][gte]" in param_names
+        assert "filter[started_at][lte]" in param_names
+        assert "filter[ended_at][gte]" in param_names
+        assert "filter[ended_at][lte]" in param_names
+        assert "filter[created_at][gte]" in param_names
+        assert "filter[created_at][lte]" in param_names
+
     def test_filter_spec_adds_pagination_to_incident_types(self):
         """Test that pagination parameters are added to incident-related endpoints."""
         original_spec = {

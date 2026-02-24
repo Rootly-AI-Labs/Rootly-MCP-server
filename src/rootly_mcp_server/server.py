@@ -3966,6 +3966,98 @@ def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict
                             }
                         )
 
+                # Add filter parameters for alerts endpoints to enable team/date/source filtering
+                if "alert" in path.lower():
+                    filter_params = [
+                        {
+                            "name": "filter[status]",
+                            "description": "Filter by alert status (e.g., triggered, acknowledged, resolved)",
+                        },
+                        {
+                            "name": "filter[groups]",
+                            "description": "Filter by team/group IDs (comma-separated)",
+                        },
+                        {
+                            "name": "filter[services]",
+                            "description": "Filter by service IDs (comma-separated)",
+                        },
+                        {
+                            "name": "filter[environments]",
+                            "description": "Filter by environment IDs (comma-separated)",
+                        },
+                        {
+                            "name": "filter[labels]",
+                            "description": "Filter by labels (comma-separated)",
+                        },
+                        {"name": "filter[source]", "description": "Filter by alert source"},
+                        {
+                            "name": "filter[started_at][gte]",
+                            "description": "Started at >= (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[started_at][lte]",
+                            "description": "Started at <= (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[started_at][gt]",
+                            "description": "Started at > (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[started_at][lt]",
+                            "description": "Started at < (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[ended_at][gte]",
+                            "description": "Ended at >= (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[ended_at][lte]",
+                            "description": "Ended at <= (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[ended_at][gt]",
+                            "description": "Ended at > (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[ended_at][lt]",
+                            "description": "Ended at < (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[created_at][gte]",
+                            "description": "Created at >= (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[created_at][lte]",
+                            "description": "Created at <= (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[created_at][gt]",
+                            "description": "Created at > (ISO8601 datetime)",
+                        },
+                        {
+                            "name": "filter[created_at][lt]",
+                            "description": "Created at < (ISO8601 datetime)",
+                        },
+                    ]
+
+                    for param_def in filter_params:
+                        # Check if param already exists
+                        param_exists = any(
+                            p.get("name") == param_def["name"] for p in operation["parameters"]
+                        )
+                        if not param_exists:
+                            operation["parameters"].append(
+                                {
+                                    "name": param_def["name"],
+                                    "in": "query",
+                                    "required": False,
+                                    "schema": {
+                                        "type": "string",
+                                        "description": param_def["description"],
+                                    },
+                                }
+                            )
+
                 # Add sparse fieldsets for incidents endpoints to reduce payload size
                 if "incident" in path.lower():
                     # Add fields[incidents] parameter with essential fields only - make it required with default
