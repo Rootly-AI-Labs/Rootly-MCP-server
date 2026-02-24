@@ -412,6 +412,8 @@ class AuthenticatedHTTPXClient:
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
 
+        logger.info(f"AuthenticatedHTTPXClient init: hosted={hosted}, has_api_token={bool(self._api_token)}")
+
         self.client = httpx.AsyncClient(
             base_url=base_url,
             headers=headers,
@@ -428,6 +430,8 @@ class AuthenticatedHTTPXClient:
         This runs on ALL requests regardless of how they are initiated (request(), send(), etc.),
         ensuring the Rootly API always receives the correct Content-Type header.
         """
+        has_auth = "authorization" in request.headers
+        logger.info(f"Outgoing request to {request.url} - has authorization: {has_auth}")
         request.headers["content-type"] = "application/vnd.api+json"
         request.headers["accept"] = "application/vnd.api+json"
 
@@ -731,16 +735,18 @@ def create_rootly_mcp_server(
                 from fastmcp.server.dependencies import get_http_headers
 
                 request_headers = get_http_headers()
+                logger.info(f"make_authenticated_request: get_http_headers() returned: {request_headers}")
                 auth_header = request_headers.get("authorization", "")
                 if auth_header:
+                    logger.info("make_authenticated_request: Found auth header, adding to request")
                     # Add authorization header to the request
                     if "headers" not in kwargs:
                         kwargs["headers"] = {}
                     kwargs["headers"]["Authorization"] = auth_header
-            except Exception:  # nosec B110
-                # Intentionally broad exception handling: fallback to default client behavior
-                # if token extraction fails for any reason (missing env var, invalid format, etc.)
-                pass
+                else:
+                    logger.warning("make_authenticated_request: No authorization header found in MCP headers")
+            except Exception as e:
+                logger.warning(f"make_authenticated_request: Failed to get headers: {e}")
 
         # Use our custom client with proper error handling instead of bypassing it
         return await http_client.request(method, url, **kwargs)
