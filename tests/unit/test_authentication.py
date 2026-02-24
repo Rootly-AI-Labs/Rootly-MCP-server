@@ -6,14 +6,16 @@ Tests cover:
 - API token handling
 - Header configuration
 - Request authentication flow
+- ContextVar auth injection via request() and send() paths
 """
 
 import os
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
-from rootly_mcp_server.server import AuthenticatedHTTPXClient
+from rootly_mcp_server.server import AuthenticatedHTTPXClient, _session_auth_token
 
 
 @pytest.mark.unit
@@ -287,3 +289,187 @@ class TestParameterTransformation:
         result = client._transform_params({})
 
         assert result == {}
+
+
+@pytest.mark.unit
+class TestContextVarAuthInjection:
+    """Test ContextVar-based auth injection in hosted mode.
+
+    This is the core of the hosted SSE auth fix. Auth tokens are captured
+    from the SSE connection by AuthCaptureMiddleware into a ContextVar,
+    then injected into outgoing API requests.
+
+    There are TWO code paths that must inject auth:
+    - request(): used by hand-written tools (e.g., search_incidents)
+    - send(): used by FastMCP 3.x OpenAPI-generated tools (e.g., listAlerts)
+
+    A regression in either path causes 401 Unauthorized errors in production.
+    """
+
+    @pytest.fixture
+    def hosted_client(self):
+        """Create a hosted-mode client with mocked inner httpx client."""
+        client = AuthenticatedHTTPXClient(hosted=True)
+        mock_inner = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.is_error = False
+        mock_response.json.return_value = {"data": []}
+        mock_inner.request.return_value = mock_response
+        mock_inner.send.return_value = mock_response
+        client.client = mock_inner
+        return client
+
+    @pytest.fixture(autouse=True)
+    def reset_contextvar(self):
+        """Reset the ContextVar before and after each test."""
+        token = _session_auth_token.set("")
+        yield
+        _session_auth_token.reset(token)
+
+    # --- request() path (hand-written tools like search_incidents) ---
+
+    @pytest.mark.asyncio
+    async def test_request_injects_auth_from_contextvar(self, hosted_client):
+        """request() should inject auth from ContextVar when no auth header present."""
+        _session_auth_token.set("Bearer my-secret-token")
+
+        await hosted_client.request("GET", "/v1/incidents")
+
+        call_kwargs = hosted_client.client.request.call_args[1]
+        assert call_kwargs["headers"]["authorization"] == "Bearer my-secret-token"
+
+    @pytest.mark.asyncio
+    async def test_request_skips_injection_when_auth_present(self, hosted_client):
+        """request() should NOT override an existing auth header."""
+        _session_auth_token.set("Bearer contextvar-token")
+
+        await hosted_client.request(
+            "GET",
+            "/v1/incidents",
+            headers={"Authorization": "Bearer explicit-token"},
+        )
+
+        call_kwargs = hosted_client.client.request.call_args[1]
+        assert call_kwargs["headers"]["Authorization"] == "Bearer explicit-token"
+        assert (
+            "authorization" not in call_kwargs["headers"]
+            or call_kwargs["headers"].get("authorization") != "Bearer contextvar-token"
+        )
+
+    @pytest.mark.asyncio
+    async def test_request_no_auth_when_contextvar_empty(self, hosted_client):
+        """request() should not inject auth when ContextVar is empty."""
+        # ContextVar is empty (reset by fixture)
+        await hosted_client.request("GET", "/v1/incidents")
+
+        call_kwargs = hosted_client.client.request.call_args[1]
+        headers = call_kwargs["headers"]
+        assert not any(k.lower() == "authorization" for k in headers)
+
+    # --- send() path (FastMCP 3.x OpenAPI tools like listAlerts) ---
+
+    @pytest.mark.asyncio
+    async def test_send_injects_auth_from_contextvar(self, hosted_client):
+        """send() should inject auth from ContextVar when no auth header present.
+
+        This is the exact bug that caused 401s for OpenAPI-generated tools
+        (listAlerts, listEnvironments, etc.) in FastMCP 3.x.
+        FastMCP 3.x calls client.send(request) instead of client.request().
+        """
+        _session_auth_token.set("Bearer my-secret-token")
+
+        request = httpx.Request("GET", "https://api.rootly.com/v1/alerts")
+        await hosted_client.send(request)
+
+        # The auth should be injected into request.headers before send()
+        sent_request = hosted_client.client.send.call_args[0][0]
+        assert sent_request.headers["authorization"] == "Bearer my-secret-token"
+
+    @pytest.mark.asyncio
+    async def test_send_skips_injection_when_auth_present(self, hosted_client):
+        """send() should NOT override an existing auth header."""
+        _session_auth_token.set("Bearer contextvar-token")
+
+        request = httpx.Request(
+            "GET",
+            "https://api.rootly.com/v1/alerts",
+            headers={"authorization": "Bearer explicit-token"},
+        )
+        await hosted_client.send(request)
+
+        sent_request = hosted_client.client.send.call_args[0][0]
+        assert sent_request.headers["authorization"] == "Bearer explicit-token"
+
+    @pytest.mark.asyncio
+    async def test_send_no_auth_when_contextvar_empty(self, hosted_client):
+        """send() should not inject auth when ContextVar is empty."""
+        request = httpx.Request("GET", "https://api.rootly.com/v1/alerts")
+        await hosted_client.send(request)
+
+        sent_request = hosted_client.client.send.call_args[0][0]
+        assert "authorization" not in sent_request.headers
+
+    # --- Both paths must behave consistently ---
+
+    @pytest.mark.asyncio
+    async def test_request_and_send_both_inject_same_token(self, hosted_client):
+        """Both request() and send() must inject the same ContextVar token.
+
+        This ensures hand-written tools and OpenAPI-generated tools
+        get the same auth treatment in hosted mode.
+        """
+        _session_auth_token.set("Bearer shared-token")
+
+        # Path 1: request() — used by hand-written tools
+        await hosted_client.request("GET", "/v1/incidents")
+        request_headers = hosted_client.client.request.call_args[1]["headers"]
+
+        # Path 2: send() — used by FastMCP 3.x OpenAPI tools
+        req = httpx.Request("GET", "https://api.rootly.com/v1/alerts")
+        await hosted_client.send(req)
+        sent_request = hosted_client.client.send.call_args[0][0]
+
+        assert request_headers["authorization"] == "Bearer shared-token"
+        assert sent_request.headers["authorization"] == "Bearer shared-token"
+
+    # --- Local mode should never use ContextVar injection ---
+
+    @pytest.mark.asyncio
+    async def test_request_no_contextvar_injection_in_local_mode(self):
+        """request() in local mode should NOT inject from ContextVar."""
+        with patch.dict(os.environ, {"ROOTLY_API_TOKEN": "rootly_local_token"}):
+            client = AuthenticatedHTTPXClient(hosted=False)
+            mock_inner = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.is_error = False
+            mock_inner.request.return_value = mock_response
+            client.client = mock_inner
+
+            _session_auth_token.set("Bearer should-not-appear")
+            await client.request("GET", "/v1/incidents")
+
+            call_kwargs = mock_inner.request.call_args[1]
+            headers = call_kwargs["headers"]
+            # Should NOT have the ContextVar token
+            assert headers.get("authorization") != "Bearer should-not-appear"
+
+    @pytest.mark.asyncio
+    async def test_send_no_contextvar_injection_in_local_mode(self):
+        """send() in local mode should NOT inject from ContextVar."""
+        with patch.dict(os.environ, {"ROOTLY_API_TOKEN": "rootly_local_token"}):
+            client = AuthenticatedHTTPXClient(hosted=False)
+            mock_inner = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.is_error = False
+            mock_inner.send.return_value = mock_response
+            client.client = mock_inner
+
+            _session_auth_token.set("Bearer should-not-appear")
+            request = httpx.Request("GET", "https://api.rootly.com/v1/alerts")
+            await client.send(request)
+
+            sent_request = mock_inner.send.call_args[0][0]
+            assert sent_request.headers.get("authorization") != "Bearer should-not-appear"
