@@ -418,8 +418,28 @@ class AuthenticatedHTTPXClient:
             timeout=30.0,
             follow_redirects=True,
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-            event_hooks={"request": [self._enforce_jsonapi_headers]},
+            event_hooks={"request": [self._enforce_jsonapi_headers, self._add_auth_header]},
         )
+
+    async def _add_auth_header(self, request: httpx.Request):
+        """Event hook to add Authorization header from MCP request headers in hosted mode.
+
+        In hosted mode, the token comes from the client's Authorization header (set by
+        make_authenticated_request), not from FastMCP's get_http_headers(). This ensures
+        the token is properly passed through for OpenAPI-generated tools.
+        """
+        # If we already have a token set (e.g., from make_authenticated_request), use it
+        # Otherwise, try to get it from the client headers
+        if self.hosted and not request.headers.get("authorization"):
+            try:
+                from fastmcp.server.dependencies import get_http_headers
+
+                mcp_headers = get_http_headers()
+                auth_header = mcp_headers.get("authorization", "")
+                if auth_header:
+                    request.headers["authorization"] = auth_header
+            except Exception:
+                pass
 
     @staticmethod
     async def _enforce_jsonapi_headers(request: httpx.Request):
