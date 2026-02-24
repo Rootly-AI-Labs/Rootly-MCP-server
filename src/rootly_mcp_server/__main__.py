@@ -186,7 +186,10 @@ def main():
         )
 
         logger.info(f"Running server with transport: {args.transport}...")
-        server.run(transport=args.transport)
+        server.run(
+            transport=args.transport,
+            middleware=getattr(server, "_auth_middleware", None) or None,
+        )
 
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")

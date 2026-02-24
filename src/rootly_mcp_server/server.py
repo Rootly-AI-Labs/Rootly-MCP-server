@@ -6,6 +6,7 @@ the Rootly API's OpenAPI (Swagger) specification using FastMCP's OpenAPI integra
 """
 
 import asyncio
+import contextvars
 import json
 import logging
 import os
@@ -25,6 +26,39 @@ from .utils import sanitize_parameters_in_spec
 
 # Set up logger
 logger = logging.getLogger(__name__)
+
+# ContextVar to hold the auth token for the current SSE session.
+# Set by AuthCaptureMiddleware on GET /sse, propagates to all tool handler
+# tasks via Python's async context inheritance. Multi-tenant safe because
+# each SSE connection runs in its own task with its own context copy.
+_session_auth_token: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_session_auth_token", default=""
+)
+
+
+class AuthCaptureMiddleware:
+    """ASGI middleware that captures the Authorization header into a ContextVar.
+
+    In hosted SSE mode, the GET /sse handler blocks for the entire session
+    lifetime. This middleware sets _session_auth_token before the handler runs,
+    so all tool handler tasks spawned within that session inherit the token
+    via Python's async context propagation. Multi-tenant safe: each SSE
+    connection runs in its own async task with its own context copy.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            from starlette.requests import Request
+
+            request = Request(scope)
+            auth = request.headers.get("authorization", "")
+            if auth:
+                _session_auth_token.set(auth)
+                logger.debug("Set session auth token from incoming request")
+        await self.app(scope, receive, send)
 
 
 def strip_heavy_nested_data(data: dict[str, Any]) -> dict[str, Any]:
@@ -476,6 +510,23 @@ class AuthenticatedHTTPXClient:
         # 2. We must remove any existing content-type/accept and set the correct JSON-API values
         # 3. Handle both lowercase and mixed-case variants to be safe
         headers = dict(kwargs.get("headers") or {})
+
+        # In hosted mode, ensure Authorization header is present.
+        # The _session_auth_token ContextVar is set by AuthCaptureMiddleware
+        # on the GET /sse request and propagates to all tool handler tasks
+        # via Python's async context inheritance. Multi-tenant safe.
+        if self.hosted:
+            has_auth = any(k.lower() == "authorization" for k in headers)
+            if not has_auth:
+                session_token = _session_auth_token.get("")
+                if session_token:
+                    headers["authorization"] = session_token
+                    logger.debug("Injected auth from session ContextVar")
+                else:
+                    logger.warning(
+                        f"No authorization header available for {method} {url}"
+                    )
+
         # Remove any existing content-type and accept headers (case-insensitive)
         headers_to_remove = [k for k in headers if k.lower() in ("content-type", "accept")]
         for key in headers_to_remove:
@@ -3733,6 +3784,15 @@ Updated: {attributes.get("updated_at", "N/A")}"""
             return MCPError.tool_error(
                 f"Failed to get alert by short_id: {error_message}", error_type
             )
+
+    # In hosted SSE mode, attach ASGI middleware for auth token capture.
+    # Callers pass this to server.run(middleware=...) for proper ASGI registration.
+    if hosted:
+        from starlette.middleware import Middleware
+
+        mcp._auth_middleware = [Middleware(AuthCaptureMiddleware)]
+    else:
+        mcp._auth_middleware = []
 
     # Log server creation (tool count will be shown when tools are accessed)
     logger.info("Created Rootly MCP Server successfully")
