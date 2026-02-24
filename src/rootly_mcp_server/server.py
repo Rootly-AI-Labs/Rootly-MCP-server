@@ -737,10 +737,12 @@ def create_rootly_mcp_server(
                 from fastmcp.server.dependencies import get_http_headers
 
                 request_headers = get_http_headers()
+                # Get client IP from headers (may be in x-forwarded-for or similar)
+                client_ip = request_headers.get("x-forwarded-for", "unknown") if request_headers else "unknown"
                 logger.info(
-                    f"make_authenticated_request: get_http_headers() returned: {request_headers}"
+                    f"make_authenticated_request: client_ip={client_ip}, headers_keys={list(request_headers.keys()) if request_headers else []}"
                 )
-                auth_header = request_headers.get("authorization", "")
+                auth_header = request_headers.get("authorization", "") if request_headers else ""
                 if auth_header:
                     logger.info("make_authenticated_request: Found auth header, adding to request")
                     # Add authorization header to the request
