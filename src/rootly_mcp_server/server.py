@@ -791,37 +791,11 @@ def create_rootly_mcp_server(
         }
 
     async def make_authenticated_request(method: str, url: str, **kwargs):
-        """Make an authenticated request, extracting token from MCP headers in hosted mode."""
-        # In hosted mode, get token from MCP request headers
-        if hosted:
-            try:
-                from fastmcp.server.dependencies import get_http_headers
+        """Make an authenticated request.
 
-                request_headers = get_http_headers()
-                # Get client IP from headers (may be in x-forwarded-for or similar)
-                client_ip = (
-                    request_headers.get("x-forwarded-for", "unknown")
-                    if request_headers
-                    else "unknown"
-                )
-                logger.info(
-                    f"make_authenticated_request: client_ip={client_ip}, headers_keys={list(request_headers.keys()) if request_headers else []}"
-                )
-                auth_header = request_headers.get("authorization", "") if request_headers else ""
-                if auth_header:
-                    logger.info("make_authenticated_request: Found auth header, adding to request")
-                    # Add authorization header to the request
-                    if "headers" not in kwargs:
-                        kwargs["headers"] = {}
-                    kwargs["headers"]["Authorization"] = auth_header
-                else:
-                    logger.error(
-                        "make_authenticated_request: No authorization header found in MCP headers"
-                    )
-            except Exception as e:
-                logger.error(f"make_authenticated_request: Failed to get headers: {e}")
-
-        # Use our custom client with proper error handling instead of bypassing it
+        In hosted mode, auth is injected by AuthenticatedHTTPXClient.request()
+        via the _session_auth_token ContextVar (set by AuthCaptureMiddleware).
+        """
         return await http_client.request(method, url, **kwargs)
 
     @mcp.tool()
