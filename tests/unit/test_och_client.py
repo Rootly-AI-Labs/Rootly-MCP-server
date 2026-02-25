@@ -305,9 +305,10 @@ class TestToolRegistration:
             server = create_rootly_mcp_server()
             assert server is not None
 
-            # Get all registered tools
-            tools = server._tool_manager._tools
-            tool_names = list(tools.keys())
+            # Get all registered tools using list_tools
+            import asyncio
+            tools_list = asyncio.run(server.list_tools())
+            tool_names = [t.name for t in tools_list]
 
             # Verify new tool name exists
             assert "check_oncall_health_risk" in tool_names
@@ -326,8 +327,10 @@ class TestToolRegistration:
             from rootly_mcp_server.server import create_rootly_mcp_server
 
             server = create_rootly_mcp_server()
-            tools = server._tool_manager._tools
-            tool_names = list(tools.keys())
+            # Get all registered tools using list_tools
+            import asyncio
+            tools_list = asyncio.run(server.list_tools())
+            tool_names = [t.name for t in tools_list]
 
             # Verify old tool name does NOT exist
             assert "check_oncall_burnout_risk" not in tool_names

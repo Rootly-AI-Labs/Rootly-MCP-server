@@ -34,7 +34,7 @@ class TestSearchIncidentsIntegration:
 
             # Verify server was created successfully
             assert server is not None
-            assert hasattr(server, "get_tools")
+            assert hasattr(server, "list_tools")
 
     def test_custom_tool_registration(self):
         """Test that custom tools are properly registered."""

@@ -118,9 +118,9 @@ class TestGetOncallShiftMetrics:
             assert server is not None
 
             # Get the tool list
-            tools = await server.get_tools()
+            tools_list = await server.list_tools()
             tool_names = []
-            for t in tools:
+            for t in tools_list:
                 if hasattr(t, "name"):
                     tool_names.append(t.name)  # type: ignore[attr-defined]
                 else:

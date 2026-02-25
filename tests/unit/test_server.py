@@ -42,7 +42,7 @@ class TestServerCreation:
 
             # Verify server was created
             assert server is not None
-            assert hasattr(server, "get_tools")
+            assert hasattr(server, "list_tools")
 
             # Verify default parameters were used
             mock_load_spec.assert_called_once_with(None)

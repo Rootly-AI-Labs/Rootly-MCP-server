@@ -44,7 +44,7 @@ class TestLocalServerBasics:
             server = create_rootly_mcp_server()
 
             assert server is not None
-            assert hasattr(server, "get_tools")
+            assert hasattr(server, "list_tools")
 
     def test_server_creation_hosted_mode(self):
         """Test server creation in hosted mode."""

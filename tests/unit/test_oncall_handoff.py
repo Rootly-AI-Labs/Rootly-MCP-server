@@ -26,9 +26,9 @@ class TestGetOncallHandoffSummary:
             server = create_rootly_mcp_server()
             assert server is not None
 
-            tools = await server.get_tools()
+            tools_list = await server.list_tools()
             tool_names = []
-            for t in tools:
+            for t in tools_list:
                 if hasattr(t, "name"):
                     tool_names.append(t.name)  # type: ignore[attr-defined]
                 else:
@@ -58,9 +58,9 @@ class TestGetShiftIncidents:
             server = create_rootly_mcp_server()
             assert server is not None
 
-            tools = await server.get_tools()
+            tools_list = await server.list_tools()
             tool_names = []
-            for t in tools:
+            for t in tools_list:
                 if hasattr(t, "name"):
                     tool_names.append(t.name)  # type: ignore[attr-defined]
                 else:

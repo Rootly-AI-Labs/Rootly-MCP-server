@@ -26,8 +26,8 @@ async def test_search_incidents_limits():
     server = create_rootly_mcp_server(name="TestServer")
 
     # Get the search_incidents tool
-    tools = await server.get_tools()
-    search_tool = tools.get("search_incidents")
+    tools_list = await server.list_tools()
+    search_tool = next((t for t in tools_list if t.name == "search_incidents"), None)
 
     if not search_tool:
         print("❌ search_incidents tool not found")
@@ -106,8 +106,8 @@ async def test_authentication_modes():
         print("  ✅ Local mode server created successfully")
 
         # Check if API token was loaded
-        tools = await server_local.get_tools()
-        search_tool = tools.get("search_incidents")
+        tools_list = await server_local.list_tools()
+        search_tool = next((t for t in tools_list if t.name == "search_incidents"), None)
         if search_tool:
             print("  ✅ search_incidents tool available in local mode")
 
@@ -120,8 +120,8 @@ async def test_authentication_modes():
         server_hosted = create_rootly_mcp_server(name="HostedTest", hosted=True)
         print("  ✅ Hosted mode server created successfully")
 
-        tools = await server_hosted.get_tools()
-        search_tool = tools.get("search_incidents")
+        tools_list = await server_hosted.list_tools()
+        search_tool = next((t for t in tools_list if t.name == "search_incidents"), None)
         if search_tool:
             print("  ✅ search_incidents tool available in hosted mode")
 
@@ -134,21 +134,22 @@ async def test_tool_availability():
     print("\n🛠️  Testing tool availability...")
 
     server = create_rootly_mcp_server(name="ToolTest")
-    tools = await server.get_tools()
+    tools_list = await server.list_tools()
 
     expected_custom_tools = ["search_incidents", "list_endpoints"]
+    tool_names = [t.name for t in tools_list]
 
-    print(f"  Total tools found: {len(tools)}")
+    print(f"  Total tools found: {len(tools_list)}")
 
     # Check custom tools
     for tool_name in expected_custom_tools:
-        if tool_name in tools:
+        if tool_name in tool_names:
             print(f"  ✅ Custom tool '{tool_name}' found")
         else:
             print(f"  ❌ Custom tool '{tool_name}' missing")
 
     # List all available OpenAPI tools to see actual naming
-    openapi_tools = [name for name in tools.keys() if name not in expected_custom_tools]
+    openapi_tools = [name for name in tool_names if name not in expected_custom_tools]
     print(f"  📋 Available OpenAPI tools ({len(openapi_tools)}):")
     for tool_name in sorted(openapi_tools)[:10]:  # Show first 10
         print(f"    • {tool_name}")
@@ -156,7 +157,7 @@ async def test_tool_availability():
         print(f"    ... and {len(openapi_tools) - 10} more")
 
     # Check for incident-related tools specifically
-    incident_tools = [name for name in tools.keys() if "incident" in name.lower()]
+    incident_tools = [name for name in tool_names if "incident" in name.lower()]
     if incident_tools:
         print(f"  🔍 Incident-related tools: {', '.join(incident_tools)}")
 
