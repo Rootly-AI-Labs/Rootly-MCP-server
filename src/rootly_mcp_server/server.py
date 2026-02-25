@@ -634,7 +634,9 @@ class AuthenticatedHTTPXClient:
                     request.headers["authorization"] = session_token
                     logger.debug("Injected auth from session ContextVar in send()")
                 else:
-                    logger.warning(f"No authorization header available for {request.method} {request.url}")
+                    logger.warning(
+                        f"No authorization header available for {request.method} {request.url}"
+                    )
 
         # Transform URL query parameters from sanitized names to original names
         # FastMCP builds requests with sanitized parameter names (e.g., filter_status)
@@ -3816,18 +3818,6 @@ Updated: {attributes.get("updated_at", "N/A")}"""
         _hosted_auth_middleware = [Middleware(AuthCaptureMiddleware)]
     else:
         _hosted_auth_middleware = None
-
-    # Add backward-compatible get_tools method for tests
-    # FastMCP 3.x uses list_tools() which returns a list, this wraps it to return a dict
-    async def get_tools() -> dict:
-        """Get all tools as a dictionary (name -> tool).
-
-        This is a backward-compatible wrapper around FastMCP 3.x's list_tools() method.
-        """
-        tools_list = await mcp.list_tools()
-        return {tool.name: tool for tool in tools_list}
-
-    mcp.get_tools = get_tools
 
     # Log server creation (tool count will be shown when tools are accessed)
     logger.info("Created Rootly MCP Server successfully")

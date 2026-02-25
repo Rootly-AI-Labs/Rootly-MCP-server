@@ -307,6 +307,7 @@ class TestToolRegistration:
 
             # Get all registered tools using list_tools
             import asyncio
+
             tools_list = asyncio.run(server.list_tools())
             tool_names = [t.name for t in tools_list]
 
@@ -329,6 +330,7 @@ class TestToolRegistration:
             server = create_rootly_mcp_server()
             # Get all registered tools using list_tools
             import asyncio
+
             tools_list = asyncio.run(server.list_tools())
             tool_names = [t.name for t in tools_list]
 
