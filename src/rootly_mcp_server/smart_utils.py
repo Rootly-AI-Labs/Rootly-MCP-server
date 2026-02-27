@@ -219,8 +219,8 @@ class TextSimilarityAnalyzer:
             return []
 
         # Import here to avoid issues with conditional imports
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.metrics.pairwise import cosine_similarity
+        from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore[import-untyped]
+        from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-untyped]
 
         # Prepare texts
         incident_texts = [self._combine_incident_text(inc) for inc in incidents]
@@ -580,7 +580,7 @@ class SolutionExtractor:
 
         # Keyword patterns
         if keywords:
-            keyword_counts = {}
+            keyword_counts: dict[str, int] = {}
             for keyword in keywords:
                 keyword_counts[keyword] = keyword_counts.get(keyword, 0) + 1
 

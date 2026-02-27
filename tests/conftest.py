@@ -157,7 +157,3 @@ def skip_if_no_token():
     """
     if not os.getenv("ROOTLY_API_TOKEN"):
         pytest.skip("API token required for this test")
-
-
-# Markers for test categorization
-pytestmark = pytest.mark.asyncio  # Default async support for all tests

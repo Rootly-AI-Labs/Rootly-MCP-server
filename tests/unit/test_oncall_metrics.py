@@ -95,7 +95,6 @@ def mock_schedules_response():
 
 
 @pytest.mark.unit
-@pytest.mark.asyncio
 class TestGetOncallShiftMetrics:
     """Test get_oncall_shift_metrics tool."""
 
