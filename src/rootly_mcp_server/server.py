@@ -479,7 +479,7 @@ class AuthenticatedHTTPXClient:
         if has_auth:
             logger.debug(f"Outgoing request to {request.url} - has authorization: True")
         else:
-            logger.error(f"Outgoing request to {request.url} - has authorization: False")
+            logger.warning(f"Outgoing request to {request.url} - has authorization: False")
         request.headers["content-type"] = "application/vnd.api+json"
         request.headers["accept"] = "application/vnd.api+json"
 
@@ -555,10 +555,14 @@ class AuthenticatedHTTPXClient:
 
         # Log error responses (4xx/5xx)
         if response.is_error:
-            logger.error(
+            log_message = (
                 f"HTTP {response.status_code} error for {method} {url}: "
                 f"{response.text[:500] if response.text else 'No response body'}"
             )
+            if response.status_code >= 500:
+                logger.error(log_message)
+            else:
+                logger.warning(log_message)
 
         # Post-process alert GET responses to reduce payload size.
         # Modifies response._content (private httpx attr) because FastMCP's
@@ -818,22 +822,22 @@ def create_rootly_mcp_server(
                     if request_headers
                     else "unknown"
                 )
-                logger.info(
+                logger.debug(
                     f"make_authenticated_request: client_ip={client_ip}, headers_keys={list(request_headers.keys()) if request_headers else []}"
                 )
                 auth_header = request_headers.get("authorization", "") if request_headers else ""
                 if auth_header:
-                    logger.info("make_authenticated_request: Found auth header, adding to request")
+                    logger.debug("make_authenticated_request: Found auth header, adding to request")
                     # Add authorization header to the request
                     if "headers" not in kwargs:
                         kwargs["headers"] = {}
                     kwargs["headers"]["Authorization"] = auth_header
                 else:
-                    logger.error(
+                    logger.warning(
                         "make_authenticated_request: No authorization header found in MCP headers"
                     )
             except Exception as e:
-                logger.error(f"make_authenticated_request: Failed to get headers: {e}")
+                logger.warning(f"make_authenticated_request: Failed to get headers: {e}")
 
         # Use our custom client with proper error handling instead of bypassing it
         return await http_client.request(method, url, **kwargs)
@@ -4230,7 +4234,7 @@ def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict
                 schemas_to_remove.append(schema_name)
 
         for schema_name in schemas_to_remove:
-            logger.warning(f"Removing schema with broken references: {schema_name}")
+            logger.debug(f"Removing schema with broken references: {schema_name}")
             del schemas[schema_name]
 
     # Clean up any operation-level references to removed schemas
