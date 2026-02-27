@@ -17,12 +17,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
+import fastmcp.server.middleware as fastmcp_middleware
 import httpx
 import mcp.types as mt
 import requests
 from fastmcp import FastMCP
-from fastmcp.server.middleware import CallNext, MiddlewareContext
-from fastmcp.server.middleware import Middleware as FastMCPMiddleware
 from pydantic import Field
 
 from .och_client import OnCallHealthClient
@@ -155,13 +154,13 @@ def _log_tool_usage_event(
     logger.info(json.dumps({k: v for k, v in event.items() if v not in ("", [], None)}))
 
 
-class ToolUsageLoggingMiddleware(FastMCPMiddleware):
+class ToolUsageLoggingMiddleware(fastmcp_middleware.Middleware):
     """FastMCP middleware that logs per-tool usage with caller identity context."""
 
     async def on_call_tool(
         self,
-        context: MiddlewareContext[mt.CallToolRequestParams],
-        call_next: CallNext[mt.CallToolRequestParams, Any],
+        context: fastmcp_middleware.MiddlewareContext[mt.CallToolRequestParams],
+        call_next: fastmcp_middleware.CallNext[mt.CallToolRequestParams, Any],
     ) -> Any:
         tool_name = context.message.name
         arguments = context.message.arguments or {}
