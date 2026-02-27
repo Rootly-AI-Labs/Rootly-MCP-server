@@ -14,10 +14,15 @@ from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
+import rootly_mcp_server.server as server_module
 from rootly_mcp_server.server import (
     DEFAULT_ALLOWED_PATHS,
     AuthenticatedHTTPXClient,
+    _current_tool_identity,
+    _extract_client_ip,
+    _extract_request_id,
     _filter_openapi_spec,
+    _fingerprint_auth_header,
     _load_swagger_spec,
     create_rootly_mcp_server,
 )
@@ -172,6 +177,50 @@ class TestAuthenticatedHTTPXClient:
         token = client._get_api_token()
 
         assert token is None
+
+
+@pytest.mark.unit
+class TestToolUsageIdentityHelpers:
+    """Test helper utilities used for tool usage observability."""
+
+    def test_extract_client_ip_prefers_cloudflare_header(self):
+        headers = {
+            "x-forwarded-for": "10.0.0.1, 10.0.0.2",
+            "cf-connecting-ip": "203.0.113.10",
+        }
+        assert _extract_client_ip(headers) == "203.0.113.10"
+
+    def test_extract_client_ip_falls_back_to_x_forwarded_for(self):
+        headers = {"x-forwarded-for": "198.51.100.7, 10.0.0.2"}
+        assert _extract_client_ip(headers) == "198.51.100.7"
+
+    def test_extract_request_id_uses_preferred_headers(self):
+        headers = {"cf-ray": "abc123", "x-request-id": "req-42"}
+        assert _extract_request_id(headers) == "req-42"
+
+    def test_fingerprint_auth_header_hashes_token_without_exposing_secret(self):
+        fingerprint = _fingerprint_auth_header("Bearer rootly_secret_token")
+        assert fingerprint
+        assert len(fingerprint) == 16
+        assert "rootly_secret_token" not in fingerprint
+
+    def test_current_tool_identity_uses_session_fallback(self):
+        token_ctx = server_module._session_auth_token.set("Bearer rootly_session_token")
+        ip_ctx = server_module._session_client_ip.set("192.0.2.8")
+        req_ctx = server_module._session_request_id.set("req-session-1")
+        try:
+            with patch("fastmcp.server.dependencies.get_http_headers", return_value={}):
+                identity = _current_tool_identity()
+        finally:
+            server_module._session_auth_token.reset(token_ctx)
+            server_module._session_client_ip.reset(ip_ctx)
+            server_module._session_request_id.reset(req_ctx)
+
+        assert identity["token_fingerprint"] == _fingerprint_auth_header(
+            "Bearer rootly_session_token"
+        )
+        assert identity["client_ip"] == "192.0.2.8"
+        assert identity["request_id"] == "req-session-1"
 
 
 @pytest.mark.unit

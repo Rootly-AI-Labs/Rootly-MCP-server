@@ -7,17 +7,22 @@ the Rootly API's OpenAPI (Swagger) specification using FastMCP's OpenAPI integra
 
 import asyncio
 import contextvars
+import hashlib
 import json
 import logging
 import os
+import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any
 
 import httpx
+import mcp.types as mt
 import requests
 from fastmcp import FastMCP
+from fastmcp.server.middleware import CallNext, MiddlewareContext
+from fastmcp.server.middleware import Middleware as FastMCPMiddleware
 from pydantic import Field
 
 from .och_client import OnCallHealthClient
@@ -34,6 +39,157 @@ logger = logging.getLogger(__name__)
 _session_auth_token: contextvars.ContextVar[str] = contextvars.ContextVar(
     "_session_auth_token", default=""
 )
+_session_client_ip: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_session_client_ip", default=""
+)
+_session_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_session_request_id", default=""
+)
+
+
+def _normalize_headers(headers: dict[str, Any] | None) -> dict[str, str]:
+    """Normalize request headers to lowercase string keys/values."""
+    if not headers:
+        return {}
+    return {str(k).lower(): str(v) for k, v in headers.items()}
+
+
+def _extract_client_ip(headers: dict[str, str]) -> str:
+    """Extract best-effort client IP from common proxy headers."""
+    for key in ("cf-connecting-ip", "true-client-ip", "x-real-ip"):
+        value = headers.get(key, "").strip()
+        if value:
+            return value
+
+    xff = headers.get("x-forwarded-for", "").strip()
+    if xff:
+        first_hop = xff.split(",")[0].strip()
+        if first_hop:
+            return first_hop
+    return ""
+
+
+def _extract_request_id(headers: dict[str, str]) -> str:
+    """Extract request correlation identifier from common headers."""
+    for key in ("x-request-id", "x-correlation-id", "cf-ray"):
+        value = headers.get(key, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _fingerprint_auth_header(auth_header: str) -> str:
+    """Hash auth header token for non-reversible identity correlation."""
+    if not auth_header:
+        return ""
+    token = auth_header.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    if not token:
+        return ""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+
+
+def _tool_usage_logging_enabled() -> bool:
+    """Return whether per-tool usage logging is enabled."""
+    return os.getenv("ROOTLY_TOOL_USAGE_LOGGING", "true").lower() in ("1", "true", "yes")
+
+
+def _current_tool_identity() -> dict[str, str]:
+    """Collect caller identity context for tool usage logs."""
+    request_headers: dict[str, str] = {}
+    try:
+        from fastmcp.server.dependencies import get_http_headers
+
+        request_headers = _normalize_headers(get_http_headers())
+    except Exception:
+        request_headers = {}
+
+    auth_header = request_headers.get("authorization", "") or _session_auth_token.get("")
+    client_ip = _extract_client_ip(request_headers) or _session_client_ip.get("")
+    request_id = _extract_request_id(request_headers) or _session_request_id.get("")
+
+    try:
+        from fastmcp.server.context import _current_transport
+
+        transport = str(_current_transport.get() or "")
+    except Exception:
+        transport = ""
+
+    return {
+        "token_fingerprint": _fingerprint_auth_header(auth_header),
+        "client_ip": client_ip,
+        "request_id": request_id,
+        "transport": transport,
+    }
+
+
+def _log_tool_usage_event(
+    *,
+    tool_name: str,
+    status: str,
+    duration_ms: float,
+    arg_keys: list[str],
+    identity: dict[str, str],
+    error_type: str | None = None,
+) -> None:
+    """Emit structured per-tool usage events for analytics and observability."""
+    if not _tool_usage_logging_enabled():
+        return
+
+    event: dict[str, Any] = {
+        "event": "mcp_tool_call",
+        "tool_name": tool_name,
+        "status": status,
+        "duration_ms": round(duration_ms, 2),
+        "tool_arg_count": len(arg_keys),
+        "tool_arg_keys": arg_keys[:20],
+        "token_fingerprint": identity.get("token_fingerprint", ""),
+        "client_ip": identity.get("client_ip", ""),
+        "request_id": identity.get("request_id", ""),
+        "transport": identity.get("transport", ""),
+    }
+    if error_type:
+        event["error_type"] = error_type
+
+    logger.info(json.dumps({k: v for k, v in event.items() if v not in ("", [], None)}))
+
+
+class ToolUsageLoggingMiddleware(FastMCPMiddleware):
+    """FastMCP middleware that logs per-tool usage with caller identity context."""
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[mt.CallToolRequestParams],
+        call_next: CallNext[mt.CallToolRequestParams, Any],
+    ) -> Any:
+        tool_name = context.message.name
+        arguments = context.message.arguments or {}
+        arg_keys = sorted(arguments.keys()) if isinstance(arguments, dict) else []
+        identity = _current_tool_identity()
+        start = time.perf_counter()
+
+        try:
+            result = await call_next(context)
+        except Exception as exc:
+            _log_tool_usage_event(
+                tool_name=tool_name,
+                status="error",
+                duration_ms=(time.perf_counter() - start) * 1000,
+                arg_keys=arg_keys,
+                identity=identity,
+                error_type=type(exc).__name__,
+            )
+            raise
+
+        _log_tool_usage_event(
+            tool_name=tool_name,
+            status="success",
+            duration_ms=(time.perf_counter() - start) * 1000,
+            arg_keys=arg_keys,
+            identity=identity,
+        )
+        return result
 
 
 class AuthCaptureMiddleware:
@@ -54,10 +210,18 @@ class AuthCaptureMiddleware:
             from starlette.requests import Request
 
             request = Request(scope)
+            headers = _normalize_headers(dict(request.headers))
             auth = request.headers.get("authorization", "")
             if auth:
                 _session_auth_token.set(auth)
-                logger.debug("Set session auth token from SSE connection")
+            client_ip = _extract_client_ip(headers)
+            if client_ip:
+                _session_client_ip.set(client_ip)
+            request_id = _extract_request_id(headers)
+            if request_id:
+                _session_request_id.set(request_id)
+            if auth or client_ip or request_id:
+                logger.debug("Captured SSE session auth/identity context")
         await self.app(scope, receive, send)
 
 
@@ -761,6 +925,8 @@ def create_rootly_mcp_server(
         name=name,
         tags={"rootly", "incident-management"},
     )
+    # Track tool popularity and caller identity across all MCP tool calls.
+    mcp.add_middleware(ToolUsageLoggingMiddleware())
 
     @mcp.custom_route("/healthz", methods=["GET"])
     @mcp.custom_route("/health", methods=["GET"])
