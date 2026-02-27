@@ -3,7 +3,7 @@ name = "rootly-mcp-server"
 version = "2.2.9"
 description = "Secure Model Context Protocol server for Rootly APIs with AI SRE capabilities, comprehensive error handling, and input validation"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [{ name = "Rootly AI Labs", email = "support@rootly.com" }]
 keywords = [
     "rootly",
@@ -30,9 +30,8 @@ classifiers = [
     "Topic :: System :: Systems Administration",
     "Topic :: Security",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: Apache Software License",
 ]
@@ -74,8 +73,9 @@ dev = [
     "black>=23.0.0",
     "isort>=5.0.0",
     "mypy>=1.0.0",
+    "types-requests>=2.32.0",
     "bandit>=1.7.0",
-    "safety>=2.0.0",
+    "pip-audit>=2.7.0",
 ]
 
 [tool.uv]
@@ -90,8 +90,9 @@ dev-dependencies = [
     "respx>=0.20.0", # HTTP request mocking
     "sseclient-py>=1.8.0", # Server-Sent Events client for remote tests
     "bandit>=1.7.0", # Security linter
-    "safety>=2.0.0", # Dependency vulnerability checker
+    "pip-audit>=2.7.0", # Dependency vulnerability checker
     "mypy>=1.0.0", # Static type checker
+    "types-requests>=2.32.0", # Type stubs for requests
 ]
 
 [tool.pytest.ini_options]
@@ -115,10 +116,13 @@ markers = [
     "security: Security-focused tests",
 ]
 asyncio_mode = "auto"              # Auto-detect async tests
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
+
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -134,11 +138,11 @@ ignore = [
     "B904", # raise from None
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"] # Unused imports in __init__.py
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
@@ -157,7 +161,7 @@ skips = ["B101"] # Use of assert detected (OK in tests)
 
 [tool.black]
 line-length = 100
-target-version = ["py310", "py311", "py312"]
+target-version = ["py312", "py313"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(

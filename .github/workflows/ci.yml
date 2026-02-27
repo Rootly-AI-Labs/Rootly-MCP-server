@@ -6,13 +6,47 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  quality:
+    name: Quality (Python 3.12)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@7eb50e6e20e1e2009087999ba91242e80253875f # v7
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Pyright
+        run: uv run pyright
+
+      - name: Mypy
+        run: uv run mypy src/rootly_mcp_server
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.12", "3.13"]
 
     steps:
       - name: Checkout code
@@ -27,25 +61,30 @@ jobs:
         uses: astral-sh/setup-uv@7eb50e6e20e1e2009087999ba91242e80253875f # v7
 
       - name: Install dependencies
-        run: |
-          uv sync --all-extras
-          uv pip install --system pytest pytest-cov pytest-asyncio pytest-mock pytest-timeout respx sseclient-py
+        run: uv sync --dev
 
-      - name: Run tests with pytest
-        run: |
-          uv run pytest tests/ -v --cov=src/rootly_mcp_server --cov-report=term --cov-report=xml
+      - name: Run unit tests
+        run: uv run pytest tests/unit/ --cov=src/rootly_mcp_server --cov-report=xml
+
+      - name: Run local integration tests
+        if: matrix.python-version == '3.12'
+        env:
+          ROOTLY_API_TOKEN: ${{ secrets.ROOTLY_API_TOKEN }}
+        run: uv run pytest tests/integration/local/ -x
 
       - name: Upload coverage to Codecov
+        if: matrix.python-version == '3.12'
         uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
         with:
           file: ./coverage.xml
           flags: unittests
           name: codecov-umbrella
 
-  lint:
-    name: Lint
+  container-tests:
+    name: Container Tests
     runs-on: ubuntu-latest
-
+    needs: test
+    if: ${{ secrets.ROOTLY_API_TOKEN != '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -59,30 +98,38 @@ jobs:
         uses: astral-sh/setup-uv@7eb50e6e20e1e2009087999ba91242e80253875f # v7
 
       - name: Install dependencies
-        run: |
-          uv pip install --system ruff mypy black isort
+        run: uv sync --dev
 
-      - name: Run ruff
-        run: |
-          ruff check src/ tests/
+      - name: Build Docker image
+        run: docker build -t rootly-mcp-server .
 
-      - name: Run black check
+      - name: Start MCP server container
+        env:
+          ROOTLY_API_TOKEN: ${{ secrets.ROOTLY_API_TOKEN }}
         run: |
-          black --check src/ tests/
+          docker run -d \
+            --name rootly-mcp-server \
+            -p 8000:8000 \
+            -e ROOTLY_API_TOKEN="${ROOTLY_API_TOKEN}" \
+            rootly-mcp-server
 
-      - name: Run isort check
+      - name: Wait for container startup
         run: |
-          isort --check-only src/ tests/
+          timeout 30s bash -c 'until curl -fsS http://localhost:8000/health || curl -fsS http://localhost:8000/; do sleep 2; done'
 
-      - name: Run mypy
-        run: |
-          mypy src/rootly_mcp_server --ignore-missing-imports
-        continue-on-error: true
+      - name: Test containerized MCP server
+        env:
+          ROOTLY_API_TOKEN: ${{ secrets.ROOTLY_API_TOKEN }}
+          MCP_SERVER_URL: "http://localhost:8000"
+        run: uv run pytest tests/integration/remote/test_essential.py -v --timeout=60
+
+      - name: Stop container
+        if: always()
+        run: docker stop rootly-mcp-server && docker rm rootly-mcp-server
 
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -92,25 +139,23 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install uv
+        uses: astral-sh/setup-uv@7eb50e6e20e1e2009087999ba91242e80253875f # v7
+
       - name: Install security tools
-        run: |
-          pip install bandit safety
+        run: uv pip install --system bandit pip-audit
 
       - name: Run bandit
-        run: |
-          bandit -r src/ -f json -o bandit-report.json || true
-          bandit -r src/
+        run: bandit -r src/
 
-      - name: Run safety check
-        run: |
-          safety check --json || true
+      - name: Run pip-audit
+        run: pip-audit
         continue-on-error: true
 
   build:
     name: Build Package
     runs-on: ubuntu-latest
-    needs: [test, lint, security]
-
+    needs: [quality, test, security]
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -124,8 +169,7 @@ jobs:
         uses: astral-sh/setup-uv@7eb50e6e20e1e2009087999ba91242e80253875f # v7
 
       - name: Build package
-        run: |
-          uv build
+        run: uv build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v6

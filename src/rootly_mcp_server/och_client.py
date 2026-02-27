@@ -1,7 +1,7 @@
 """On-Call Health API client for workload health risk analysis."""
 
 import os
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -25,7 +25,7 @@ class OnCallHealthClient:
                 timeout=30.0,
             )
             response.raise_for_status()
-            return response.json()
+            return cast(dict[str, Any], response.json())
 
     async def get_latest_analysis(self) -> dict[str, Any]:
         """Fetch most recent analysis."""
@@ -37,11 +37,11 @@ class OnCallHealthClient:
                 timeout=30.0,
             )
             response.raise_for_status()
-            data = response.json()
+            data = cast(dict[str, Any], response.json())
             analyses = data.get("analyses", [])
             if not analyses:
                 raise ValueError("No analyses found")
-            return analyses[0]
+            return cast(dict[str, Any], analyses[0])
 
     def extract_at_risk_users(
         self, analysis: dict[str, Any], threshold: float = 50.0

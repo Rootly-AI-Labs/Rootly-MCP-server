@@ -10,10 +10,45 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import Literal
 
 from .exceptions import RootlyConfigurationError, RootlyMCPError
 from .security import validate_api_token
 from .server import create_rootly_mcp_server, get_hosted_auth_middleware
+
+TransportName = Literal["stdio", "sse", "streamable-http"]
+TRANSPORT_ALIASES: dict[str, TransportName] = {
+    "stdio": "stdio",
+    "sse": "sse",
+    "streamable-http": "streamable-http",
+    "streamable": "streamable-http",
+    "http": "streamable-http",
+}
+
+
+def normalize_transport(value: str) -> TransportName:
+    """Normalize transport names and validate supported values."""
+    normalized = value.strip().lower().replace("_", "-")
+    mapped = TRANSPORT_ALIASES.get(normalized)
+    if mapped is None:
+        supported = ", ".join(sorted({"stdio", "sse", "streamable-http"}))
+        raise argparse.ArgumentTypeError(
+            f"Unsupported transport '{value}'. Supported values: {supported}, http"
+        )
+    return mapped
+
+
+def normalize_transport_or_default(
+    value: str, default: TransportName = "stdio"
+) -> TransportName:
+    """Normalize transport value, falling back to default when invalid."""
+    try:
+        return normalize_transport(value)
+    except argparse.ArgumentTypeError:
+        logging.getLogger(__name__).warning(
+            f"Invalid ROOTLY_TRANSPORT value '{value}', defaulting to '{default}'"
+        )
+        return default
 
 
 def parse_args():
@@ -39,10 +74,9 @@ def parse_args():
     )
     parser.add_argument(
         "--transport",
-        type=str,
-        choices=["stdio", "sse"],
+        type=normalize_transport,
         default="stdio",
-        help="Transport protocol to use. Default: stdio",
+        help="Transport protocol to use: stdio, sse, streamable-http (or http). Default: stdio",
     )
     parser.add_argument(
         "--debug",
@@ -128,7 +162,7 @@ def get_server():
     server_name = os.getenv("ROOTLY_SERVER_NAME", "Rootly")
     hosted = os.getenv("ROOTLY_HOSTED", "false").lower() in ("true", "1", "yes")
     base_url = os.getenv("ROOTLY_BASE_URL")
-    transport = os.getenv("ROOTLY_TRANSPORT", "stdio")
+    transport = normalize_transport_or_default(os.getenv("ROOTLY_TRANSPORT", "stdio"))
 
     # Parse allowed paths from environment variable
     allowed_paths = None
@@ -176,18 +210,19 @@ def main():
             allowed_paths = [path.strip() for path in args.allowed_paths.split(",")]
 
         logger.info(f"Initializing server with name: {args.name}")
+        normalized_transport = normalize_transport(args.transport)
         server = create_rootly_mcp_server(
             swagger_path=args.swagger_path,
             name=args.name,
             allowed_paths=allowed_paths,
             hosted=hosted_mode,
             base_url=args.base_url,
-            transport=args.transport,
+            transport=normalized_transport,
         )
 
-        logger.info(f"Running server with transport: {args.transport}...")
+        logger.info(f"Running server with transport: {normalized_transport}...")
         server.run(
-            transport=args.transport,
+            transport=normalized_transport,
             middleware=get_hosted_auth_middleware(),
             # Override FastMCP's default of 0s to allow active SSE connections
             # to finish gracefully during deployments (avoids 502s).
