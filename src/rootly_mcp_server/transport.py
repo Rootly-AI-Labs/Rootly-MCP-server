@@ -177,7 +177,7 @@ class AuthenticatedHTTPXClient:
         if has_auth:
             logger.debug(f"Outgoing request to {request.url} - has authorization: True")
         else:
-            logger.error(f"Outgoing request to {request.url} - has authorization: False")
+            logger.warning(f"Outgoing request to {request.url} - has authorization: False")
         request.headers["content-type"] = "application/vnd.api+json"
         request.headers["accept"] = "application/vnd.api+json"
 
@@ -253,10 +253,14 @@ class AuthenticatedHTTPXClient:
 
         # Log error responses (4xx/5xx)
         if response.is_error:
-            logger.error(
+            log_message = (
                 f"HTTP {response.status_code} error for {method} {url}: "
                 f"{response.text[:500] if response.text else 'No response body'}"
             )
+            if response.status_code >= 500:
+                logger.error(log_message)
+            else:
+                logger.warning(log_message)
 
         # Post-process alert GET responses to reduce payload size.
         # Modifies response._content (private httpx attr) because FastMCP's

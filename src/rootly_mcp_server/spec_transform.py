@@ -422,7 +422,7 @@ def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict
                 schemas_to_remove.append(schema_name)
 
         for schema_name in schemas_to_remove:
-            logger.warning(f"Removing schema with broken references: {schema_name}")
+            logger.debug(f"Removing schema with broken references: {schema_name}")
             del schemas[schema_name]
 
     # Clean up any operation-level references to removed schemas

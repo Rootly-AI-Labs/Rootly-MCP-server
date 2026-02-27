@@ -148,7 +148,10 @@ class RootlyClient:
             # Sanitize error message to remove stack traces
             error_msg = sanitize_error_message(str(e))
 
-            logger.error("HTTP error", status_code=status_code, error=error_msg)
+            if status_code is not None and status_code >= 500:
+                logger.error("HTTP error", status_code=status_code, error=error_msg)
+            else:
+                logger.warning("HTTP error", status_code=status_code, error=error_msg)
 
             # Categorize HTTP errors
             if status_code == 401:
