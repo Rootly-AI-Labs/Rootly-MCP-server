@@ -25,11 +25,20 @@ blocks:
           - |
             if [ "$SEMAPHORE_GIT_BRANCH" = "staging" ]; then
               export AWS_PROFILE=staging
-            else
+              export ECR_PUSH_ENABLED=true
+            elif [ "$SEMAPHORE_GIT_BRANCH" = "main" ]; then
               export AWS_PROFILE=production
+              export ECR_PUSH_ENABLED=true
+            else
+              export ECR_PUSH_ENABLED=false
             fi
-          - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-          - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
+          - |
+            if [ "$ECR_PUSH_ENABLED" = "true" ]; then
+              export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+              aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
+            else
+              echo "Skipping AWS/ECR auth for non-deploy branch: $SEMAPHORE_GIT_BRANCH"
+            fi
       jobs:
         - name: Build
           commands:
