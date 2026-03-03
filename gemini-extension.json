@@ -1,0 +1,23 @@
+{
+  "name": "rootly",
+  "version": "0.1.0",
+  "description": "Manage incidents, alerts, services, and on-call schedules with Rootly through Gemini CLI",
+  "mcpServers": {
+    "rootly": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "rootly-mcp-server",
+        "rootly-mcp-server"
+      ]
+    }
+  },
+  "settings": [
+    {
+      "name": "Rootly API Token",
+      "description": "Your Rootly API token (generate at Organization Settings > API Keys)",
+      "envVar": "ROOTLY_API_TOKEN",
+      "sensitive": true
+    }
+  ]
+}
