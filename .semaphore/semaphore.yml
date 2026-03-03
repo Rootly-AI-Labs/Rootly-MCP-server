@@ -61,7 +61,6 @@ blocks:
 promotions:
   - name: Deploy Staging
     pipeline_file: deploy-staging.yml
-    deployment_target: staging
 
     auto_promote:
       when: branch = 'staging' AND result = 'passed'
