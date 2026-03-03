@@ -1,5 +1,5 @@
 # Use Python 3.12 slim image as base
-FROM python:3.14-slim
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
@@ -28,9 +28,11 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 ENV FASTMCP_HOST=0.0.0.0
 ENV FASTMCP_PORT=8000
+ENV ROOTLY_TRANSPORT=sse
+ENV ROOTLY_LOG_LEVEL=INFO
 
 # Switch to non-root user
 USER appuser
 
 # Run the application
-CMD ["rootly-mcp-server", "--transport", "sse", "--log-level", "INFO", "--hosted"]
+CMD ["sh", "-c", "rootly-mcp-server --transport \"$ROOTLY_TRANSPORT\" --log-level \"$ROOTLY_LOG_LEVEL\" --hosted"]

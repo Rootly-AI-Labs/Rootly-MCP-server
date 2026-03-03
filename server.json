@@ -3,12 +3,24 @@
   "name": "com.rootly/mcp-server",
   "title": "Rootly",
   "description": "Incident management, on-call scheduling, and intelligent analysis powered by Rootly.",
-  "version": "2.2.4",
+  "version": "2.2.9",
   "repository": {
     "url": "https://github.com/Rootly-AI-Labs/Rootly-MCP-server",
     "source": "github"
   },
   "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.rootly.com/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer token for Rootly API (format: Bearer <YOUR_ROOTLY_API_TOKEN>)",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
+    },
     {
       "type": "sse",
       "url": "https://mcp.rootly.com/sse",
@@ -26,7 +38,7 @@
     {
       "registryType": "pypi",
       "identifier": "rootly-mcp-server",
-      "version": "2.2.4",
+      "version": "2.2.9",
       "transport": {
         "type": "stdio"
       },

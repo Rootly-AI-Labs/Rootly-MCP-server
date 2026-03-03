@@ -31,7 +31,24 @@ For full functionality of tools like `get_oncall_handoff_summary`, `get_oncall_s
 
 ## Quick Start
 
-The fastest way to get started is to connect to our hosted MCP server — no installation required, just add the configuration to your editor:
+The fastest way to get started is to connect to our hosted MCP server — no installation required.
+
+### Hosted (Streamable HTTP, recommended)
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "url": "https://mcp.rootly.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+### Hosted (SSE, backward compatible)
 
 ```json
 {
@@ -49,7 +66,11 @@ The fastest way to get started is to connect to our hosted MCP server — no ins
 For **Claude Code**, run:
 
 ```bash
-claude mcp add rootly --transport sse https://mcp.rootly.com/sse \
+claude mcp add rootly --transport streamable-http https://mcp.rootly.com/mcp \
+  --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
+
+# SSE fallback
+claude mcp add rootly-sse --transport sse https://mcp.rootly.com/sse \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
 
@@ -77,6 +98,34 @@ If you prefer to run the MCP server locally, configure your editor with one of t
     }
   }
 }
+```
+
+## Self-Hosted Transport Options
+
+Rootly MCP supports both hosted HTTP transports:
+
+- **Streamable HTTP** endpoint path: `/mcp`
+- **SSE** endpoint path: `/sse`
+
+Each server process runs one transport at a time. To support both `/mcp` and
+`/sse` concurrently in production, run two instances behind your reverse proxy.
+
+Example Docker run (Streamable HTTP):
+
+```bash
+docker run -p 8000:8000 \
+  -e ROOTLY_TRANSPORT=streamable-http \
+  -e ROOTLY_API_TOKEN=<YOUR_ROOTLY_API_TOKEN> \
+  rootly-mcp-server
+```
+
+Example Docker run (SSE):
+
+```bash
+docker run -p 8000:8000 \
+  -e ROOTLY_TRANSPORT=sse \
+  -e ROOTLY_API_TOKEN=<YOUR_ROOTLY_API_TOKEN> \
+  rootly-mcp-server
 ```
 
 ### With uvx
@@ -235,5 +284,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for developer setup and guidelines.
 
 This project was developed by [Rootly AI Labs](https://labs.rootly.ai/), where we're building the future of system reliability and operational excellence. As an open-source incubator, we share ideas, experiment, and rapidly prototype solutions that benefit the entire community.
 ![Rootly AI logo](https://github.com/Rootly-AI-Labs/EventOrOutage/raw/main/rootly-ai.png)
-
-
