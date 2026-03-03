@@ -19,6 +19,12 @@ logger = logging.getLogger(__name__)
 _session_auth_token: contextvars.ContextVar[str] = contextvars.ContextVar(
     "_session_auth_token", default=""
 )
+_session_client_ip: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_session_client_ip", default=""
+)
+_session_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_session_request_id", default=""
+)
 
 
 def _normalize_path(path: str) -> str:
@@ -29,6 +35,37 @@ def _normalize_path(path: str) -> str:
     if len(normalized) > 1:
         normalized = normalized.rstrip("/")
     return normalized
+
+
+def _normalize_headers(headers: dict[str, Any] | None) -> dict[str, str]:
+    """Normalize request headers to lowercase string keys/values."""
+    if not headers:
+        return {}
+    return {str(k).lower(): str(v) for k, v in headers.items()}
+
+
+def _extract_client_ip(headers: dict[str, str]) -> str:
+    """Extract best-effort client IP from common proxy headers."""
+    for key in ("cf-connecting-ip", "true-client-ip", "x-real-ip"):
+        value = headers.get(key, "").strip()
+        if value:
+            return value
+
+    xff = headers.get("x-forwarded-for", "").strip()
+    if xff:
+        first_hop = xff.split(",")[0].strip()
+        if first_hop:
+            return first_hop
+    return ""
+
+
+def _extract_request_id(headers: dict[str, str]) -> str:
+    """Extract request correlation identifier from common headers."""
+    for key in ("x-request-id", "x-correlation-id", "cf-ray"):
+        value = headers.get(key, "").strip()
+        if value:
+            return value
+    return ""
 
 
 def _get_auth_capture_paths() -> set[str]:
@@ -57,10 +94,18 @@ class AuthCaptureMiddleware:
             from starlette.requests import Request
 
             request = Request(scope)
+            headers = _normalize_headers(dict(request.headers))
             auth = request.headers.get("authorization", "")
             if auth:
                 _session_auth_token.set(auth)
-                logger.debug(f"Set session auth token from MCP path: {path}")
+            client_ip = _extract_client_ip(headers)
+            if client_ip:
+                _session_client_ip.set(client_ip)
+            request_id = _extract_request_id(headers)
+            if request_id:
+                _session_request_id.set(request_id)
+            if auth or client_ip or request_id:
+                logger.debug(f"Captured hosted auth/identity context from path: {path}")
         await self.app(scope, receive, send)
 
 
