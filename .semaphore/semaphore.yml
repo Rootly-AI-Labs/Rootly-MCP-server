@@ -22,7 +22,12 @@ blocks:
         - name: 'AWS Credentials'
       prologue:
         commands:
-          - export AWS_PROFILE=production
+          - |
+            if [ "$SEMAPHORE_GIT_BRANCH" = "staging" ]; then
+              export AWS_PROFILE=staging
+            else
+              export AWS_PROFILE=production
+            fi
           - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com
       jobs:
@@ -31,12 +36,27 @@ blocks:
             - checkout
             - export BUILDKIT_PROGRESS=plain
             - |
-              docker build --push \
-                -t 657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:${SEMAPHORE_GIT_SHA} \
-                -t 657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:latest \
-                -t 657716690934.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:production .
+              if [ "$SEMAPHORE_GIT_BRANCH" = "staging" ]; then
+                docker build --push \
+                  -t ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:${SEMAPHORE_GIT_SHA} \
+                  -t ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:staging .
+              elif [ "$SEMAPHORE_GIT_BRANCH" = "main" ]; then
+                docker build --push \
+                  -t ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:${SEMAPHORE_GIT_SHA} \
+                  -t ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:latest \
+                  -t ${AWS_ACCOUNT_ID}.dkr.ecr.us-east-1.amazonaws.com/rootly/mcp:production .
+              else
+                docker build -t rootly-mcp-server:${SEMAPHORE_GIT_SHA} .
+              fi
 
 promotions:
+  - name: Deploy Staging
+    pipeline_file: deploy-staging.yml
+    deployment_target: staging
+
+    auto_promote:
+      when: branch = 'staging' AND result = 'passed'
+
   - name: Deploy
     pipeline_file: deploy.yml
     deployment_target: production
