@@ -10,19 +10,24 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from .exceptions import RootlyConfigurationError, RootlyMCPError
 from .security import validate_api_token
 from .server import create_rootly_mcp_server, get_hosted_auth_middleware
 
-TransportName = Literal["stdio", "sse", "streamable-http"]
+TransportName = Literal["stdio", "sse", "streamable-http", "both"]
 TRANSPORT_ALIASES: dict[str, TransportName] = {
     "stdio": "stdio",
     "sse": "sse",
     "streamable-http": "streamable-http",
     "streamable": "streamable-http",
     "http": "streamable-http",
+    "both": "both",
+    "dual": "both",
+    "dual-http": "both",
+    "streamable+sse": "both",
+    "sse+streamable": "both",
 }
 
 
@@ -31,9 +36,9 @@ def normalize_transport(value: str) -> TransportName:
     normalized = value.strip().lower().replace("_", "-")
     mapped = TRANSPORT_ALIASES.get(normalized)
     if mapped is None:
-        supported = ", ".join(sorted({"stdio", "sse", "streamable-http"}))
+        supported = ", ".join(sorted({"stdio", "sse", "streamable-http", "both"}))
         raise argparse.ArgumentTypeError(
-            f"Unsupported transport '{value}'. Supported values: {supported}, http"
+            f"Unsupported transport '{value}'. Supported values: {supported}, http, dual"
         )
     return mapped
 
@@ -76,7 +81,7 @@ def parse_args():
         "--transport",
         type=normalize_transport,
         default="stdio",
-        help="Transport protocol to use: stdio, sse, streamable-http (or http). Default: stdio",
+        help="Transport protocol to use: stdio, sse, streamable-http/http, or both/dual. Default: stdio",
     )
     parser.add_argument(
         "--debug",
@@ -185,6 +190,101 @@ def get_server():
 mcp = get_server()
 
 
+def run_dual_http_server(server, log_level: str, middleware: list | None = None) -> None:
+    """Run SSE and streamable-http together on one ASGI server."""
+    from contextlib import asynccontextmanager
+
+    import fastmcp
+    import uvicorn
+    from fastmcp.server.http import StreamableHTTPASGIApp, create_base_app
+    from mcp.server.sse import SseServerTransport
+    from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+    from starlette.middleware import Middleware
+    from starlette.requests import Request
+    from starlette.responses import Response
+    from starlette.routing import Mount, Route
+
+    logger = logging.getLogger(__name__)
+
+    sse_path = fastmcp.settings.sse_path
+    streamable_path = fastmcp.settings.streamable_http_path
+    message_path = fastmcp.settings.message_path
+    stateless_http = fastmcp.settings.stateless_http
+
+    sse_transport = SseServerTransport(message_path)
+
+    async def handle_sse(scope, receive, send) -> Response:
+        async with sse_transport.connect_sse(scope, receive, send) as streams:
+            await server._mcp_server.run(  # noqa: SLF001
+                streams[0],
+                streams[1],
+                server._mcp_server.create_initialization_options(),  # noqa: SLF001
+            )
+        return Response()
+
+    async def sse_endpoint(request: Request) -> Response:
+        return await handle_sse(request.scope, request.receive, request._send)  # noqa: SLF001
+
+    session_manager = StreamableHTTPSessionManager(
+        app=server._mcp_server,  # noqa: SLF001
+        event_store=None,
+        retry_interval=None,
+        json_response=fastmcp.settings.json_response,
+        stateless=stateless_http,
+    )
+    streamable_http_app = StreamableHTTPASGIApp(session_manager)
+    streamable_methods = ["POST", "DELETE"] if stateless_http else None
+
+    routes = [
+        Route(sse_path, endpoint=sse_endpoint, methods=["GET"]),
+        Mount(message_path, app=sse_transport.handle_post_message),
+        Route(streamable_path, endpoint=streamable_http_app, methods=streamable_methods),
+    ]
+    routes.extend(server._get_additional_http_routes())  # noqa: SLF001
+
+    @asynccontextmanager
+    async def lifespan(app):
+        async with server._lifespan_manager(), session_manager.run():  # noqa: SLF001
+            yield
+
+    app_middleware = cast(list[Middleware], middleware or [])
+    app = create_base_app(
+        routes=routes,
+        middleware=app_middleware,
+        debug=fastmcp.settings.debug,
+        lifespan=lifespan,
+    )
+    app.state.fastmcp_server = server
+    app.state.path = f"{sse_path},{streamable_path}"
+    app.state.transport_type = "both"
+
+    host = fastmcp.settings.host
+    port = fastmcp.settings.port
+    default_log_level_to_use = (log_level or fastmcp.settings.log_level).lower()
+
+    logger.info(
+        "Starting MCP server %r with dual transport on http://%s:%s%s and http://%s:%s%s",
+        server.name,
+        host,
+        port,
+        sse_path,
+        host,
+        port,
+        streamable_path,
+    )
+
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        timeout_graceful_shutdown=30,
+        lifespan="on",
+        ws="websockets-sansio",
+        log_level=default_log_level_to_use,
+    )
+    uvicorn.Server(config).run()
+
+
 def main():
     """Main entry point for the Rootly MCP Server."""
     args = parse_args()
@@ -222,13 +322,22 @@ def main():
         )
 
         logger.info(f"Running server with transport: {normalized_transport}...")
-        server.run(
-            transport=normalized_transport,
-            middleware=get_hosted_auth_middleware(),
-            # Override FastMCP's default of 0s to allow active SSE connections
-            # to finish gracefully during deployments (avoids 502s).
-            uvicorn_config={"timeout_graceful_shutdown": 30},
-        )
+        if normalized_transport == "both":
+            run_dual_http_server(
+                server=server,
+                log_level=args.log_level,
+                middleware=get_hosted_auth_middleware(),
+            )
+        elif normalized_transport == "stdio":
+            server.run(transport=normalized_transport)
+        else:
+            server.run(
+                transport=normalized_transport,
+                middleware=get_hosted_auth_middleware(),
+                # Override FastMCP's default of 0s to allow active SSE connections
+                # to finish gracefully during deployments (avoids 502s).
+                uvicorn_config={"timeout_graceful_shutdown": 30},
+            )
 
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
