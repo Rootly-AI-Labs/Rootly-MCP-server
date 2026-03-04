@@ -59,6 +59,7 @@ _extract_request_id = transport._extract_request_id
 strip_heavy_nested_data = payload_stripping.strip_heavy_nested_data
 _generate_recommendation = server_defaults._generate_recommendation
 DEFAULT_ALLOWED_PATHS = server_defaults.DEFAULT_ALLOWED_PATHS
+DEFAULT_DELETE_ALLOWED_PATHS = server_defaults.DEFAULT_DELETE_ALLOWED_PATHS
 RootlyMCPServer = legacy_server.RootlyMCPServer
 
 
@@ -222,6 +223,10 @@ def create_rootly_mcp_server(
     allowed_paths_v1 = [
         f"/v1{path}" if not path.startswith("/v1") else path for path in allowed_paths
     ]
+    delete_allowed_paths_v1 = [
+        f"/v1{path}" if not path.startswith("/v1") else path
+        for path in DEFAULT_DELETE_ALLOWED_PATHS
+    ]
 
     logger.info(f"Creating Rootly MCP Server with allowed paths: {allowed_paths_v1}")
 
@@ -230,7 +235,11 @@ def create_rootly_mcp_server(
     logger.info(f"Loaded Swagger spec with {len(swagger_spec.get('paths', {}))} total paths")
 
     # Filter the OpenAPI spec to only include allowed paths
-    filtered_spec = _filter_openapi_spec(swagger_spec, allowed_paths_v1)
+    filtered_spec = _filter_openapi_spec(
+        swagger_spec,
+        allowed_paths_v1,
+        delete_allowed_paths=delete_allowed_paths_v1,
+    )
     logger.info(f"Filtered spec to {len(filtered_spec.get('paths', {}))} allowed paths")
 
     # Sanitize all parameter names in the filtered spec to be MCP-compliant

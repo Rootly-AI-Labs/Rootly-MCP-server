@@ -17,6 +17,7 @@ import pytest
 import rootly_mcp_server.server as server_module
 from rootly_mcp_server.server import (
     DEFAULT_ALLOWED_PATHS,
+    DEFAULT_DELETE_ALLOWED_PATHS,
     AuthenticatedHTTPXClient,
     _current_tool_identity,
     _extract_client_ip,
@@ -556,8 +557,8 @@ class TestOpenAPISpecFiltering:
         assert "/v1/schedules/{id}" in filtered_spec["paths"]
         assert "/v1/schedules/{id}/shifts" not in filtered_spec["paths"]
 
-    def test_filter_spec_includes_escalation_crud_and_schedule_rotations(self):
-        """Test filtered spec includes escalation CRUD families and schedule rotations paths."""
+    def test_filter_spec_includes_full_screenshot_coverage_with_delete_allowlist(self):
+        """Test screenshot families include full coverage, including allowed delete operations."""
         original_spec = {
             "openapi": "3.0.0",
             "info": {"title": "Test API", "version": "1.0.0"},
@@ -606,7 +607,16 @@ class TestOpenAPISpecFiltering:
             "/v1/escalation_paths/{escalation_policy_path_id}/escalation_levels",
             "/v1/escalation_levels/{escalation_level_id}",
         ]
-        filtered_spec = _filter_openapi_spec(original_spec, allowed_paths)
+        delete_allowed_paths = [
+            "/v1/escalation_policies/{escalation_policy_id}",
+            "/v1/escalation_paths/{escalation_policy_path_id}",
+            "/v1/escalation_levels/{escalation_level_id}",
+        ]
+        filtered_spec = _filter_openapi_spec(
+            original_spec,
+            allowed_paths,
+            delete_allowed_paths=delete_allowed_paths,
+        )
         filtered_paths = filtered_spec["paths"]
 
         assert set(filtered_paths["/v1/schedules/{schedule_id}/schedule_rotations"]) >= {
@@ -626,6 +636,37 @@ class TestOpenAPISpecFiltering:
         }
         assert set(filtered_paths["/v1/escalation_levels/{id}"]) >= {"get", "put", "delete"}
 
+    def test_filter_spec_strips_delete_operations(self):
+        """Test that delete methods are removed from MCP-exposed operations."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/v1/schedules/{id}": {
+                    "get": {"operationId": "getSchedule"},
+                    "delete": {"operationId": "deleteSchedule"},
+                },
+                "/v1/delete_only_resource/{id}": {
+                    "delete": {"operationId": "deleteOnlyResource"},
+                },
+            },
+            "components": {"schemas": {}},
+        }
+
+        allowed_paths = [
+            "/v1/schedules/{schedule_id}",
+            "/v1/delete_only_resource/{resource_id}",
+        ]
+        filtered_spec = _filter_openapi_spec(original_spec, allowed_paths)
+        filtered_paths = filtered_spec["paths"]
+
+        assert "/v1/schedules/{id}" in filtered_paths
+        assert "get" in filtered_paths["/v1/schedules/{id}"]
+        assert "delete" not in filtered_paths["/v1/schedules/{id}"]
+
+        # Path with only delete should be removed from exposed paths entirely.
+        assert "/v1/delete_only_resource/{id}" not in filtered_paths
+
 
 @pytest.mark.unit
 class TestDefaultConfiguration:
@@ -644,6 +685,9 @@ class TestDefaultConfiguration:
         assert "/schedules/{schedule_id}/schedule_rotations" in DEFAULT_ALLOWED_PATHS
         assert "/escalation_policies" in DEFAULT_ALLOWED_PATHS
         assert "/escalation_paths/{escalation_policy_path_id}" in DEFAULT_ALLOWED_PATHS
+        assert "/escalation_policies/{escalation_policy_id}" in DEFAULT_DELETE_ALLOWED_PATHS
+        assert "/escalation_paths/{escalation_policy_path_id}" in DEFAULT_DELETE_ALLOWED_PATHS
+        assert "/escalation_levels/{escalation_level_id}" in DEFAULT_DELETE_ALLOWED_PATHS
 
     def test_default_swagger_url(self):
         """Test that default swagger URL is properly defined."""

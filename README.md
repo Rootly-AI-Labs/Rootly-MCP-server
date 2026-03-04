@@ -200,6 +200,120 @@ docker run -p 8000:8000 \
 - **Intelligent Pattern Recognition**: Automatically identifies services, error types, and resolution patterns
 - **On-Call Health Integration**: Detects workload health risk in scheduled responders
 
+## Supported Tools
+
+The default server configuration currently exposes **99 tools** (including custom agentic tools and OpenAPI-generated tools).
+
+### Custom Agentic Tools
+
+- `check_oncall_health_risk`
+- `check_responder_availability`
+- `create_override_recommendation`
+- `find_related_incidents`
+- `get_alert_by_short_id`
+- `get_oncall_handoff_summary`
+- `get_oncall_schedule_summary`
+- `get_oncall_shift_metrics`
+- `get_server_version`
+- `get_shift_incidents`
+- `list_endpoints`
+- `list_shifts`
+- `search_incidents`
+- `suggest_solutions`
+
+### OpenAPI-Generated Tools
+
+```text
+attachAlert
+createAlert
+createEnvironment
+createEscalationLevel
+createEscalationLevelPaths
+createEscalationPath
+createEscalationPolicy
+createFunctionality
+createIncidentActionItem
+createIncidentType
+createOnCallRole
+createOnCallShadow
+createOverrideShift
+createSchedule
+createScheduleRotation
+createScheduleRotationActiveDay
+createScheduleRotationUser
+createService
+createSeverity
+createTeam
+createWorkflow
+deleteEscalationLevel
+deleteEscalationPath
+deleteEscalationPolicy
+deleteSchedule
+deleteScheduleRotation
+getAlert
+getCurrentUser
+getEnvironment
+getEscalationLevel
+getEscalationPath
+getEscalationPolicy
+getFunctionality
+getIncidentType
+getOnCallRole
+getOnCallShadow
+getOverrideShift
+getSchedule
+getScheduleRotation
+getScheduleShifts
+getService
+getSeverity
+getTeam
+getUser
+getWorkflow
+listAlerts
+listEnvironments
+listEscalationLevels
+listEscalationLevelsPaths
+listEscalationPaths
+listEscalationPolicies
+listFunctionalities
+listIncidentActionItems
+listIncidentAlerts
+listIncident_Types
+listOnCallRoles
+listOnCallShadows
+listOverrideShifts
+listScheduleRotationActiveDays
+listScheduleRotationUsers
+listScheduleRotations
+listSchedules
+listServices
+listSeverities
+listShifts
+listTeams
+listUsers
+listWorkflows
+updateAlert
+updateEnvironment
+updateEscalationLevel
+updateEscalationPath
+updateEscalationPolicy
+updateFunctionality
+updateIncidentType
+updateOnCallRole
+updateOnCallShadow
+updateOverrideShift
+updateSchedule
+updateScheduleRotation
+updateService
+updateSeverity
+updateTeam
+updateUser
+updateWorkflow
+```
+
+Delete operations are intentionally scoped to screenshot coverage paths:
+`deleteSchedule`, `deleteScheduleRotation`, `deleteEscalationPolicy`, `deleteEscalationPath`, `deleteEscalationLevel`.
+
 ## On-Call Health Integration
 
 Rootly MCP integrates with [On-Call Health](https://oncallhealth.ai) to detect workload health risk in scheduled responders.
