@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
@@ -15,6 +16,12 @@ logger = logging.getLogger(__name__)
 
 # Default Swagger URL
 SWAGGER_URL = "https://rootly-heroku.s3.amazonaws.com/swagger/v1/swagger.json"
+_PATH_PARAM_PATTERN = re.compile(r"\{[^/{}]+\}")
+
+
+def _normalize_path_template(path: str) -> str:
+    """Normalize parameter names in path templates to support id-token variants."""
+    return _PATH_PARAM_PATTERN.sub("{}", path)
 
 def _load_swagger_spec(swagger_path: str | None = None) -> dict[str, Any]:
     """
@@ -119,9 +126,18 @@ def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict
 
     # Filter paths
     original_paths = filtered_spec.get("paths", {})
-    filtered_paths = {
-        path: path_item for path, path_item in original_paths.items() if path in allowed_paths
-    }
+    allowed_path_set = set(allowed_paths)
+    allowed_normalized_paths = {_normalize_path_template(path) for path in allowed_paths}
+
+    filtered_paths = {}
+    for path, path_item in original_paths.items():
+        if path in allowed_path_set:
+            filtered_paths[path] = path_item
+            continue
+
+        # Fallback for cases where OpenAPI uses {id} while allowlist uses resource-specific ids.
+        if _normalize_path_template(path) in allowed_normalized_paths:
+            filtered_paths[path] = path_item
 
     filtered_spec["paths"] = filtered_paths
 
