@@ -23,6 +23,7 @@ def _normalize_path_template(path: str) -> str:
     """Normalize parameter names in path templates to support id-token variants."""
     return _PATH_PARAM_PATTERN.sub("{}", path)
 
+
 def _load_swagger_spec(swagger_path: str | None = None) -> dict[str, Any]:
     """
     Load the Swagger specification from a file or URL.

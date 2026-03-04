@@ -100,6 +100,33 @@ class TestServerCreation:
 
             assert server is not None
 
+    def test_create_server_with_custom_delete_allowed_paths(self, mock_httpx_client):
+        """Test server creation passes custom delete allowlist through to spec filtering."""
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            with patch("rootly_mcp_server.server._filter_openapi_spec") as mock_filter_spec:
+                mock_spec = {
+                    "openapi": "3.0.0",
+                    "info": {"title": "Test API", "version": "1.0.0"},
+                    "paths": {},
+                    "components": {"schemas": {}},
+                }
+                mock_load_spec.return_value = mock_spec
+                mock_filter_spec.return_value = mock_spec
+
+                custom_allowed_paths = ["/schedules/{schedule_id}"]
+                custom_delete_allowed_paths = ["/schedules/{schedule_id}"]
+                server = create_rootly_mcp_server(
+                    allowed_paths=custom_allowed_paths,
+                    delete_allowed_paths=custom_delete_allowed_paths,
+                )
+
+                assert server is not None
+                assert mock_filter_spec.call_count == 1
+                assert mock_filter_spec.call_args.args[1] == ["/v1/schedules/{schedule_id}"]
+                assert mock_filter_spec.call_args.kwargs["delete_allowed_paths"] == [
+                    "/v1/schedules/{schedule_id}"
+                ]
+
     def test_create_server_with_swagger_path(self, mock_httpx_client):
         """Test server creation with explicit swagger file path."""
         with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
