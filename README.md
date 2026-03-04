@@ -74,6 +74,28 @@ claude mcp add rootly-sse --transport sse https://mcp.rootly.com/sse \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
 
+For **Gemini CLI**, install the extension:
+
+```bash
+gemini extensions install https://github.com/Rootly-AI-Labs/Rootly-MCP-server
+```
+
+Or configure manually in `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "uvx",
+      "args": ["--from", "rootly-mcp-server", "rootly-mcp-server"],
+      "env": {
+        "ROOTLY_API_TOKEN": "<YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+
 ## Alternative Installation (Local)
 
 If you prefer to run the MCP server locally, configure your editor with one of the options below. The package will be automatically downloaded and installed when you first open your editor.

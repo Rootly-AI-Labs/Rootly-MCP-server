@@ -51,6 +51,8 @@ AuthCaptureMiddleware = transport.AuthCaptureMiddleware
 _session_auth_token = transport._session_auth_token
 _session_client_ip = transport._session_client_ip
 _session_request_id = transport._session_request_id
+_extract_client_ip = transport._extract_client_ip
+_extract_request_id = transport._extract_request_id
 
 # Re-export payload/default helpers for backward compatibility with existing tests/imports.
 strip_heavy_nested_data = payload_stripping.strip_heavy_nested_data
