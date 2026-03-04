@@ -318,9 +318,15 @@ def create_rootly_mcp_server(
                         kwargs["headers"] = {}
                     kwargs["headers"]["Authorization"] = auth_header
                 else:
-                    logger.warning(
-                        "make_authenticated_request: No authorization header found in MCP headers"
-                    )
+                    has_session_auth = bool(_session_auth_token.get(""))
+                    if has_session_auth:
+                        logger.debug(
+                            "make_authenticated_request: No direct MCP auth header; using captured session context"
+                        )
+                    else:
+                        logger.warning(
+                            "make_authenticated_request: No authorization header found in MCP headers or session context"
+                        )
             except Exception as e:
                 logger.warning(f"make_authenticated_request: Failed to get headers: {e}")
 

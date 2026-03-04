@@ -17,6 +17,12 @@ class RootlyMCPServer(FastMCP):
     This class is deprecated. Use create_rootly_mcp_server() instead.
     """
 
+    # Legacy private attributes are annotated for static type checkers.
+    _server: FastMCP
+    _tools: dict[str, Any]
+    _resources: dict[str, Any]
+    _prompts: dict[str, Any]
+
     def __init__(
         self,
         swagger_path: str | None = None,
@@ -41,10 +47,8 @@ class RootlyMCPServer(FastMCP):
             swagger_path=swagger_path, name=name, allowed_paths=allowed_paths, hosted=hosted
         )
 
-        # Copy the server's state to this instance.
+        # Initialize parent then copy the full configured server state.
+        # This keeps deprecated callers functional while preserving type compatibility.
         super().__init__(name, *args, **kwargs)
+        self.__dict__.update(server.__dict__)
         self._server = server
-        # Preserve wrapped server registries for callers that still inspect legacy attrs.
-        self._tools: dict[str, Any] = getattr(server, "_tools", {})
-        self._resources = getattr(server, "_resources", {})
-        self._prompts = getattr(server, "_prompts", {})
