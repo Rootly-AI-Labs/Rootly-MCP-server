@@ -17,6 +17,45 @@ JsonDict = dict[str, Any]
 MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
 
 
+def _normalize_incident_severity(severity: Any) -> str:
+    """Normalize incident severity to a stable string for display/grouping."""
+    if severity is None:
+        return "unknown"
+
+    if isinstance(severity, str):
+        normalized = severity.strip()
+        return normalized or "unknown"
+
+    if isinstance(severity, list):
+        for item in severity:
+            normalized = _normalize_incident_severity(item)
+            if normalized != "unknown":
+                return normalized
+        return "unknown"
+
+    if isinstance(severity, dict):
+        for key in ("name", "slug", "label", "value", "severity", "title", "id"):
+            value = severity.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        # Common nested payloads from related resources.
+        for nested_key in ("attributes", "data"):
+            nested_value = severity.get(nested_key)
+            normalized = _normalize_incident_severity(nested_value)
+            if normalized != "unknown":
+                return normalized
+
+        # Last-resort: pick first non-empty string in dict values.
+        for value in severity.values():
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+
+        return "unknown"
+
+    return str(severity)
+
+
 class MCPErrorLike(Protocol):
     """Protocol for MCP error helper methods used by tool modules."""
 
@@ -975,7 +1014,7 @@ def register_oncall_tools(
 
                 # What happened
                 title = attrs.get("title", "Untitled Incident")
-                severity = attrs.get("severity", "unknown")
+                severity = _normalize_incident_severity(attrs.get("severity"))
                 narrative_parts.append(f"[{severity.upper()}] {title}")
 
                 # When and duration
@@ -1010,7 +1049,7 @@ def register_oncall_tools(
                     {
                         "incident_id": incident_id,
                         "title": attrs.get("title", "Untitled Incident"),
-                        "severity": attrs.get("severity"),
+                        "severity": severity,
                         "status": attrs.get("status"),
                         "started_at": started_at,
                         "resolved_at": resolved_at,
