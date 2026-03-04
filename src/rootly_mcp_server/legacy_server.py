@@ -44,6 +44,7 @@ class RootlyMCPServer(FastMCP):
         # Copy the server's state to this instance.
         super().__init__(name, *args, **kwargs)
         self._server = server
-        self._tools: dict[str, Any] = {}
+        # Preserve wrapped server registries for callers that still inspect legacy attrs.
+        self._tools: dict[str, Any] = getattr(server, "_tools", {})
         self._resources = getattr(server, "_resources", {})
         self._prompts = getattr(server, "_prompts", {})

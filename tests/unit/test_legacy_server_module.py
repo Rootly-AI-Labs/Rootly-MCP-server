@@ -13,6 +13,7 @@ class TestLegacyServerModule:
 
     def test_legacy_constructor_wraps_create_server(self):
         mocked_server = Mock()
+        mocked_server._tools = {"search_incidents": {}}
         mocked_server._resources = {"incident://1": {}}
         mocked_server._prompts = {"prompt1": {}}
 
@@ -20,5 +21,6 @@ class TestLegacyServerModule:
             legacy = legacy_server.RootlyMCPServer(name="Rootly", hosted=True)
 
         assert legacy._server is mocked_server
+        assert legacy._tools == {"search_incidents": {}}
         assert legacy._resources == {"incident://1": {}}
         assert legacy._prompts == {"prompt1": {}}

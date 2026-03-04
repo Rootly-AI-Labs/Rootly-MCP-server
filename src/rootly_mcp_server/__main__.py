@@ -210,7 +210,8 @@ def main():
             allowed_paths = [path.strip() for path in args.allowed_paths.split(",")]
 
         logger.info(f"Initializing server with name: {args.name}")
-        normalized_transport = normalize_transport(args.transport)
+        # argparse already normalizes/validates --transport via type=normalize_transport
+        normalized_transport = args.transport
         server = create_rootly_mcp_server(
             swagger_path=args.swagger_path,
             name=args.name,
