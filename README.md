@@ -63,6 +63,27 @@ The fastest way to get started is to connect to our hosted MCP server — no ins
 }
 ```
 
+For **Claude Desktop**, if direct `url` config causes launch issues on your build, use this fallback:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.rootly.com/sse",
+        "--transport",
+        "sse-only",
+        "--header",
+        "Authorization: Bearer <YOUR_ROOTLY_API_TOKEN>"
+      ]
+    }
+  }
+}
+```
+
 For **Claude Code**, run:
 
 ```bash
