@@ -59,6 +59,7 @@ _extract_request_id = transport._extract_request_id
 strip_heavy_nested_data = payload_stripping.strip_heavy_nested_data
 _generate_recommendation = server_defaults._generate_recommendation
 DEFAULT_ALLOWED_PATHS = server_defaults.DEFAULT_ALLOWED_PATHS
+DEFAULT_DELETE_ALLOWED_PATHS = server_defaults.DEFAULT_DELETE_ALLOWED_PATHS
 RootlyMCPServer = legacy_server.RootlyMCPServer
 
 
@@ -199,6 +200,7 @@ def create_rootly_mcp_server(
     hosted: bool = False,
     base_url: str | None = None,
     transport: str = "stdio",
+    delete_allowed_paths: list[str] | None = None,
 ) -> FastMCP:
     """
     Create a Rootly MCP Server using FastMCP's OpenAPI integration.
@@ -207,6 +209,8 @@ def create_rootly_mcp_server(
         swagger_path: Path to the Swagger JSON file. If None, will fetch from URL.
         name: Name of the MCP server.
         allowed_paths: List of API paths to include. If None, includes default paths.
+        delete_allowed_paths: Path templates where DELETE operations are exposed.
+            If None, uses DEFAULT_DELETE_ALLOWED_PATHS.
         hosted: Whether the server is hosted (affects authentication).
         base_url: Base URL for Rootly API. If None, uses ROOTLY_BASE_URL env var or default.
         transport: Transport protocol (stdio, sse, or streamable-http).
@@ -217,10 +221,16 @@ def create_rootly_mcp_server(
     # Set default allowed paths if none provided
     if allowed_paths is None:
         allowed_paths = DEFAULT_ALLOWED_PATHS
+    if delete_allowed_paths is None:
+        delete_allowed_paths = DEFAULT_DELETE_ALLOWED_PATHS
 
     # Add /v1 prefix to paths if not present
     allowed_paths_v1 = [
         f"/v1{path}" if not path.startswith("/v1") else path for path in allowed_paths
+    ]
+    delete_allowed_paths_v1 = [
+        f"/v1{path}" if not path.startswith("/v1") else path
+        for path in delete_allowed_paths
     ]
 
     logger.info(f"Creating Rootly MCP Server with allowed paths: {allowed_paths_v1}")
@@ -230,7 +240,11 @@ def create_rootly_mcp_server(
     logger.info(f"Loaded Swagger spec with {len(swagger_spec.get('paths', {}))} total paths")
 
     # Filter the OpenAPI spec to only include allowed paths
-    filtered_spec = _filter_openapi_spec(swagger_spec, allowed_paths_v1)
+    filtered_spec = _filter_openapi_spec(
+        swagger_spec,
+        allowed_paths_v1,
+        delete_allowed_paths=delete_allowed_paths_v1,
+    )
     logger.info(f"Filtered spec to {len(filtered_spec.get('paths', {}))} allowed paths")
 
     # Sanitize all parameter names in the filtered spec to be MCP-compliant

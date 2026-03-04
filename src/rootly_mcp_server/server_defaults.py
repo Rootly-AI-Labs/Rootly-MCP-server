@@ -81,10 +81,19 @@ DEFAULT_ALLOWED_PATHS = [
     "/schedules",
     "/schedules/{schedule_id}",
     "/schedules/{schedule_id}/shifts",
+    "/schedules/{schedule_id}/schedule_rotations",
     "/shifts",
     "/schedule_rotations/{schedule_rotation_id}",
     "/schedule_rotations/{schedule_rotation_id}/schedule_rotation_users",
     "/schedule_rotations/{schedule_rotation_id}/schedule_rotation_active_days",
+    # Escalation policies and paths
+    "/escalation_policies",
+    "/escalation_policies/{escalation_policy_id}",
+    "/escalation_policies/{escalation_policy_id}/escalation_paths",
+    "/escalation_policies/{escalation_policy_id}/escalation_levels",
+    "/escalation_paths/{escalation_policy_path_id}",
+    "/escalation_paths/{escalation_policy_path_id}/escalation_levels",
+    "/escalation_levels/{escalation_level_id}",
     # On-call overrides
     "/schedules/{schedule_id}/override_shifts",
     "/override_shifts/{override_shift_id}",
@@ -93,4 +102,14 @@ DEFAULT_ALLOWED_PATHS = [
     "/on_call_shadows/{on_call_shadow_id}",
     "/on_call_roles",
     "/on_call_roles/{on_call_role_id}",
+]
+
+# DELETE operations are only exposed for these high-priority screenshot families.
+# All other DELETE operations remain disabled in MCP by default.
+DEFAULT_DELETE_ALLOWED_PATHS = [
+    "/schedules/{schedule_id}",
+    "/schedule_rotations/{schedule_rotation_id}",
+    "/escalation_policies/{escalation_policy_id}",
+    "/escalation_paths/{escalation_policy_path_id}",
+    "/escalation_levels/{escalation_level_id}",
 ]

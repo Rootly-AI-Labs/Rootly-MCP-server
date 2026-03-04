@@ -17,6 +17,7 @@ import pytest
 import rootly_mcp_server.server as server_module
 from rootly_mcp_server.server import (
     DEFAULT_ALLOWED_PATHS,
+    DEFAULT_DELETE_ALLOWED_PATHS,
     AuthenticatedHTTPXClient,
     _current_tool_identity,
     _extract_client_ip,
@@ -98,6 +99,33 @@ class TestServerCreation:
             server = create_rootly_mcp_server(allowed_paths=custom_paths)
 
             assert server is not None
+
+    def test_create_server_with_custom_delete_allowed_paths(self, mock_httpx_client):
+        """Test server creation passes custom delete allowlist through to spec filtering."""
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            with patch("rootly_mcp_server.server._filter_openapi_spec") as mock_filter_spec:
+                mock_spec = {
+                    "openapi": "3.0.0",
+                    "info": {"title": "Test API", "version": "1.0.0"},
+                    "paths": {},
+                    "components": {"schemas": {}},
+                }
+                mock_load_spec.return_value = mock_spec
+                mock_filter_spec.return_value = mock_spec
+
+                custom_allowed_paths = ["/schedules/{schedule_id}"]
+                custom_delete_allowed_paths = ["/schedules/{schedule_id}"]
+                server = create_rootly_mcp_server(
+                    allowed_paths=custom_allowed_paths,
+                    delete_allowed_paths=custom_delete_allowed_paths,
+                )
+
+                assert server is not None
+                assert mock_filter_spec.call_count == 1
+                assert mock_filter_spec.call_args.args[1] == ["/v1/schedules/{schedule_id}"]
+                assert mock_filter_spec.call_args.kwargs["delete_allowed_paths"] == [
+                    "/v1/schedules/{schedule_id}"
+                ]
 
     def test_create_server_with_swagger_path(self, mock_httpx_client):
         """Test server creation with explicit swagger file path."""
@@ -499,6 +527,173 @@ class TestOpenAPISpecFiltering:
             param_names = [p["name"] for p in services_get["parameters"]]
             assert "page[size]" not in param_names
 
+    def test_filter_spec_keeps_exact_path_matches(self):
+        """Test exact allowlist path matching still works."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/v1/schedules/{schedule_id}": {"get": {"operationId": "getSchedule"}},
+                "/v1/ignored": {"get": {"operationId": "ignored"}},
+            },
+            "components": {"schemas": {}},
+        }
+
+        filtered_spec = _filter_openapi_spec(original_spec, ["/v1/schedules/{schedule_id}"])
+
+        assert "/v1/schedules/{schedule_id}" in filtered_spec["paths"]
+        assert "/v1/ignored" not in filtered_spec["paths"]
+
+    def test_filter_spec_matches_parameter_name_variants(self):
+        """Test allowlist entries match OpenAPI paths with different path parameter names."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/v1/schedules/{id}": {"get": {"operationId": "getSchedule"}},
+                "/v1/escalation_policies/{id}": {"get": {"operationId": "getEscalationPolicy"}},
+                "/v1/teams/{id}": {"get": {"operationId": "getTeam"}},
+            },
+            "components": {"schemas": {}},
+        }
+
+        allowed_paths = [
+            "/v1/schedules/{schedule_id}",
+            "/v1/escalation_policies/{escalation_policy_id}",
+        ]
+        filtered_spec = _filter_openapi_spec(original_spec, allowed_paths)
+
+        assert "/v1/schedules/{id}" in filtered_spec["paths"]
+        assert "/v1/escalation_policies/{id}" in filtered_spec["paths"]
+        assert "/v1/teams/{id}" not in filtered_spec["paths"]
+
+    def test_filter_spec_excludes_non_allowlisted_normalized_paths(self):
+        """Test normalized matching does not include non-allowlisted sibling paths."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/v1/schedules/{id}": {"get": {"operationId": "getSchedule"}},
+                "/v1/schedules/{id}/shifts": {"get": {"operationId": "getScheduleShifts"}},
+            },
+            "components": {"schemas": {}},
+        }
+
+        filtered_spec = _filter_openapi_spec(original_spec, ["/v1/schedules/{schedule_id}"])
+
+        assert "/v1/schedules/{id}" in filtered_spec["paths"]
+        assert "/v1/schedules/{id}/shifts" not in filtered_spec["paths"]
+
+    def test_filter_spec_includes_full_screenshot_coverage_with_delete_allowlist(self):
+        """Test screenshot families include full coverage, including allowed delete operations."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/v1/schedules/{schedule_id}/schedule_rotations": {
+                    "get": {"operationId": "listScheduleRotations"},
+                    "post": {"operationId": "createScheduleRotation"},
+                },
+                "/v1/escalation_policies": {
+                    "get": {"operationId": "listEscalationPolicies"},
+                    "post": {"operationId": "createEscalationPolicy"},
+                },
+                "/v1/escalation_policies/{id}": {
+                    "get": {"operationId": "getEscalationPolicy"},
+                    "put": {"operationId": "updateEscalationPolicy"},
+                    "delete": {"operationId": "deleteEscalationPolicy"},
+                },
+                "/v1/escalation_policies/{escalation_policy_id}/escalation_paths": {
+                    "get": {"operationId": "listEscalationPaths"},
+                    "post": {"operationId": "createEscalationPath"},
+                },
+                "/v1/escalation_paths/{id}": {
+                    "get": {"operationId": "getEscalationPath"},
+                    "put": {"operationId": "updateEscalationPath"},
+                    "delete": {"operationId": "deleteEscalationPath"},
+                },
+                "/v1/escalation_paths/{escalation_policy_path_id}/escalation_levels": {
+                    "get": {"operationId": "listEscalationLevelsPaths"},
+                    "post": {"operationId": "createEscalationLevelPaths"},
+                },
+                "/v1/escalation_levels/{id}": {
+                    "get": {"operationId": "getEscalationLevel"},
+                    "put": {"operationId": "updateEscalationLevel"},
+                    "delete": {"operationId": "deleteEscalationLevel"},
+                },
+            },
+            "components": {"schemas": {}},
+        }
+
+        allowed_paths = [
+            "/v1/schedules/{schedule_id}/schedule_rotations",
+            "/v1/escalation_policies",
+            "/v1/escalation_policies/{escalation_policy_id}",
+            "/v1/escalation_policies/{escalation_policy_id}/escalation_paths",
+            "/v1/escalation_paths/{escalation_policy_path_id}",
+            "/v1/escalation_paths/{escalation_policy_path_id}/escalation_levels",
+            "/v1/escalation_levels/{escalation_level_id}",
+        ]
+        delete_allowed_paths = [
+            "/v1/escalation_policies/{escalation_policy_id}",
+            "/v1/escalation_paths/{escalation_policy_path_id}",
+            "/v1/escalation_levels/{escalation_level_id}",
+        ]
+        filtered_spec = _filter_openapi_spec(
+            original_spec,
+            allowed_paths,
+            delete_allowed_paths=delete_allowed_paths,
+        )
+        filtered_paths = filtered_spec["paths"]
+
+        assert set(filtered_paths["/v1/schedules/{schedule_id}/schedule_rotations"]) >= {
+            "get",
+            "post",
+        }
+        assert set(filtered_paths["/v1/escalation_policies"]) >= {"get", "post"}
+        assert set(filtered_paths["/v1/escalation_policies/{id}"]) >= {"get", "put", "delete"}
+        assert set(filtered_paths["/v1/escalation_policies/{escalation_policy_id}/escalation_paths"]) >= {
+            "get",
+            "post",
+        }
+        assert set(filtered_paths["/v1/escalation_paths/{id}"]) >= {"get", "put", "delete"}
+        assert set(filtered_paths["/v1/escalation_paths/{escalation_policy_path_id}/escalation_levels"]) >= {
+            "get",
+            "post",
+        }
+        assert set(filtered_paths["/v1/escalation_levels/{id}"]) >= {"get", "put", "delete"}
+
+    def test_filter_spec_strips_delete_operations(self):
+        """Test that delete methods are removed from MCP-exposed operations."""
+        original_spec = {
+            "openapi": "3.0.0",
+            "info": {"title": "Test API", "version": "1.0.0"},
+            "paths": {
+                "/v1/schedules/{id}": {
+                    "get": {"operationId": "getSchedule"},
+                    "delete": {"operationId": "deleteSchedule"},
+                },
+                "/v1/delete_only_resource/{id}": {
+                    "delete": {"operationId": "deleteOnlyResource"},
+                },
+            },
+            "components": {"schemas": {}},
+        }
+
+        allowed_paths = [
+            "/v1/schedules/{schedule_id}",
+            "/v1/delete_only_resource/{resource_id}",
+        ]
+        filtered_spec = _filter_openapi_spec(original_spec, allowed_paths)
+        filtered_paths = filtered_spec["paths"]
+
+        assert "/v1/schedules/{id}" in filtered_paths
+        assert "get" in filtered_paths["/v1/schedules/{id}"]
+        assert "delete" not in filtered_paths["/v1/schedules/{id}"]
+
+        # Path with only delete should be removed from exposed paths entirely.
+        assert "/v1/delete_only_resource/{id}" not in filtered_paths
+
 
 @pytest.mark.unit
 class TestDefaultConfiguration:
@@ -514,6 +709,12 @@ class TestDefaultConfiguration:
         path_strings = str(DEFAULT_ALLOWED_PATHS)
         assert "incidents" in path_strings
         assert "teams" in path_strings
+        assert "/schedules/{schedule_id}/schedule_rotations" in DEFAULT_ALLOWED_PATHS
+        assert "/escalation_policies" in DEFAULT_ALLOWED_PATHS
+        assert "/escalation_paths/{escalation_policy_path_id}" in DEFAULT_ALLOWED_PATHS
+        assert "/escalation_policies/{escalation_policy_id}" in DEFAULT_DELETE_ALLOWED_PATHS
+        assert "/escalation_paths/{escalation_policy_path_id}" in DEFAULT_DELETE_ALLOWED_PATHS
+        assert "/escalation_levels/{escalation_level_id}" in DEFAULT_DELETE_ALLOWED_PATHS
 
     def test_default_swagger_url(self):
         """Test that default swagger URL is properly defined."""

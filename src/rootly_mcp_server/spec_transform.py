@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
@@ -15,6 +16,13 @@ logger = logging.getLogger(__name__)
 
 # Default Swagger URL
 SWAGGER_URL = "https://rootly-heroku.s3.amazonaws.com/swagger/v1/swagger.json"
+_PATH_PARAM_PATTERN = re.compile(r"\{[^/{}]+\}")
+
+
+def _normalize_path_template(path: str) -> str:
+    """Normalize parameter names in path templates to support id-token variants."""
+    return _PATH_PARAM_PATTERN.sub("{}", path)
+
 
 def _load_swagger_spec(swagger_path: str | None = None) -> dict[str, Any]:
     """
@@ -103,13 +111,18 @@ def _fetch_swagger_from_url(url: str = SWAGGER_URL) -> dict[str, Any]:
         raise Exception(f"Failed to parse Swagger specification: {e}")
 
 
-def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict[str, Any]:
+def _filter_openapi_spec(
+    spec: dict[str, Any],
+    allowed_paths: list[str],
+    delete_allowed_paths: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Filter an OpenAPI specification to only include specified paths and clean up schema references.
 
     Args:
         spec: The original OpenAPI specification.
         allowed_paths: List of paths to include.
+        delete_allowed_paths: Path templates where DELETE operations are allowed.
 
     Returns:
         A filtered OpenAPI specification with cleaned schema references.
@@ -119,11 +132,41 @@ def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict
 
     # Filter paths
     original_paths = filtered_spec.get("paths", {})
-    filtered_paths = {
-        path: path_item for path, path_item in original_paths.items() if path in allowed_paths
-    }
+    allowed_path_set = set(allowed_paths)
+    allowed_normalized_paths = {_normalize_path_template(path) for path in allowed_paths}
+
+    filtered_paths = {}
+    for path, path_item in original_paths.items():
+        if path in allowed_path_set:
+            filtered_paths[path] = path_item
+            continue
+
+        # Fallback for cases where OpenAPI uses {id} while allowlist uses resource-specific ids.
+        if _normalize_path_template(path) in allowed_normalized_paths:
+            filtered_paths[path] = path_item
 
     filtered_spec["paths"] = filtered_paths
+
+    # Safety policy: only expose DELETE operations for explicitly allowed paths.
+    # This keeps high-blast-radius destructive actions out of the default tool surface.
+    delete_allowed_set = set(delete_allowed_paths or [])
+    delete_allowed_normalized_paths = {
+        _normalize_path_template(path) for path in delete_allowed_set
+    }
+    paths_to_remove: list[str] = []
+    for path, path_item in filtered_paths.items():
+        allow_delete = path in delete_allowed_set or (
+            _normalize_path_template(path) in delete_allowed_normalized_paths
+        )
+        if not allow_delete:
+            path_item.pop("delete", None)
+        if not any(
+            method.lower() in ["get", "post", "put", "patch", "delete"]
+            for method in path_item
+        ):
+            paths_to_remove.append(path)
+    for path in paths_to_remove:
+        del filtered_paths[path]
 
     # Clean up schema references that might be broken
     # Remove problematic schema references from request bodies and parameters
