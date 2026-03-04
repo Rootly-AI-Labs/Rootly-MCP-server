@@ -107,8 +107,18 @@ Rootly MCP supports both hosted HTTP transports:
 - **Streamable HTTP** endpoint path: `/mcp`
 - **SSE** endpoint path: `/sse`
 
-Each server process runs one transport at a time. To support both `/mcp` and
-`/sse` concurrently in production, run two instances behind your reverse proxy.
+You can run both `/mcp` and `/sse` in a single process with:
+
+- `ROOTLY_TRANSPORT=both` (aliases: `dual`, `dual-http`, `streamable+sse`)
+
+Example Docker run (Both):
+
+```bash
+docker run -p 8000:8000 \
+  -e ROOTLY_TRANSPORT=both \
+  -e ROOTLY_API_TOKEN=<YOUR_ROOTLY_API_TOKEN> \
+  rootly-mcp-server
+```
 
 Example Docker run (Streamable HTTP):
 
