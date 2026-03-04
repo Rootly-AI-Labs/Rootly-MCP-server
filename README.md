@@ -102,23 +102,10 @@ If you prefer to run the MCP server locally, configure your editor with one of t
 
 ## Self-Hosted Transport Options
 
-Rootly MCP supports both hosted HTTP transports:
+Choose one transport per server process:
 
 - **Streamable HTTP** endpoint path: `/mcp`
 - **SSE** endpoint path: `/sse`
-
-You can run both `/mcp` and `/sse` in a single process with:
-
-- `ROOTLY_TRANSPORT=both` (aliases: `dual`, `dual-http`, `streamable+sse`)
-
-Example Docker run (Both):
-
-```bash
-docker run -p 8000:8000 \
-  -e ROOTLY_TRANSPORT=both \
-  -e ROOTLY_API_TOKEN=<YOUR_ROOTLY_API_TOKEN> \
-  rootly-mcp-server
-```
 
 Example Docker run (Streamable HTTP):
 
