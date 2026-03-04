@@ -236,6 +236,7 @@ class TestToolUsageIdentityHelpers:
         token_ctx = server_module._session_auth_token.set("Bearer rootly_session_token")
         ip_ctx = server_module._session_client_ip.set("192.0.2.8")
         req_ctx = server_module._session_request_id.set("req-session-1")
+        transport_ctx = server_module._session_transport.set("sse")
         try:
             with patch("fastmcp.server.dependencies.get_http_headers", return_value={}):
                 identity = _current_tool_identity()
@@ -243,12 +244,31 @@ class TestToolUsageIdentityHelpers:
             server_module._session_auth_token.reset(token_ctx)
             server_module._session_client_ip.reset(ip_ctx)
             server_module._session_request_id.reset(req_ctx)
+            server_module._session_transport.reset(transport_ctx)
 
         assert identity["token_fingerprint"] == _fingerprint_auth_header(
             "Bearer rootly_session_token"
         )
         assert identity["client_ip"] == "192.0.2.8"
         assert identity["request_id"] == "req-session-1"
+        assert identity["transport"] == "sse"
+        assert identity["transport_effective"] == "sse"
+
+    def test_current_tool_identity_prefers_session_transport_over_runtime(self):
+        token_ctx = server_module._session_auth_token.set("Bearer rootly_session_token")
+        transport_ctx = server_module._session_transport.set("streamable-http")
+        try:
+            with patch("fastmcp.server.dependencies.get_http_headers", return_value={}):
+                with patch("fastmcp.server.context._current_transport") as mock_transport:
+                    mock_transport.get.return_value = "both"
+                    identity = _current_tool_identity()
+        finally:
+            server_module._session_auth_token.reset(token_ctx)
+            server_module._session_transport.reset(transport_ctx)
+
+        assert identity["transport_runtime"] == "both"
+        assert identity["transport_effective"] == "streamable-http"
+        assert identity["transport"] == "streamable-http"
 
     def test_log_tool_usage_event_emits_json_line(self):
         with patch.object(server_module, "_configure_tool_usage_json_logger") as mock_configure:
@@ -263,6 +283,8 @@ class TestToolUsageIdentityHelpers:
                         "client_ip": "203.0.113.10",
                         "request_id": "req-1",
                         "transport": "sse",
+                        "transport_effective": "sse",
+                        "transport_runtime": "both",
                     },
                 )
 
@@ -274,6 +296,8 @@ class TestToolUsageIdentityHelpers:
         assert payload["status"] == "success"
         assert payload["duration_ms"] == 123.46
         assert payload["transport"] == "sse"
+        assert payload["transport_effective"] == "sse"
+        assert payload["transport_runtime"] == "both"
 
 
 @pytest.mark.unit
