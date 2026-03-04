@@ -25,6 +25,9 @@ _session_client_ip: contextvars.ContextVar[str] = contextvars.ContextVar(
 _session_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     "_session_request_id", default=""
 )
+_session_transport: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_session_transport", default=""
+)
 
 
 def _normalize_path(path: str) -> str:
@@ -68,11 +71,27 @@ def _extract_request_id(headers: dict[str, str]) -> str:
     return ""
 
 
+def _infer_transport_from_path(
+    path: str,
+    sse_path: str,
+    message_path: str,
+    streamable_path: str,
+) -> str:
+    """Infer effective transport name from the incoming MCP path."""
+    normalized = _normalize_path(path)
+    if normalized in {sse_path, message_path}:
+        return "sse"
+    if normalized == streamable_path:
+        return "streamable-http"
+    return ""
+
+
 def _get_auth_capture_paths() -> set[str]:
     """Get MCP HTTP paths that should capture auth headers."""
     sse_path = _normalize_path(os.getenv("FASTMCP_SSE_PATH", "/sse"))
+    message_path = _normalize_path(os.getenv("FASTMCP_MESSAGE_PATH", "/messages"))
     streamable_path = _normalize_path(os.getenv("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp"))
-    return {sse_path, streamable_path}
+    return {sse_path, message_path, streamable_path}
 
 
 class AuthCaptureMiddleware:
@@ -86,7 +105,16 @@ class AuthCaptureMiddleware:
 
     def __init__(self, app):
         self.app = app
-        self._capture_paths = _get_auth_capture_paths()
+        self._sse_path = _normalize_path(os.getenv("FASTMCP_SSE_PATH", "/sse"))
+        self._message_path = _normalize_path(os.getenv("FASTMCP_MESSAGE_PATH", "/messages"))
+        self._streamable_path = _normalize_path(
+            os.getenv("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp")
+        )
+        self._capture_paths = {
+            self._sse_path,
+            self._message_path,
+            self._streamable_path,
+        }
 
     async def __call__(self, scope, receive, send):
         path = _normalize_path(str(scope.get("path", "")))
@@ -95,6 +123,11 @@ class AuthCaptureMiddleware:
 
             request = Request(scope)
             headers = _normalize_headers(dict(request.headers))
+            effective_transport = _infer_transport_from_path(
+                path, self._sse_path, self._message_path, self._streamable_path
+            )
+            if effective_transport:
+                _session_transport.set(effective_transport)
             auth = request.headers.get("authorization", "")
             if auth:
                 _session_auth_token.set(auth)
@@ -104,8 +137,10 @@ class AuthCaptureMiddleware:
             request_id = _extract_request_id(headers)
             if request_id:
                 _session_request_id.set(request_id)
-            if auth or client_ip or request_id:
-                logger.debug(f"Captured hosted auth/identity context from path: {path}")
+            if auth or client_ip or request_id or effective_transport:
+                logger.debug(
+                    f"Captured hosted auth/identity context from path: {path} (transport={effective_transport or 'unknown'})"
+                )
         await self.app(scope, receive, send)
 
 

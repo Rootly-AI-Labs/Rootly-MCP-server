@@ -52,6 +52,7 @@ AuthCaptureMiddleware = transport.AuthCaptureMiddleware
 _session_auth_token = transport._session_auth_token
 _session_client_ip = transport._session_client_ip
 _session_request_id = transport._session_request_id
+_session_transport = transport._session_transport
 _extract_client_ip = transport._extract_client_ip
 _extract_request_id = transport._extract_request_id
 
@@ -110,15 +111,20 @@ def _current_tool_identity() -> dict[str, str]:
     try:
         from fastmcp.server.context import _current_transport
 
-        current_transport = str(_current_transport.get() or "")
+        transport_runtime = str(_current_transport.get() or "")
     except Exception:
-        current_transport = ""
+        transport_runtime = ""
+
+    transport_effective = _session_transport.get("") or transport_runtime
 
     return {
         "token_fingerprint": _fingerprint_auth_header(auth_header),
         "client_ip": client_ip,
         "request_id": request_id,
-        "transport": current_transport,
+        # Keep `transport` backward-compatible while introducing explicit fields.
+        "transport": transport_effective,
+        "transport_effective": transport_effective,
+        "transport_runtime": transport_runtime,
     }
 
 
@@ -146,6 +152,8 @@ def _log_tool_usage_event(
         "client_ip": identity.get("client_ip", ""),
         "request_id": identity.get("request_id", ""),
         "transport": identity.get("transport", ""),
+        "transport_effective": identity.get("transport_effective", ""),
+        "transport_runtime": identity.get("transport_runtime", ""),
     }
     if error_type:
         event["error_type"] = error_type
