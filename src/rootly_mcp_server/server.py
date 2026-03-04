@@ -26,6 +26,7 @@ from .utils import sanitize_parameters_in_spec
 
 # Set up logger
 logger = logging.getLogger(__name__)
+_tool_usage_json_logger = logging.getLogger("rootly_mcp_server.tool_usage_json")
 
 # Module-level storage for hosted auth middleware, set by create_rootly_mcp_server().
 _hosted_auth_middleware: list | None = None
@@ -76,6 +77,19 @@ def _fingerprint_auth_header(auth_header: str) -> str:
 def _tool_usage_logging_enabled() -> bool:
     """Return whether per-tool usage logging is enabled."""
     return os.getenv("ROOTLY_TOOL_USAGE_LOGGING", "true").lower() in ("1", "true", "yes")
+
+
+def _configure_tool_usage_json_logger() -> None:
+    """Configure a dedicated logger that emits raw JSON lines for Datadog parsing."""
+    if getattr(_tool_usage_json_logger, "_rootly_configured", False):
+        return
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    _tool_usage_json_logger.handlers = [handler]
+    _tool_usage_json_logger.setLevel(logging.INFO)
+    _tool_usage_json_logger.propagate = False
+    _tool_usage_json_logger._rootly_configured = True  # type: ignore[attr-defined]
 
 
 def _current_tool_identity() -> dict[str, str]:
@@ -135,7 +149,10 @@ def _log_tool_usage_event(
     if error_type:
         event["error_type"] = error_type
 
-    logger.info(json.dumps({k: v for k, v in event.items() if v not in ("", [], None)}))
+    _configure_tool_usage_json_logger()
+    _tool_usage_json_logger.info(
+        json.dumps({k: v for k, v in event.items() if v not in ("", [], None)}, separators=(",", ":"))
+    )
 
 
 class ToolUsageLoggingMiddleware(fastmcp_middleware.Middleware):

@@ -222,6 +222,31 @@ class TestToolUsageIdentityHelpers:
         assert identity["client_ip"] == "192.0.2.8"
         assert identity["request_id"] == "req-session-1"
 
+    def test_log_tool_usage_event_emits_json_line(self):
+        with patch.object(server_module, "_configure_tool_usage_json_logger") as mock_configure:
+            with patch.object(server_module._tool_usage_json_logger, "info") as mock_info:
+                server_module._log_tool_usage_event(
+                    tool_name="search_incidents",
+                    status="success",
+                    duration_ms=123.456,
+                    arg_keys=["page_size", "page_number"],
+                    identity={
+                        "token_fingerprint": "abc123",
+                        "client_ip": "203.0.113.10",
+                        "request_id": "req-1",
+                        "transport": "sse",
+                    },
+                )
+
+        mock_configure.assert_called_once()
+        mock_info.assert_called_once()
+        payload = json.loads(mock_info.call_args[0][0])
+        assert payload["event"] == "mcp_tool_call"
+        assert payload["tool_name"] == "search_incidents"
+        assert payload["status"] == "success"
+        assert payload["duration_ms"] == 123.46
+        assert payload["transport"] == "sse"
+
 
 @pytest.mark.unit
 class TestSwaggerSpecLoading:
