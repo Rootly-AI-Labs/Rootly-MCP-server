@@ -110,13 +110,18 @@ def _fetch_swagger_from_url(url: str = SWAGGER_URL) -> dict[str, Any]:
         raise Exception(f"Failed to parse Swagger specification: {e}")
 
 
-def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict[str, Any]:
+def _filter_openapi_spec(
+    spec: dict[str, Any],
+    allowed_paths: list[str],
+    delete_allowed_paths: list[str] | None = None,
+) -> dict[str, Any]:
     """
     Filter an OpenAPI specification to only include specified paths and clean up schema references.
 
     Args:
         spec: The original OpenAPI specification.
         allowed_paths: List of paths to include.
+        delete_allowed_paths: Path templates where DELETE operations are allowed.
 
     Returns:
         A filtered OpenAPI specification with cleaned schema references.
@@ -140,6 +145,27 @@ def _filter_openapi_spec(spec: dict[str, Any], allowed_paths: list[str]) -> dict
             filtered_paths[path] = path_item
 
     filtered_spec["paths"] = filtered_paths
+
+    # Safety policy: only expose DELETE operations for explicitly allowed paths.
+    # This keeps high-blast-radius destructive actions out of the default tool surface.
+    delete_allowed_set = set(delete_allowed_paths or [])
+    delete_allowed_normalized_paths = {
+        _normalize_path_template(path) for path in delete_allowed_set
+    }
+    paths_to_remove: list[str] = []
+    for path, path_item in filtered_paths.items():
+        allow_delete = path in delete_allowed_set or (
+            _normalize_path_template(path) in delete_allowed_normalized_paths
+        )
+        if not allow_delete:
+            path_item.pop("delete", None)
+        if not any(
+            method.lower() in ["get", "post", "put", "patch", "delete"]
+            for method in path_item
+        ):
+            paths_to_remove.append(path)
+    for path in paths_to_remove:
+        del filtered_paths[path]
 
     # Clean up schema references that might be broken
     # Remove problematic schema references from request bodies and parameters
