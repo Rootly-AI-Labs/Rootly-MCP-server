@@ -87,10 +87,13 @@ For **Claude Desktop**, if direct `url` config causes launch issues on your buil
 For **Claude Code**, run:
 
 ```bash
-claude mcp add rootly --transport streamable-http https://mcp.rootly.com/mcp \
+claude mcp add rootly --transport http https://mcp.rootly.com/mcp \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
+```
 
-# SSE fallback
+SSE fallback:
+
+```bash
 claude mcp add rootly-sse --transport sse https://mcp.rootly.com/sse \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
