@@ -369,7 +369,7 @@ def main():
         logger.info(f"Initializing server with name: {args.name}")
         # argparse already normalizes/validates --transport via type=normalize_transport
         normalized_transport = args.transport
-        code_mode_enabled = args.enable_code_mode or code_mode_enabled_from_env()
+        code_mode_enabled = args.enable_code_mode or code_mode_enabled_from_env(default=True)
         code_mode_path = normalize_code_mode_path(args.code_mode_path) if args.code_mode_path else code_mode_path_from_env()
         server = create_rootly_mcp_server(
             swagger_path=args.swagger_path,
