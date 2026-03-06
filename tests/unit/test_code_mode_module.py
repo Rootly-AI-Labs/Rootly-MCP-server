@@ -13,14 +13,19 @@ from rootly_mcp_server.code_mode import (
 )
 
 
-def test_code_mode_enabled_from_env_defaults_false():
+def test_code_mode_enabled_from_env_defaults_true():
     with patch.dict("os.environ", {}, clear=True):
-        assert code_mode_enabled_from_env() is False
+        assert code_mode_enabled_from_env() is True
 
 
 def test_code_mode_enabled_from_env_accepts_truthy_values():
     with patch.dict("os.environ", {"ROOTLY_CODE_MODE_ENABLED": "true"}, clear=True):
         assert code_mode_enabled_from_env() is True
+
+
+def test_code_mode_enabled_from_env_accepts_false_override():
+    with patch.dict("os.environ", {"ROOTLY_CODE_MODE_ENABLED": "false"}, clear=True):
+        assert code_mode_enabled_from_env() is False
 
 
 def test_code_mode_path_from_env_uses_default_and_normalizes():

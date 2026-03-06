@@ -152,7 +152,7 @@ Choose one transport per server process:
 
 - **Streamable HTTP** endpoint path: `/mcp`
 - **SSE** endpoint path: `/sse`
-- **Code Mode (experimental)** endpoint path: `/mcp-codemode` when `ROOTLY_CODE_MODE_ENABLED=true` and `ROOTLY_TRANSPORT=both`
+- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode. Set `ROOTLY_CODE_MODE_ENABLED=false` to disable it or `ROOTLY_CODE_MODE_PATH` to customize the path.
 
 Example Docker run (Streamable HTTP):
 
@@ -177,7 +177,6 @@ Example Docker run (Dual transport + Code Mode):
 ```bash
 docker run -p 8000:8000 \
   -e ROOTLY_TRANSPORT=both \
-  -e ROOTLY_CODE_MODE_ENABLED=true \
   -e ROOTLY_API_TOKEN=<YOUR_ROOTLY_API_TOKEN> \
   rootly-mcp-server
 ```

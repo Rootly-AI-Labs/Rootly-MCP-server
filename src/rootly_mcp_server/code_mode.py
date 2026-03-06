@@ -37,9 +37,15 @@ def normalize_code_mode_path(path: str) -> str:
     return _normalize_http_path(path)
 
 
-def code_mode_enabled_from_env() -> bool:
-    """Return whether hosted Code Mode exposure is enabled."""
-    return os.getenv("ROOTLY_CODE_MODE_ENABLED", "false").lower() in ("1", "true", "yes")
+def code_mode_enabled_from_env(default: bool = True) -> bool:
+    """Return whether hosted Code Mode exposure is enabled.
+
+    Code Mode defaults on for hosted dual-transport deployments unless explicitly disabled.
+    """
+    raw = os.getenv("ROOTLY_CODE_MODE_ENABLED")
+    if raw is None:
+        return default
+    return raw.lower() in ("1", "true", "yes")
 
 
 def code_mode_path_from_env() -> str:
