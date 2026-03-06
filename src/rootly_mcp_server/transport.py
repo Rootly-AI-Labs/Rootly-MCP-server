@@ -76,12 +76,13 @@ def _infer_transport_from_path(
     sse_path: str,
     message_path: str,
     streamable_path: str,
+    code_mode_path: str = "",
 ) -> str:
     """Infer effective transport name from the incoming MCP path."""
     normalized = _normalize_path(path)
     if normalized in {sse_path, message_path}:
         return "sse"
-    if normalized == streamable_path:
+    if normalized in {streamable_path, code_mode_path}:
         return "streamable-http"
     return ""
 
@@ -91,7 +92,8 @@ def _get_auth_capture_paths() -> set[str]:
     sse_path = _normalize_path(os.getenv("FASTMCP_SSE_PATH", "/sse"))
     message_path = _normalize_path(os.getenv("FASTMCP_MESSAGE_PATH", "/messages"))
     streamable_path = _normalize_path(os.getenv("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp"))
-    return {sse_path, message_path, streamable_path}
+    code_mode_path = _normalize_path(os.getenv("ROOTLY_CODE_MODE_PATH", "/mcp-codemode"))
+    return {sse_path, message_path, streamable_path, code_mode_path}
 
 
 class AuthCaptureMiddleware:
@@ -110,10 +112,12 @@ class AuthCaptureMiddleware:
         self._streamable_path = _normalize_path(
             os.getenv("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp")
         )
+        self._code_mode_path = _normalize_path(os.getenv("ROOTLY_CODE_MODE_PATH", "/mcp-codemode"))
         self._capture_paths = {
             self._sse_path,
             self._message_path,
             self._streamable_path,
+            self._code_mode_path,
         }
 
     async def __call__(self, scope, receive, send):
@@ -124,7 +128,11 @@ class AuthCaptureMiddleware:
             request = Request(scope)
             headers = _normalize_headers(dict(request.headers))
             effective_transport = _infer_transport_from_path(
-                path, self._sse_path, self._message_path, self._streamable_path
+                path,
+                self._sse_path,
+                self._message_path,
+                self._streamable_path,
+                self._code_mode_path,
             )
             if effective_transport:
                 _session_transport.set(effective_transport)
