@@ -36,7 +36,7 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-    "fastmcp==3.1.0",  # Pin to specific version
+    "fastmcp[code-mode]==3.1.0",  # Pin to specific version with Code Mode support
     "requests==2.32.5", # Pin to specific version
     "httpx==0.28.1",   # Pin to specific version
     "pydantic==2.12.5",  # Pin to specific version
