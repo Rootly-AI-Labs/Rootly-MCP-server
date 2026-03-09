@@ -48,6 +48,23 @@ The fastest way to get started is to connect to our hosted MCP server — no ins
 }
 ```
 
+### Hosted (Code Mode)
+
+Use Code Mode when you want the client to discover tools dynamically and execute multi-step workflows through the hosted server.
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "url": "https://mcp.rootly.com/mcp-codemode",
+      "headers": {
+        "Authorization": "Bearer <YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+
 ### Hosted (SSE, backward compatible)
 
 ```json
@@ -88,6 +105,13 @@ For **Claude Code**, run:
 
 ```bash
 claude mcp add rootly --transport http https://mcp.rootly.com/mcp \
+  --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
+```
+
+Code Mode:
+
+```bash
+claude mcp add rootly-codemode --transport http https://mcp.rootly.com/mcp-codemode \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
 
