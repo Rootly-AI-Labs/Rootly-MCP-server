@@ -9,9 +9,16 @@ import argparse
 import logging
 import os
 import sys
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Literal, cast
 
+from .code_mode import (
+    code_mode_enabled_from_env,
+    code_mode_path_from_env,
+    create_rootly_codemode_server,
+    normalize_code_mode_path,
+)
 from .exceptions import RootlyConfigurationError, RootlyMCPError
 from .security import validate_api_token
 from .server import create_rootly_mcp_server, get_hosted_auth_middleware
@@ -103,6 +110,16 @@ def parse_args():
         action="store_true",
         help="Enable hosted mode for remote MCP server",
     )
+    parser.add_argument(
+        "--enable-code-mode",
+        action="store_true",
+        help="Expose a separate hosted Code Mode endpoint (HTTP only)",
+    )
+    parser.add_argument(
+        "--code-mode-path",
+        type=str,
+        help="Hosted path for the Code Mode endpoint. Default: /mcp-codemode",
+    )
     # Backward compatibility: support deprecated --host argument
     parser.add_argument(
         "--host",
@@ -190,10 +207,14 @@ def get_server():
 mcp = get_server()
 
 
-def run_dual_http_server(server, log_level: str, middleware: list | None = None) -> None:
+def run_dual_http_server(
+    server,
+    log_level: str,
+    middleware: list | None = None,
+    code_mode_server=None,
+    code_mode_path: str | None = None,
+) -> None:
     """Run SSE and streamable-http together on one ASGI server."""
-    from contextlib import asynccontextmanager
-
     import fastmcp
     import uvicorn
     from fastmcp.server.http import StreamableHTTPASGIApp, create_base_app
@@ -240,11 +261,30 @@ def run_dual_http_server(server, log_level: str, middleware: list | None = None)
         Mount(message_path, app=sse_transport.handle_post_message),
         Route(streamable_path, endpoint=streamable_http_app, methods=streamable_methods),
     ]
+
+    code_mode_session_manager = None
+    if code_mode_server is not None and code_mode_path:
+        code_mode_session_manager = StreamableHTTPSessionManager(
+            app=code_mode_server._mcp_server,  # noqa: SLF001
+            event_store=None,
+            retry_interval=None,
+            json_response=fastmcp.settings.json_response,
+            stateless=stateless_http,
+        )
+        code_mode_http_app = StreamableHTTPASGIApp(code_mode_session_manager)
+        routes.append(Route(code_mode_path, endpoint=code_mode_http_app, methods=streamable_methods))
+
     routes.extend(server._get_additional_http_routes())  # noqa: SLF001
 
     @asynccontextmanager
     async def lifespan(app):
-        async with server._lifespan_manager(), session_manager.run():  # noqa: SLF001
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(server._lifespan_manager())  # noqa: SLF001
+            await stack.enter_async_context(session_manager.run())
+            if code_mode_server is not None:
+                await stack.enter_async_context(code_mode_server._lifespan_manager())  # noqa: SLF001
+            if code_mode_session_manager is not None:
+                await stack.enter_async_context(code_mode_session_manager.run())
             yield
 
     app_middleware = cast(list[Middleware], middleware or [])
@@ -255,23 +295,40 @@ def run_dual_http_server(server, log_level: str, middleware: list | None = None)
         lifespan=lifespan,
     )
     app.state.fastmcp_server = server
-    app.state.path = f"{sse_path},{streamable_path}"
+    app.state.path = ",".join(
+        [path for path in (sse_path, streamable_path, code_mode_path) if path]
+    )
     app.state.transport_type = "both"
 
     host = fastmcp.settings.host
     port = fastmcp.settings.port
     default_log_level_to_use = (log_level or fastmcp.settings.log_level).lower()
 
-    logger.info(
-        "Starting MCP server %r with dual transport on http://%s:%s%s and http://%s:%s%s",
-        server.name,
-        host,
-        port,
-        sse_path,
-        host,
-        port,
-        streamable_path,
-    )
+    if code_mode_path:
+        logger.info(
+            "Starting MCP server %r with dual transport on http://%s:%s%s, http://%s:%s%s, and Code Mode on http://%s:%s%s",
+            server.name,
+            host,
+            port,
+            sse_path,
+            host,
+            port,
+            streamable_path,
+            host,
+            port,
+            code_mode_path,
+        )
+    else:
+        logger.info(
+            "Starting MCP server %r with dual transport on http://%s:%s%s and http://%s:%s%s",
+            server.name,
+            host,
+            port,
+            sse_path,
+            host,
+            port,
+            streamable_path,
+        )
 
     config = uvicorn.Config(
         app,
@@ -312,6 +369,8 @@ def main():
         logger.info(f"Initializing server with name: {args.name}")
         # argparse already normalizes/validates --transport via type=normalize_transport
         normalized_transport = args.transport
+        code_mode_enabled = args.enable_code_mode or code_mode_enabled_from_env(default=True)
+        code_mode_path = normalize_code_mode_path(args.code_mode_path) if args.code_mode_path else code_mode_path_from_env()
         server = create_rootly_mcp_server(
             swagger_path=args.swagger_path,
             name=args.name,
@@ -321,12 +380,33 @@ def main():
             transport=normalized_transport,
         )
 
+        code_mode_server = None
+        if code_mode_enabled:
+            if not hosted_mode:
+                logger.warning("Code Mode endpoint requested without hosted mode; ignoring")
+            elif normalized_transport != "both":
+                logger.warning(
+                    "Code Mode endpoint currently requires transport='both'; ignoring because transport=%s",
+                    normalized_transport,
+                )
+            else:
+                code_mode_server = create_rootly_codemode_server(
+                    swagger_path=args.swagger_path,
+                    name=f"{args.name} Code Mode",
+                    allowed_paths=allowed_paths,
+                    hosted=hosted_mode,
+                    base_url=args.base_url,
+                )
+                logger.info("Code Mode enabled at path: %s", code_mode_path)
+
         logger.info(f"Running server with transport: {normalized_transport}...")
         if normalized_transport == "both":
             run_dual_http_server(
                 server=server,
                 log_level=args.log_level,
                 middleware=get_hosted_auth_middleware(),
+                code_mode_server=code_mode_server,
+                code_mode_path=code_mode_path if code_mode_server is not None else None,
             )
         elif normalized_transport == "stdio":
             server.run(transport=normalized_transport)

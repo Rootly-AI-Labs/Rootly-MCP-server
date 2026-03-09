@@ -25,6 +25,7 @@ class TestTransportModule:
         # Ensure a known baseline in this context.
         transport._session_auth_token.set("")
         transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
 
         async def receive():
             return {"type": "http.request"}
@@ -35,6 +36,7 @@ class TestTransportModule:
         await middleware(scope, receive, send)
         assert transport._session_auth_token.get() == "Bearer test-token"
         assert transport._session_transport.get() == "sse"
+        assert transport._session_mcp_mode.get() == "classic"
 
     @pytest.mark.asyncio
     async def test_auth_capture_middleware_sets_token_for_streamable_http(self):
@@ -50,6 +52,7 @@ class TestTransportModule:
 
         transport._session_auth_token.set("")
         transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
 
         async def receive():
             return {"type": "http.request"}
@@ -60,6 +63,7 @@ class TestTransportModule:
         await middleware(scope, receive, send)
         assert transport._session_auth_token.get() == "Bearer streamable-token"
         assert transport._session_transport.get() == "streamable-http"
+        assert transport._session_mcp_mode.get() == "classic"
 
     @pytest.mark.asyncio
     async def test_auth_capture_middleware_sets_transport_for_messages_path(self):
@@ -75,6 +79,7 @@ class TestTransportModule:
 
         transport._session_auth_token.set("")
         transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
 
         async def receive():
             return {"type": "http.request"}
@@ -85,6 +90,34 @@ class TestTransportModule:
         await middleware(scope, receive, send)
         assert transport._session_auth_token.get() == "Bearer sse-message-token"
         assert transport._session_transport.get() == "sse"
+        assert transport._session_mcp_mode.get() == "classic"
+
+    @pytest.mark.asyncio
+    async def test_auth_capture_middleware_sets_transport_for_code_mode_path(self):
+        async def app(scope, receive, send):
+            return None
+
+        middleware = transport.AuthCaptureMiddleware(app)
+        scope = {
+            "type": "http",
+            "path": "/mcp-codemode",
+            "headers": [(b"authorization", b"Bearer codemode-token")],
+        }
+
+        transport._session_auth_token.set("")
+        transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
+
+        async def receive():
+            return {"type": "http.request"}
+
+        async def send(_message):
+            return None
+
+        await middleware(scope, receive, send)
+        assert transport._session_auth_token.get() == "Bearer codemode-token"
+        assert transport._session_transport.get() == "streamable-http"
+        assert transport._session_mcp_mode.get() == "code-mode"
 
     @pytest.mark.asyncio
     async def test_auth_capture_middleware_ignores_non_mcp_paths(self):
@@ -100,6 +133,7 @@ class TestTransportModule:
 
         transport._session_auth_token.set("")
         transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
 
         async def receive():
             return {"type": "http.request"}
@@ -110,6 +144,7 @@ class TestTransportModule:
         await middleware(scope, receive, send)
         assert transport._session_auth_token.get() == ""
         assert transport._session_transport.get() == ""
+        assert transport._session_mcp_mode.get() == ""
 
     @pytest.mark.asyncio
     async def test_auth_capture_middleware_respects_custom_paths(self):
@@ -122,12 +157,14 @@ class TestTransportModule:
                 "FASTMCP_SSE_PATH": "/custom-sse",
                 "FASTMCP_MESSAGE_PATH": "/custom-messages",
                 "FASTMCP_STREAMABLE_HTTP_PATH": "/custom-mcp",
+                "ROOTLY_CODE_MODE_PATH": "/custom-codemode",
             },
         ):
             middleware = transport.AuthCaptureMiddleware(app)
 
         transport._session_auth_token.set("")
         transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
 
         async def receive():
             return {"type": "http.request"}
@@ -143,6 +180,7 @@ class TestTransportModule:
         await middleware(custom_scope, receive, send)
         assert transport._session_auth_token.get() == "Bearer custom-token"
         assert transport._session_transport.get() == "streamable-http"
+        assert transport._session_mcp_mode.get() == "classic"
 
         custom_message_scope = {
             "type": "http",
@@ -152,18 +190,81 @@ class TestTransportModule:
         await middleware(custom_message_scope, receive, send)
         assert transport._session_auth_token.get() == "Bearer custom-message-token"
         assert transport._session_transport.get() == "sse"
+        assert transport._session_mcp_mode.get() == "classic"
+
+        custom_code_mode_scope = {
+            "type": "http",
+            "path": "/custom-codemode",
+            "headers": [(b"authorization", b"Bearer custom-codemode-token")],
+        }
+        await middleware(custom_code_mode_scope, receive, send)
+        assert transport._session_auth_token.get() == "Bearer custom-codemode-token"
+        assert transport._session_transport.get() == "streamable-http"
+        assert transport._session_mcp_mode.get() == "code-mode"
 
     def test_infer_transport_from_path(self):
-        assert transport._infer_transport_from_path("/sse", "/sse", "/messages", "/mcp") == "sse"
         assert (
-            transport._infer_transport_from_path("/messages", "/sse", "/messages", "/mcp")
+            transport._infer_transport_from_path(
+                "/sse", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
             == "sse"
         )
         assert (
-            transport._infer_transport_from_path("/mcp", "/sse", "/messages", "/mcp")
+            transport._infer_transport_from_path(
+                "/messages", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
+            == "sse"
+        )
+        assert (
+            transport._infer_transport_from_path(
+                "/mcp", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
             == "streamable-http"
         )
-        assert transport._infer_transport_from_path("/healthz", "/sse", "/messages", "/mcp") == ""
+        assert (
+            transport._infer_transport_from_path(
+                "/mcp-codemode", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
+            == "streamable-http"
+        )
+        assert (
+            transport._infer_transport_from_path(
+                "/healthz", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
+            == ""
+        )
+
+    def test_infer_mcp_mode_from_path(self):
+        assert (
+            transport._infer_mcp_mode_from_path(
+                "/sse", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
+            == "classic"
+        )
+        assert (
+            transport._infer_mcp_mode_from_path(
+                "/messages", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
+            == "classic"
+        )
+        assert (
+            transport._infer_mcp_mode_from_path(
+                "/mcp", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
+            == "classic"
+        )
+        assert (
+            transport._infer_mcp_mode_from_path(
+                "/mcp-codemode", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
+            == "code-mode"
+        )
+        assert (
+            transport._infer_mcp_mode_from_path(
+                "/healthz", "/sse", "/messages", "/mcp", "/mcp-codemode"
+            )
+            == ""
+        )
 
     def test_authenticated_client_user_agent_contains_mode(self):
         with patch.object(transport.AuthenticatedHTTPXClient, "_get_api_token", return_value="token"):

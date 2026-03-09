@@ -53,6 +53,7 @@ _session_auth_token = transport._session_auth_token
 _session_client_ip = transport._session_client_ip
 _session_request_id = transport._session_request_id
 _session_transport = transport._session_transport
+_session_mcp_mode = transport._session_mcp_mode
 _extract_client_ip = transport._extract_client_ip
 _extract_request_id = transport._extract_request_id
 
@@ -116,6 +117,7 @@ def _current_tool_identity() -> dict[str, str]:
         transport_runtime = ""
 
     transport_effective = _session_transport.get("") or transport_runtime
+    mcp_mode = _session_mcp_mode.get("") or "classic"
 
     return {
         "token_fingerprint": _fingerprint_auth_header(auth_header),
@@ -125,6 +127,7 @@ def _current_tool_identity() -> dict[str, str]:
         "transport": transport_effective,
         "transport_effective": transport_effective,
         "transport_runtime": transport_runtime,
+        "mcp_mode": mcp_mode,
     }
 
 
@@ -154,6 +157,7 @@ def _log_tool_usage_event(
         "transport": identity.get("transport", ""),
         "transport_effective": identity.get("transport_effective", ""),
         "transport_runtime": identity.get("transport_runtime", ""),
+        "mcp_mode": identity.get("mcp_mode", ""),
     }
     if error_type:
         event["error_type"] = error_type
