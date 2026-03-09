@@ -1,7 +1,8 @@
 """Focused tests for transport module."""
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from rootly_mcp_server import transport
@@ -278,6 +279,52 @@ class TestTransportModule:
         assert hosted_ua is not None
         assert "(stdio; self-hosted)" in local_ua
         assert "(sse; hosted)" in hosted_ua
+
+    @pytest.mark.asyncio
+    async def test_authenticated_client_records_upstream_error_response_context(self):
+        response = httpx.Response(
+            502,
+            request=httpx.Request("GET", "https://api.rootly.com/v1/incidents?page[size]=10"),
+            content=b'{"error":"backend down","api_token":"secret"}',
+        )
+
+        with patch.object(transport.AuthenticatedHTTPXClient, "_get_api_token", return_value="token"):
+            client = transport.AuthenticatedHTTPXClient(hosted=False, transport="stdio")
+            client.client.request = AsyncMock(return_value=response)
+
+            returned = await client.request("GET", "/v1/incidents")
+
+        error_context = transport._get_error_context()
+
+        assert returned.status_code == 502
+        assert error_context["upstream_status"] == 502
+        assert error_context["upstream_method"] == "GET"
+        assert error_context["upstream_url"] == "https://api.rootly.com/v1/incidents"
+        assert error_context["upstream_path"] == "/v1/incidents"
+        assert "***REDACTED***" in error_context["upstream_response_excerpt"]
+
+    @pytest.mark.asyncio
+    async def test_authenticated_client_records_upstream_exception_context(self):
+        with patch.object(transport.AuthenticatedHTTPXClient, "_get_api_token", return_value="token"):
+            client = transport.AuthenticatedHTTPXClient(hosted=False, transport="stdio")
+            client.client.request = AsyncMock(side_effect=httpx.ReadTimeout("request timed out"))
+
+            with pytest.raises(httpx.ReadTimeout):
+                await client.request("GET", "/v1/teams")
+
+        error_context = transport._get_error_context()
+        assert error_context["upstream_exception_type"] == "ReadTimeout"
+        assert error_context["upstream_exception_message"] == "request timed out"
+        assert error_context["upstream_path"] == "/v1/teams"
+        assert error_context["upstream_log_level"] == "error"
+
+    def test_sanitize_log_excerpt_redacts_tokens_and_paths(self):
+        excerpt = transport._sanitize_log_excerpt(
+            'Bearer rootly_1234567890 File "/Users/spencercheng/app.py" failed'
+        )
+        assert "***REDACTED***" in excerpt
+        assert "/Users/spencercheng" not in excerpt
+        assert "[file]" in excerpt
 
     def test_strip_heavy_alert_data_keeps_whitelist_fields(self):
         data = {

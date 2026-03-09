@@ -10,8 +10,11 @@ Tests cover:
 
 import json
 import os
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import Mock, mock_open, patch
 
+import mcp.types as mt
 import pytest
 
 import rootly_mcp_server.server as server_module
@@ -22,8 +25,10 @@ from rootly_mcp_server.server import (
     _current_tool_identity,
     _extract_client_ip,
     _extract_request_id,
+    _extract_structured_tool_error,
     _filter_openapi_spec,
     _fingerprint_auth_header,
+    _format_traceback_excerpt,
     _load_swagger_spec,
     create_rootly_mcp_server,
 )
@@ -309,6 +314,143 @@ class TestToolUsageIdentityHelpers:
         assert payload["transport_effective"] == "sse"
         assert payload["transport_runtime"] == "both"
         assert payload["mcp_mode"] == "classic"
+
+    def test_log_tool_usage_event_includes_error_context(self):
+        with patch.object(server_module, "_configure_tool_usage_json_logger"):
+            with patch.object(server_module._tool_usage_json_logger, "info") as mock_info:
+                server_module._log_tool_usage_event(
+                    tool_name="listAlerts",
+                    status="error",
+                    duration_ms=42.0,
+                    arg_keys=["page_size"],
+                    identity={
+                        "token_fingerprint": "abc123",
+                        "client_ip": "203.0.113.10",
+                        "request_id": "req-1",
+                        "transport": "sse",
+                        "transport_effective": "sse",
+                        "transport_runtime": "both",
+                        "mcp_mode": "classic",
+                    },
+                    error_type="ToolError",
+                    error_context={
+                        "error_message": "boom",
+                        "upstream_status": 502,
+                        "traceback_excerpt": "Traceback... trimmed",
+                    },
+                )
+
+        payload = json.loads(mock_info.call_args[0][0])
+        assert payload["error_message"] == "boom"
+        assert payload["upstream_status"] == 502
+        assert payload["traceback_excerpt"] == "Traceback... trimmed"
+
+    def test_extract_structured_tool_error_from_call_tool_result(self):
+        result = mt.CallToolResult(
+            content=[],
+            structuredContent={
+                "error": True,
+                "error_type": "validation_error",
+                "message": "Bad input at /Users/spencercheng/file.py",
+                "details": {
+                    "status_code": 422,
+                    "exception_type": "ValidationError",
+                    "traceback": 'Traceback (most recent call last):\n  File "/tmp/app.py", line 1',
+                    "api_token": "secret-token",
+                },
+            },
+            isError=True,
+        )
+
+        error_context = _extract_structured_tool_error(result)
+
+        assert error_context["error_type"] == "validation_error"
+        assert error_context["error_message"].startswith("Bad input")
+        assert "[file]" in error_context["error_message"]
+        assert error_context["upstream_status"] == 422
+        assert error_context["exception_type"] == "ValidationError"
+        assert "[file]" in error_context["traceback_excerpt"]
+        assert error_context["error_details"]["api_token"] == "***REDACTED***"
+
+    def test_extract_structured_tool_error_from_structured_content_error_flag(self):
+        result = mt.CallToolResult(
+            content=[],
+            structuredContent={"error": True, "message": "Tool failed", "error_type": "client_error"},
+            isError=False,
+        )
+
+        error_context = _extract_structured_tool_error(result)
+
+        assert error_context["error_type"] == "client_error"
+        assert error_context["error_message"] == "Tool failed"
+
+    def test_format_traceback_excerpt_sanitizes_paths(self):
+        excerpt = _format_traceback_excerpt(
+            'Traceback (most recent call last):\n  File "/Users/spencercheng/app.py", line 10, in test'
+        )
+        assert "[file]" in excerpt
+        assert "/Users/spencercheng" not in excerpt
+
+    @pytest.mark.asyncio
+    async def test_tool_usage_middleware_logs_returned_tool_errors(self):
+        middleware = server_module.ToolUsageLoggingMiddleware()
+        context = SimpleNamespace(
+            message=SimpleNamespace(name="listAlerts", arguments={"page_size": 10})
+        )
+        result = mt.CallToolResult(
+            content=[],
+            structuredContent={
+                "error": True,
+                "error_type": "execution_error",
+                "message": "Failed to fetch alerts",
+                "details": {"status_code": 502, "exception_type": "HTTPStatusError"},
+            },
+            isError=True,
+        )
+
+        async def call_next(context: Any):
+            return result
+
+        with patch.object(server_module, "_current_tool_identity", return_value={"mcp_mode": "classic"}):
+            with patch.object(server_module, "_log_tool_usage_event") as mock_log:
+                returned = await middleware.on_call_tool(cast(Any, context), cast(Any, call_next))
+
+        assert returned is result
+        mock_log.assert_called_once()
+        kwargs = mock_log.call_args.kwargs
+        assert kwargs["status"] == "error"
+        assert kwargs["error_type"] == "execution_error"
+        assert kwargs["error_context"]["upstream_status"] == 502
+        assert kwargs["error_context"]["exception_type"] == "HTTPStatusError"
+
+    @pytest.mark.asyncio
+    async def test_tool_usage_middleware_logs_exception_context(self):
+        middleware = server_module.ToolUsageLoggingMiddleware()
+        context = SimpleNamespace(
+            message=SimpleNamespace(name="listTeams", arguments={"page_size": 10})
+        )
+
+        async def call_next(context: Any):
+            server_module._session_error_context.set(
+                {
+                    "upstream_status": 503,
+                    "upstream_url": "https://api.rootly.com/v1/teams",
+                    "upstream_response_excerpt": "service unavailable",
+                }
+            )
+            raise RuntimeError("boom")
+
+        with patch.object(server_module, "_current_tool_identity", return_value={"mcp_mode": "classic"}):
+            with patch.object(server_module, "_log_tool_usage_event") as mock_log:
+                with pytest.raises(RuntimeError):
+                    await middleware.on_call_tool(cast(Any, context), cast(Any, call_next))
+
+        kwargs = mock_log.call_args.kwargs
+        assert kwargs["status"] == "error"
+        assert kwargs["error_type"] == "RuntimeError"
+        assert kwargs["error_context"]["exception_type"] == "RuntimeError"
+        assert kwargs["error_context"]["upstream_status"] == 503
+        assert kwargs["error_context"]["upstream_url"] == "https://api.rootly.com/v1/teams"
 
 
 @pytest.mark.unit

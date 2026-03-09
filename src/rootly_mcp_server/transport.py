@@ -6,9 +6,12 @@ import contextvars
 import json
 import logging
 import os
+import re
 from typing import Any
 
 import httpx
+
+from .security import mask_sensitive_data
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,135 @@ _session_transport: contextvars.ContextVar[str] = contextvars.ContextVar(
 _session_mcp_mode: contextvars.ContextVar[str] = contextvars.ContextVar(
     "_session_mcp_mode", default=""
 )
+_session_error_context: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "_session_error_context", default=None
+)
+
+_MAX_LOG_EXCERPT_CHARS = 800
+_MAX_LOG_LIST_ITEMS = 20
+
+
+def _sanitize_log_excerpt(value: Any, max_length: int = _MAX_LOG_EXCERPT_CHARS) -> str:
+    """Sanitize arbitrary text snippets for structured logs without losing context."""
+    if value in (None, ""):
+        return ""
+
+    text = str(value).replace("\r\n", "\n").strip()
+    text = re.sub(r"/[\w/.-]+\.py", "[file]", text)
+    text = re.sub(r'C:\\[\w\\.-]+\.py', "[file]", text)
+    text = re.sub(r'File "[^"]+"', 'File "[file]"', text)
+    text = re.sub(r"Bearer\s+[A-Za-z0-9._~\-]+", "Bearer ***REDACTED***", text, flags=re.I)
+    text = re.sub(r"\brootly_[A-Za-z0-9]+\b", "rootly_***REDACTED***", text)
+
+    if len(text) > max_length:
+        text = text[:max_length] + "..."
+
+    return text
+
+
+def _sanitize_error_context_value(value: Any) -> Any:
+    """Trim nested error context into JSON-safe, log-friendly values."""
+    if value is None or isinstance(value, bool | int | float):
+        return value
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("{") or stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+                normalized = _sanitize_error_context_value(parsed)
+                if isinstance(normalized, dict | list):
+                    return json.dumps(normalized, separators=(",", ":"))
+            except Exception:
+                pass
+        return _sanitize_log_excerpt(value)
+
+    if isinstance(value, dict):
+        sanitized = {
+            str(key): _sanitize_error_context_value(subvalue)
+            for key, subvalue in list(value.items())[:_MAX_LOG_LIST_ITEMS]
+        }
+        return mask_sensitive_data(sanitized)
+
+    if isinstance(value, list | tuple):
+        return [_sanitize_error_context_value(item) for item in value[:_MAX_LOG_LIST_ITEMS]]
+
+    return _sanitize_log_excerpt(value)
+
+
+def _clear_error_context() -> None:
+    """Reset per-request upstream error context."""
+    _session_error_context.set(None)
+
+
+def _get_error_context() -> dict[str, Any]:
+    """Return the captured upstream error context for the current request."""
+    return dict(_session_error_context.get() or {})
+
+
+def _merge_error_context(context: dict[str, Any] | None) -> None:
+    """Merge sanitized error context into the current request-scoped state."""
+    if not context:
+        return
+
+    current = _get_error_context()
+    sanitized = {
+        key: _sanitize_error_context_value(value)
+        for key, value in context.items()
+        if value not in ("", None, [], {})
+    }
+    current.update(mask_sensitive_data(sanitized))
+    _session_error_context.set(current)
+
+
+def _extract_upstream_url_fields(url: Any) -> tuple[str, str]:
+    """Return a queryless URL and path for structured upstream logging."""
+    if isinstance(url, httpx.URL):
+        sanitized_url = str(url.copy_with(query=None, fragment="")).rstrip("#")
+        return sanitized_url, url.path or "/"
+
+    url_text = str(url or "").strip()
+    if not url_text:
+        return "", ""
+
+    try:
+        parsed = httpx.URL(url_text)
+        sanitized_url = str(parsed.copy_with(query=None, fragment="")).rstrip("#")
+        return sanitized_url, parsed.path or "/"
+    except Exception:
+        path = url_text.split("?", 1)[0]
+        return path, path
+
+
+def _record_upstream_response_context(method: str, response: httpx.Response) -> None:
+    """Capture structured context for upstream HTTP responses with error status."""
+    request_url = response.request.url if response.request else response.url
+    upstream_url, upstream_path = _extract_upstream_url_fields(request_url)
+    _merge_error_context(
+        {
+            "upstream_method": method.upper(),
+            "upstream_status": response.status_code,
+            "upstream_url": upstream_url,
+            "upstream_path": upstream_path,
+            "upstream_response_excerpt": response.text,
+            "upstream_log_level": "error" if response.status_code >= 500 else "warning",
+        }
+    )
+
+
+def _record_upstream_exception_context(method: str, url: Any, exc: Exception) -> None:
+    """Capture structured context for network/transport exceptions before a response exists."""
+    upstream_url, upstream_path = _extract_upstream_url_fields(url)
+    _merge_error_context(
+        {
+            "upstream_method": method.upper(),
+            "upstream_url": upstream_url,
+            "upstream_path": upstream_path,
+            "upstream_exception_type": type(exc).__name__,
+            "upstream_exception_message": str(exc),
+            "upstream_log_level": "error",
+        }
+    )
 
 
 def _normalize_path(path: str) -> str:
@@ -325,6 +457,8 @@ class AuthenticatedHTTPXClient:
 
     async def request(self, method: str, url: str, **kwargs):
         """Override request to transform parameters and ensure correct headers."""
+        _clear_error_context()
+
         # Transform query parameters
         if "params" in kwargs:
             kwargs["params"] = self._transform_params(kwargs["params"])
@@ -368,11 +502,17 @@ class AuthenticatedHTTPXClient:
         # Log outgoing request
         logger.debug(f"Request: {method} {url}")
 
-        response = await self.client.request(method, url, **kwargs)
+        try:
+            response = await self.client.request(method, url, **kwargs)
+        except Exception as exc:
+            _record_upstream_exception_context(method, url, exc)
+            raise
+
         logger.debug(f"Response: {method} {url} -> {response.status_code}")
 
         # Log error responses (4xx/5xx)
         if response.is_error:
+            _record_upstream_response_context(method, response)
             log_message = (
                 f"HTTP {response.status_code} error for {method} {url}: "
                 f"{response.text[:500] if response.text else 'No response body'}"
@@ -446,6 +586,8 @@ class AuthenticatedHTTPXClient:
         Headers are enforced by the event hook, so we just delegate to the inner client.
         Alert response stripping is also applied here for forward compatibility.
         """
+        _clear_error_context()
+
         # In hosted mode, ensure Authorization header is present in the request.
         # The _session_auth_token ContextVar is set by AuthCaptureMiddleware
         # on MCP transport paths (/sse, /mcp).
@@ -484,7 +626,15 @@ class AuthenticatedHTTPXClient:
             )
             request = new_request
 
-        response = await self.client.send(request, **kwargs)
+        try:
+            response = await self.client.send(request, **kwargs)
+        except Exception as exc:
+            _record_upstream_exception_context(request.method, request.url, exc)
+            raise
+
+        if response.is_error:
+            _record_upstream_response_context(request.method, response)
+
         response = self._maybe_strip_alert_response(request.method, str(request.url), response)
         return response
 
