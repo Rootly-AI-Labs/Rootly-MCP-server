@@ -457,8 +457,6 @@ class AuthenticatedHTTPXClient:
 
     async def request(self, method: str, url: str, **kwargs):
         """Override request to transform parameters and ensure correct headers."""
-        _clear_error_context()
-
         # Transform query parameters
         if "params" in kwargs:
             kwargs["params"] = self._transform_params(kwargs["params"])
@@ -586,8 +584,6 @@ class AuthenticatedHTTPXClient:
         Headers are enforced by the event hook, so we just delegate to the inner client.
         Alert response stripping is also applied here for forward compatibility.
         """
-        _clear_error_context()
-
         # In hosted mode, ensure Authorization header is present in the request.
         # The _session_auth_token ContextVar is set by AuthCaptureMiddleware
         # on MCP transport paths (/sse, /mcp).

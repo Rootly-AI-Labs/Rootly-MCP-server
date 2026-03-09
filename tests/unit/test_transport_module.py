@@ -318,6 +318,34 @@ class TestTransportModule:
         assert error_context["upstream_path"] == "/v1/teams"
         assert error_context["upstream_log_level"] == "error"
 
+    @pytest.mark.asyncio
+    async def test_authenticated_client_preserves_failure_context_across_followup_success(self):
+        responses = [
+            httpx.Response(
+                502,
+                request=httpx.Request("GET", "https://api.rootly.com/v1/alerts"),
+                content=b'{"error":"backend down"}',
+            ),
+            httpx.Response(
+                200,
+                request=httpx.Request("GET", "https://api.rootly.com/v1/users/me"),
+                content=b'{"data":{"id":"1"}}',
+            ),
+        ]
+
+        with patch.object(transport.AuthenticatedHTTPXClient, "_get_api_token", return_value="token"):
+            client = transport.AuthenticatedHTTPXClient(hosted=False, transport="stdio")
+            client.client.request = AsyncMock(side_effect=responses)
+
+            transport._clear_error_context()
+            await client.request("GET", "/v1/alerts")
+            await client.request("GET", "/v1/users/me")
+
+        error_context = transport._get_error_context()
+        assert error_context["upstream_status"] == 502
+        assert error_context["upstream_path"] == "/v1/alerts"
+        assert error_context["upstream_log_level"] == "error"
+
     def test_sanitize_log_excerpt_redacts_tokens_and_paths(self):
         excerpt = transport._sanitize_log_excerpt(
             'Bearer rootly_1234567890 File "/Users/spencercheng/app.py" failed'
