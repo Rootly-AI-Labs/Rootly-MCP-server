@@ -257,6 +257,7 @@ class TestToolUsageIdentityHelpers:
     def test_current_tool_identity_prefers_session_transport_over_runtime(self):
         token_ctx = server_module._session_auth_token.set("Bearer rootly_session_token")
         transport_ctx = server_module._session_transport.set("streamable-http")
+        mode_ctx = server_module._session_mcp_mode.set("code-mode")
         try:
             with patch("fastmcp.server.dependencies.get_http_headers", return_value={}):
                 with patch("fastmcp.server.context._current_transport") as mock_transport:
@@ -265,10 +266,18 @@ class TestToolUsageIdentityHelpers:
         finally:
             server_module._session_auth_token.reset(token_ctx)
             server_module._session_transport.reset(transport_ctx)
+            server_module._session_mcp_mode.reset(mode_ctx)
 
         assert identity["transport_runtime"] == "both"
         assert identity["transport_effective"] == "streamable-http"
         assert identity["transport"] == "streamable-http"
+        assert identity["mcp_mode"] == "code-mode"
+
+    def test_current_tool_identity_defaults_mcp_mode_to_classic(self):
+        with patch("fastmcp.server.dependencies.get_http_headers", return_value={}):
+            identity = _current_tool_identity()
+
+        assert identity["mcp_mode"] == "classic"
 
     def test_log_tool_usage_event_emits_json_line(self):
         with patch.object(server_module, "_configure_tool_usage_json_logger") as mock_configure:
@@ -285,6 +294,7 @@ class TestToolUsageIdentityHelpers:
                         "transport": "sse",
                         "transport_effective": "sse",
                         "transport_runtime": "both",
+                        "mcp_mode": "classic",
                     },
                 )
 
@@ -298,6 +308,7 @@ class TestToolUsageIdentityHelpers:
         assert payload["transport"] == "sse"
         assert payload["transport_effective"] == "sse"
         assert payload["transport_runtime"] == "both"
+        assert payload["mcp_mode"] == "classic"
 
 
 @pytest.mark.unit

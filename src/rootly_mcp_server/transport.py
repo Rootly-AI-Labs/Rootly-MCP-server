@@ -28,6 +28,9 @@ _session_request_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 _session_transport: contextvars.ContextVar[str] = contextvars.ContextVar(
     "_session_transport", default=""
 )
+_session_mcp_mode: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_session_mcp_mode", default=""
+)
 
 
 def _normalize_path(path: str) -> str:
@@ -87,6 +90,22 @@ def _infer_transport_from_path(
     return ""
 
 
+def _infer_mcp_mode_from_path(
+    path: str,
+    sse_path: str,
+    message_path: str,
+    streamable_path: str,
+    code_mode_path: str = "",
+) -> str:
+    """Infer whether a request is classic MCP or Code Mode."""
+    normalized = _normalize_path(path)
+    if normalized == code_mode_path and code_mode_path:
+        return "code-mode"
+    if normalized in {sse_path, message_path, streamable_path}:
+        return "classic"
+    return ""
+
+
 def _get_auth_capture_paths() -> set[str]:
     """Get MCP HTTP paths that should capture auth headers."""
     sse_path = _normalize_path(os.getenv("FASTMCP_SSE_PATH", "/sse"))
@@ -134,8 +153,17 @@ class AuthCaptureMiddleware:
                 self._streamable_path,
                 self._code_mode_path,
             )
+            mcp_mode = _infer_mcp_mode_from_path(
+                path,
+                self._sse_path,
+                self._message_path,
+                self._streamable_path,
+                self._code_mode_path,
+            )
             if effective_transport:
                 _session_transport.set(effective_transport)
+            if mcp_mode:
+                _session_mcp_mode.set(mcp_mode)
             auth = request.headers.get("authorization", "")
             if auth:
                 _session_auth_token.set(auth)
@@ -145,9 +173,13 @@ class AuthCaptureMiddleware:
             request_id = _extract_request_id(headers)
             if request_id:
                 _session_request_id.set(request_id)
-            if auth or client_ip or request_id or effective_transport:
+            if auth or client_ip or request_id or effective_transport or mcp_mode:
                 logger.debug(
-                    f"Captured hosted auth/identity context from path: {path} (transport={effective_transport or 'unknown'})"
+                    "Captured hosted auth/identity context from path: %s "
+                    "(transport=%s, mcp_mode=%s)",
+                    path,
+                    effective_transport or "unknown",
+                    mcp_mode or "unknown",
                 )
         await self.app(scope, receive, send)
 
