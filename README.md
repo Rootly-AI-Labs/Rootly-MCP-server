@@ -10,101 +10,14 @@ An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overvie
 
 ![Demo GIF](https://raw.githubusercontent.com/Rootly-AI-Labs/Rootly-MCP-server/refs/heads/main/rootly-mcp-server-demo.gif)
 
-## Prerequisites
-
-- Python 3.12 or higher
-- `uv` package manager
-  ```bash
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-  ```
-- [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F) with appropriate permissions (see below)
-
-### API Token Permissions
-
-The MCP server requires a Rootly API token. Choose the appropriate token type based on your needs:
-
-- **Global API Key** (Recommended): Full access to all entities across your Rootly instance. Required for organization-wide visibility across teams, schedules, and incidents.
-- **Team API Key**: Team Admin permissions with full read/edit access to entities owned by that team. Suitable for team-specific workflows.
-- **Personal API Key**: Inherits the permissions of the user who created it. Works for individual use cases but may have limited visibility.
-
-For full functionality of tools like `get_oncall_handoff_summary`, `get_oncall_shift_metrics`, and organization-wide incident search, a **Global API Key** is recommended.
-
 ## Quick Start
 
 The fastest way to get started is to connect to our hosted MCP server — no installation required.
 
-### Hosted (Streamable HTTP, recommended)
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "url": "https://mcp.rootly.com/mcp",
-      "headers": {
-        "Authorization": "Bearer <YOUR_ROOTLY_API_TOKEN>"
-      }
-    }
-  }
-}
-```
-
-### Hosted (Code Mode)
-
-Use Code Mode when you want the client to discover tools dynamically and execute multi-step workflows through the hosted server.
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "url": "https://mcp.rootly.com/mcp-codemode",
-      "headers": {
-        "Authorization": "Bearer <YOUR_ROOTLY_API_TOKEN>"
-      }
-    }
-  }
-}
-```
-
-### Hosted (SSE, backward compatible)
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "url": "https://mcp.rootly.com/sse",
-      "headers": {
-        "Authorization": "Bearer <YOUR_ROOTLY_API_TOKEN>"
-      }
-    }
-  }
-}
-```
-
-For **Claude Desktop**, if direct `url` config causes launch issues on your build, use this fallback:
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "mcp-remote",
-        "https://mcp.rootly.com/sse",
-        "--transport",
-        "sse-only",
-        "--header",
-        "Authorization: Bearer <YOUR_ROOTLY_API_TOKEN>"
-      ]
-    }
-  }
-}
-```
-
-For **Claude Code**, run:
+### Claude Code
 
 ```bash
-claude mcp add rootly --transport http https://mcp.rootly.com/mcp \
+claude mcp add --transport http rootly https://mcp.rootly.com/mcp \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
 
@@ -118,11 +31,13 @@ claude mcp add rootly-codemode --transport http https://mcp.rootly.com/mcp-codem
 SSE fallback:
 
 ```bash
-claude mcp add rootly-sse --transport sse https://mcp.rootly.com/sse \
+claude mcp add --transport sse rootly-sse https://mcp.rootly.com/sse \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
 
-For **Gemini CLI**, install the extension:
+### Gemini CLI
+
+Install the extension:
 
 ```bash
 gemini extensions install https://github.com/Rootly-AI-Labs/Rootly-MCP-server
@@ -144,9 +59,111 @@ Or configure manually in `~/.gemini/settings.json`:
 }
 ```
 
+### Cursor
+
+Add to `.cursor/mcp.json` or `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "url": "https://mcp.rootly.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+### Windsurf
+
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "serverUrl": "https://mcp.rootly.com/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_ROOTLY_API_TOKEN>"
+      }
+    }
+  }
+}
+```
+
+### Codex
+
+Add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.rootly]
+url = "https://mcp.rootly.com/mcp"
+bearer_token_env_var = "ROOTLY_API_TOKEN"
+```
+
+### Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://mcp.rootly.com/mcp",
+        "--header",
+        "Authorization: Bearer <YOUR_ROOTLY_API_TOKEN>"
+      ]
+    }
+  }
+}
+```
+
+## Rootly CLI
+
+We also offer a standalone CLI for managing incidents, alerts, services, on-call schedules, and more directly from your terminal.
+
+Install via Homebrew:
+
+```bash
+brew install rootlyhq/tap/rootly-cli
+```
+
+Or via Go:
+
+```bash
+go install github.com/rootlyhq/rootly-cli/cmd/rootly@latest
+```
+
+For more details, see the [Rootly CLI repository](https://github.com/rootlyhq/rootly-cli).
+
 ## Alternative Installation (Local)
 
 If you prefer to run the MCP server locally, configure your editor with one of the options below. The package will be automatically downloaded and installed when you first open your editor.
+
+### Prerequisites
+
+- Python 3.12 or higher
+- `uv` package manager
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+- [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F) with appropriate permissions (see below)
+
+### API Token Permissions
+
+The MCP server requires a Rootly API token. Choose the appropriate token type based on your needs:
+
+- **Global API Key** (Recommended): Full access to all entities across your Rootly instance. Required for organization-wide visibility across teams, schedules, and incidents.
+- **Team API Key**: Team Admin permissions with full read/edit access to entities owned by that team. Suitable for team-specific workflows.
+- **Personal API Key**: Inherits the permissions of the user who created it. Works for individual use cases but may have limited visibility.
+
+For full functionality of tools like `get_oncall_handoff_summary`, `get_oncall_shift_metrics`, and organization-wide incident search, a **Global API Key** is recommended.
 
 ### With uv
 
