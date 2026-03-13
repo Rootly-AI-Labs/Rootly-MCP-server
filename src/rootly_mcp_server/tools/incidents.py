@@ -14,6 +14,8 @@ MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
 StripHeavyNestedData = Callable[[JsonDict], JsonDict]
 GenerateRecommendation = Callable[[JsonDict], str]
 
+RETROSPECTIVE_PROGRESS_STATUSES = ("not_started", "active", "completed", "skipped")
+
 
 def register_incident_tools(
     mcp: Any,
@@ -154,6 +156,75 @@ def register_incident_tools(
         except Exception as e:
             error_type, error_message = mcp_error.categorize_error(e)
             return cast(JsonDict, mcp_error.tool_error(error_message, error_type))
+
+    @mcp.tool(name="updateIncident")
+    async def update_incident(
+        incident_id: Annotated[str, Field(description="Incident ID to update")],
+        retrospective_progress_status: Annotated[
+            str | None,
+            Field(
+                description="Retrospective/PIR status: one of not_started, active, completed, skipped"
+            ),
+        ] = None,
+        summary: Annotated[
+            str | None,
+            Field(description="Updated incident summary"),
+        ] = None,
+    ) -> JsonDict:
+        """Update scoped incident fields for PIR lifecycle automation."""
+        attributes: dict[str, Any] = {}
+
+        if retrospective_progress_status is not None:
+            if retrospective_progress_status not in RETROSPECTIVE_PROGRESS_STATUSES:
+                allowed = ", ".join(RETROSPECTIVE_PROGRESS_STATUSES)
+                return cast(
+                    JsonDict,
+                    mcp_error.tool_error(
+                        f"retrospective_progress_status must be one of: {allowed}",
+                        "validation_error",
+                    ),
+                )
+            attributes["retrospective_progress_status"] = retrospective_progress_status
+
+        if summary is not None:
+            attributes["summary"] = summary
+
+        if not attributes:
+            return cast(
+                JsonDict,
+                mcp_error.tool_error(
+                    "Must provide at least one of retrospective_progress_status or summary",
+                    "validation_error",
+                ),
+            )
+
+        payload = {
+            "data": {
+                "type": "incidents",
+                "attributes": attributes,
+            }
+        }
+
+        try:
+            response = await make_authenticated_request(
+                "PUT", f"/v1/incidents/{incident_id}", json=payload
+            )
+            response.raise_for_status()
+
+            response_data = response.json()
+            if isinstance(response_data.get("data"), dict):
+                stripped = strip_heavy_nested_data({"data": [response_data["data"]]})
+                response_data["data"] = stripped["data"][0]
+            return cast(JsonDict, response_data)
+        except Exception as e:
+            error_type, error_message = mcp_error.categorize_error(e)
+            return cast(
+                JsonDict,
+                mcp_error.tool_error(
+                    f"Failed to update incident: {error_message}",
+                    error_type,
+                ),
+            )
 
     @mcp.tool()
     async def find_related_incidents(

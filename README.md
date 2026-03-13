@@ -256,7 +256,7 @@ docker run -p 8000:8000 \
 
 ## Supported Tools
 
-The default server configuration currently exposes **99 tools** (including custom agentic tools and OpenAPI-generated tools).
+The default server configuration currently exposes **100 tools** (including custom agentic tools and OpenAPI-generated tools).
 
 ### Custom Agentic Tools
 
@@ -274,6 +274,7 @@ The default server configuration currently exposes **99 tools** (including custo
 - `list_shifts`
 - `search_incidents`
 - `suggest_solutions`
+- `updateIncident` - scoped incident update tool for `summary` and `retrospective_progress_status`
 
 ### OpenAPI-Generated Tools
 
