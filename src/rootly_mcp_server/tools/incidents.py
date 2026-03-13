@@ -15,6 +15,9 @@ StripHeavyNestedData = Callable[[JsonDict], JsonDict]
 GenerateRecommendation = Callable[[JsonDict], str]
 
 RETROSPECTIVE_PROGRESS_STATUSES = ("not_started", "active", "completed", "skipped")
+INCIDENT_SEARCH_FIELDS = (
+    "id,title,summary,status,created_at,updated_at,url,started_at,retrospective_progress_status"
+)
 
 
 def register_incident_tools(
@@ -62,7 +65,7 @@ def register_incident_tools(
                 "page[size]": page_size,  # Use requested page size (already limited to max 20)
                 "page[number]": page_number,
                 "include": "",
-                "fields[incidents]": "id,title,summary,status,created_at,updated_at,url,started_at",
+                "fields[incidents]": INCIDENT_SEARCH_FIELDS,
             }
             if query:
                 params["filter[search]"] = query
@@ -87,7 +90,7 @@ def register_incident_tools(
                     "page[size]": effective_page_size,
                     "page[number]": current_page,
                     "include": "",
-                    "fields[incidents]": "id,title,summary,status,created_at,updated_at,url,started_at",
+                    "fields[incidents]": INCIDENT_SEARCH_FIELDS,
                 }
                 if query:
                     params["filter[search]"] = query
@@ -156,6 +159,30 @@ def register_incident_tools(
         except Exception as e:
             error_type, error_message = mcp_error.categorize_error(e)
             return cast(JsonDict, mcp_error.tool_error(error_message, error_type))
+
+    @mcp.tool(name="getIncident")
+    async def get_incident(
+        incident_id: Annotated[str, Field(description="Incident ID to retrieve")],
+    ) -> JsonDict:
+        """Retrieve a single incident with PIR-related fields for direct verification."""
+        try:
+            response = await make_authenticated_request("GET", f"/v1/incidents/{incident_id}")
+            response.raise_for_status()
+
+            response_data = response.json()
+            if isinstance(response_data.get("data"), dict):
+                stripped = strip_heavy_nested_data({"data": [response_data["data"]]})
+                response_data["data"] = stripped["data"][0]
+            return cast(JsonDict, response_data)
+        except Exception as e:
+            error_type, error_message = mcp_error.categorize_error(e)
+            return cast(
+                JsonDict,
+                mcp_error.tool_error(
+                    f"Failed to retrieve incident: {error_message}",
+                    error_type,
+                ),
+            )
 
     @mcp.tool(name="updateIncident")
     async def update_incident(

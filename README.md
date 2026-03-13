@@ -256,7 +256,7 @@ docker run -p 8000:8000 \
 
 ## Supported Tools
 
-The default server configuration currently exposes **100 tools** (including custom agentic tools and OpenAPI-generated tools).
+The default server configuration currently exposes **101 tools** (including custom agentic tools and OpenAPI-generated tools).
 
 ### Custom Agentic Tools
 
@@ -264,6 +264,7 @@ The default server configuration currently exposes **100 tools** (including cust
 - `check_responder_availability`
 - `create_override_recommendation`
 - `find_related_incidents`
+- `getIncident` - retrieve a single incident for direct verification, including PIR-related fields
 - `get_alert_by_short_id`
 - `get_oncall_handoff_summary`
 - `get_oncall_schedule_summary`
