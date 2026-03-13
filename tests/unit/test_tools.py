@@ -144,6 +144,30 @@ class TestScopedIncidentUpdateTool:
         tools, _ = self._register_tools()
 
         assert "updateIncident" in tools
+        assert "getIncident" in tools
+
+    @pytest.mark.asyncio
+    async def test_get_incident_fetches_single_incident(self):
+        tools, request = self._register_tools()
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {
+            "data": {
+                "id": "inc-123",
+                "type": "incidents",
+                "attributes": {
+                    "summary": "Updated PIR summary",
+                    "retrospective_progress_status": "active",
+                },
+            }
+        }
+        request.return_value = response
+
+        result = await tools["getIncident"](incident_id="inc-123")
+
+        request.assert_awaited_once_with("GET", "/v1/incidents/inc-123")
+        assert result["data"]["id"] == "inc-123"
+        assert result["data"]["attributes"]["retrospective_progress_status"] == "active"
 
     @pytest.mark.asyncio
     async def test_update_incident_sends_only_allowed_fields(self):
@@ -244,3 +268,19 @@ class TestScopedIncidentUpdateTool:
         assert result["error"] is True
         assert result["error_type"] == "validation_error"
         assert "retrospective_progress_status must be one of" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_search_incidents_requests_retrospective_progress_status_field(self):
+        tools, request = self._register_tools()
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"data": []}
+        request.return_value = response
+
+        await tools["search_incidents"](query="pir", page_size=5, page_number=1)
+
+        request.assert_awaited_once()
+        await_args = request.await_args
+        assert await_args is not None
+        kwargs = await_args.kwargs
+        assert "retrospective_progress_status" in kwargs["params"]["fields[incidents]"]
