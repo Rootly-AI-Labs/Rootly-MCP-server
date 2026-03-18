@@ -16,6 +16,8 @@ The fastest way to get started is to connect to our hosted MCP server — no ins
 
 ### Claude Code
 
+**Hosted Server (Recommended)**
+
 ```bash
 claude mcp add --transport http rootly https://mcp.rootly.com/mcp \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
@@ -34,6 +36,33 @@ SSE fallback:
 claude mcp add --transport sse rootly-sse https://mcp.rootly.com/sse \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
+
+**Local Development**
+
+For local development, install the package and configure with `.mcp.json`:
+
+```bash
+# Install in development mode
+pip install -e .
+```
+
+Create `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "rootly-mcp": {
+      "command": "fastmcp",
+      "args": ["run", "--module", "rootly_mcp_server"],
+      "env": {
+        "ROOTLY_API_TOKEN": "YOUR_ROOTLY_API_TOKEN"
+      }
+    }
+  }
+}
+```
+
+Then restart Claude Code (Cmd+Shift+P → "Developer: Reload Window").
 
 ### Gemini CLI
 
