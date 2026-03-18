@@ -422,3 +422,18 @@ class TestListShifts:
         assert result["returned_shifts"] == 1
         assert result["meta"]["has_more"] is False
         assert result["shifts"][0]["user_id"] == "2381"
+
+    async def test_list_shifts_rejects_page_number_zero(self):
+        tools, request = self._register_tools()
+
+        result = await tools["list_shifts"](
+            from_date="2026-02-09T00:00:00Z",
+            to_date="2026-02-12T00:00:00Z",
+            page_size=10,
+            page_number=0,
+        )
+
+        assert result["error"] is True
+        assert result["error_type"] == "validation_error"
+        assert "page_number must be >= 1" in result["message"]
+        request.assert_not_awaited()

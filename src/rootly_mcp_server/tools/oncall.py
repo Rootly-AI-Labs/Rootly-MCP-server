@@ -1375,6 +1375,12 @@ def register_oncall_tools(
             from datetime import datetime
 
             page_size, page_number = validate_page_params(page_size, page_number)
+            if page_number == 0:
+                return mcp_error.tool_error(
+                    "page_number must be >= 1 for list_shifts",
+                    "validation_error",
+                    details={"page_number": page_number},
+                )
 
             # Build query parameters
             params: dict[str, Any] = {
