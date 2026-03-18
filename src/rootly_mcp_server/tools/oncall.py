@@ -15,6 +15,29 @@ from ..och_client import OnCallHealthClient
 
 JsonDict = dict[str, Any]
 MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
+SHIFT_INCIDENT_QUERY_FIELDS = (
+    "title,status,started_at,resolved_at,created_at,summary,"
+    "customer_impact_summary,mitigation,severity,url"
+)
+DEFAULT_MAX_SHIFT_INCIDENT_RESULTS = 100
+
+
+def _truncate_text(value: Any, max_length: int = 280) -> str | None:
+    """Keep large narrative fields compact enough for MCP clients."""
+    if not value:
+        return None
+
+    if not isinstance(value, str):
+        value = str(value)
+
+    value = value.strip()
+    if not value:
+        return None
+
+    if len(value) <= max_length:
+        return value
+
+    return f"{value[: max_length - 1].rstrip()}…"
 
 
 def _normalize_incident_severity(severity: Any) -> str:
@@ -820,6 +843,8 @@ def register_oncall_tools(
                             severity="",
                             status="",
                             tags="",
+                            include_preexisting_active=True,
+                            max_incidents=25,
                         )
 
                         schedule_info["shift_incidents"] = (
@@ -872,6 +897,9 @@ def register_oncall_tools(
         severity: str = "",
         status: str = "",
         tags: str = "",
+        *,
+        include_preexisting_active: bool = False,
+        max_incidents: int | None = None,
     ) -> dict:
         """Internal helper to fetch incidents - used by both get_shift_incidents and get_oncall_handoff_summary."""
         try:
@@ -881,11 +909,17 @@ def register_oncall_tools(
             # Fetch incidents that:
             # 1. Were created during the shift (created_at in range)
             # 2. OR are currently active/unresolved (started but not resolved yet)
-            params = {"page[size]": 100, "sort": "-created_at"}
+            params = {
+                "page[size]": 100,
+                "sort": "-created_at",
+                "fields[incidents]": SHIFT_INCIDENT_QUERY_FIELDS,
+            }
 
             # Get incidents created during shift OR still active
             # We'll fetch all incidents and filter in-memory for active ones
             params["filter[started_at][lte]"] = end_time  # Started before shift ended
+            if not include_preexisting_active:
+                params["filter[started_at][gte]"] = start_time
 
             # Add severity filter if provided
             if severity:
@@ -998,7 +1032,12 @@ def register_oncall_tools(
                 if resolved_dt and shift_start_dt <= resolved_dt <= shift_end_dt:
                     include_incident = True  # Resolved during shift
 
-                if not resolved_dt and started_dt and started_dt <= now_dt:
+                if (
+                    include_preexisting_active
+                    and not resolved_dt
+                    and started_dt
+                    and started_dt <= now_dt
+                ):
                     include_incident = True  # Currently active
 
                 if not include_incident:
@@ -1015,6 +1054,9 @@ def register_oncall_tools(
                 # What happened
                 title = attrs.get("title", "Untitled Incident")
                 severity = _normalize_incident_severity(attrs.get("severity"))
+                summary_text = _truncate_text(attrs.get("summary"))
+                impact_text = _truncate_text(attrs.get("customer_impact_summary"))
+                mitigation_text = _truncate_text(attrs.get("mitigation"))
                 narrative_parts.append(f"[{severity.upper()}] {title}")
 
                 # When and duration
@@ -1028,22 +1070,22 @@ def register_oncall_tools(
                     narrative_parts.append(f"Status: {attrs.get('status')}")
 
                 # What was the issue
-                if attrs.get("summary"):
-                    narrative_parts.append(f"Details: {attrs.get('summary')}")
+                if summary_text:
+                    narrative_parts.append(f"Details: {summary_text}")
 
                 # Impact
-                if attrs.get("customer_impact_summary"):
-                    narrative_parts.append(f"Impact: {attrs.get('customer_impact_summary')}")
+                if impact_text:
+                    narrative_parts.append(f"Impact: {impact_text}")
 
                 # Resolution (if available)
-                if attrs.get("mitigation"):
-                    narrative_parts.append(f"Resolution: {attrs.get('mitigation')}")
+                if mitigation_text:
+                    narrative_parts.append(f"Resolution: {mitigation_text}")
                 elif attrs.get("action_items_count") and attrs.get("action_items_count") > 0:
                     narrative_parts.append(
                         f"Action items created: {attrs.get('action_items_count')}"
                     )
 
-                narrative = " | ".join(narrative_parts)
+                narrative = _truncate_text(" | ".join(narrative_parts), max_length=400)
 
                 incidents_summary.append(
                     {
@@ -1054,11 +1096,11 @@ def register_oncall_tools(
                         "started_at": started_at,
                         "resolved_at": resolved_at,
                         "duration_minutes": duration_minutes,
-                        "summary": attrs.get("summary"),
-                        "impact": attrs.get("customer_impact_summary"),
-                        "mitigation": attrs.get("mitigation"),
+                        "summary": summary_text,
+                        "impact": impact_text,
+                        "mitigation": mitigation_text,
                         "narrative": narrative,
-                        "incident_url": attrs.get("incident_url"),
+                        "incident_url": attrs.get("incident_url") or attrs.get("url"),
                     }
                 )
 
@@ -1082,6 +1124,12 @@ def register_oncall_tools(
             if durations:
                 avg_resolution_time = int(sum(durations) / len(durations))
 
+            returned_incidents = incidents_summary
+            truncated_count = 0
+            if max_incidents is not None and total_incidents > max_incidents:
+                returned_incidents = incidents_summary[:max_incidents]
+                truncated_count = total_incidents - max_incidents
+
             return {
                 "success": True,
                 "period": {"start_time": start_time, "end_time": end_time},
@@ -1092,7 +1140,10 @@ def register_oncall_tools(
                     "average_resolution_minutes": avg_resolution_time,
                     "by_severity": {k: len(v) for k, v in by_severity.items()},
                 },
-                "incidents": incidents_summary,
+                "incidents": returned_incidents,
+                "returned_incidents": len(returned_incidents),
+                "truncated_incidents": truncated_count,
+                "results_truncated": truncated_count > 0,
             }
 
         except Exception as e:
@@ -1157,7 +1208,14 @@ def register_oncall_tools(
         Returns incident details including severity, status, duration, and basic summary.
         """
         return await _fetch_shift_incidents_internal(
-            start_time, end_time, schedule_ids, severity, status, tags
+            start_time,
+            end_time,
+            schedule_ids,
+            severity,
+            status,
+            tags,
+            include_preexisting_active=False,
+            max_incidents=DEFAULT_MAX_SHIFT_INCIDENT_RESULTS,
         )
 
     # Cache for lookup maps (TTL: 5 minutes)
