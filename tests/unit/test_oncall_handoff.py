@@ -188,4 +188,5 @@ class TestGetShiftIncidents:
         assert first_incident["summary"].endswith("…")
         assert first_incident["impact"].endswith("…")
         assert first_incident["mitigation"].endswith("…")
+        assert first_incident["narrative"] is not None
         assert len(first_incident["narrative"]) <= 400
