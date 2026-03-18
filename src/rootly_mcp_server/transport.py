@@ -333,6 +333,197 @@ ALERT_ESSENTIAL_ATTRIBUTES = {
     "started_at",
     "ended_at",
 }
+USER_ESSENTIAL_ATTRIBUTES = {
+    "name",
+    "email",
+    "phone",
+    "phone_2",
+    "first_name",
+    "last_name",
+    "full_name",
+    "full_name_with_team",
+    "slack_id",
+    "time_zone",
+    "created_at",
+    "updated_at",
+}
+SERVICE_ESSENTIAL_ATTRIBUTES = {
+    "name",
+    "slug",
+    "description",
+    "public_description",
+    "color",
+    "status",
+    "show_uptime",
+    "show_uptime_last_days",
+    "environment_ids",
+    "service_ids",
+    "owner_group_ids",
+    "owners_group_ids",
+    "owner_user_ids",
+    "owners_user_ids",
+    "incidents_count",
+    "alert_urgency_id",
+    "created_at",
+    "updated_at",
+    "external_id",
+    "backstage_id",
+    "cortex_id",
+    "opslevel_id",
+}
+SHIFT_ESSENTIAL_ATTRIBUTES = {
+    "schedule_id",
+    "rotation_id",
+    "starts_at",
+    "ends_at",
+    "is_override",
+}
+MINIMAL_USER_INCLUDED_ATTRIBUTES = {
+    "name",
+    "email",
+    "full_name",
+    "time_zone",
+}
+MINIMAL_ROLE_INCLUDED_ATTRIBUTES = {"name", "slug"}
+MINIMAL_SHIFT_OVERRIDE_INCLUDED_ATTRIBUTES = {
+    "starts_at",
+    "ends_at",
+    "created_at",
+    "updated_at",
+}
+
+
+def _collapse_relationship_data(relationship: Any) -> Any:
+    """Reduce relationship payloads to ids/counts while keeping structure predictable."""
+    if not isinstance(relationship, dict) or "data" not in relationship:
+        return relationship
+
+    data = relationship.get("data")
+    if isinstance(data, list):
+        return {"count": len(data)}
+    if isinstance(data, dict):
+        return {"data": {"id": data.get("id"), "type": data.get("type")}}
+    return {"data": data}
+
+
+def _strip_resource_attributes(resource: Any, allowed_attributes: set[str]) -> None:
+    """Trim a resource's attributes to the allowed subset."""
+    if not isinstance(resource, dict):
+        return
+    attrs = resource.get("attributes")
+    if not isinstance(attrs, dict):
+        return
+    for key in [attr_key for attr_key in attrs if attr_key not in allowed_attributes]:
+        del attrs[key]
+
+
+def _strip_minimal_included_resource(resource: Any) -> None:
+    """Trim sideloaded resources for user/shift/service list endpoints."""
+    if not isinstance(resource, dict):
+        return
+
+    resource_type = resource.get("type")
+    if resource_type == "users":
+        _strip_resource_attributes(resource, MINIMAL_USER_INCLUDED_ATTRIBUTES)
+    elif resource_type in {"roles", "on_call_roles"}:
+        _strip_resource_attributes(resource, MINIMAL_ROLE_INCLUDED_ATTRIBUTES)
+    elif resource_type == "shift_overrides":
+        _strip_resource_attributes(resource, MINIMAL_SHIFT_OVERRIDE_INCLUDED_ATTRIBUTES)
+    else:
+        resource.pop("attributes", None)
+        resource.pop("relationships", None)
+        return
+
+    resource.pop("relationships", None)
+
+
+def strip_heavy_user_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Trim user list responses to profile essentials and compact relationship data."""
+    if not isinstance(data, dict) or "data" not in data:
+        return data
+
+    def _strip_single_user(user: Any) -> None:
+        if not isinstance(user, dict):
+            return
+        _strip_resource_attributes(user, USER_ESSENTIAL_ATTRIBUTES)
+        if "relationships" in user and isinstance(user["relationships"], dict):
+            user["relationships"] = {
+                rel_key: _collapse_relationship_data(rel_value)
+                for rel_key, rel_value in user["relationships"].items()
+            }
+
+    if isinstance(data["data"], list):
+        for user in data["data"]:
+            _strip_single_user(user)
+    elif isinstance(data["data"], dict):
+        _strip_single_user(data["data"])
+
+    included = data.get("included")
+    if isinstance(included, list):
+        for resource in included:
+            _strip_minimal_included_resource(resource)
+
+    return data
+
+
+def strip_heavy_service_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Trim service list responses to operational essentials."""
+    if not isinstance(data, dict) or "data" not in data:
+        return data
+
+    def _strip_single_service(service: Any) -> None:
+        if not isinstance(service, dict):
+            return
+        _strip_resource_attributes(service, SERVICE_ESSENTIAL_ATTRIBUTES)
+        if "relationships" in service and isinstance(service["relationships"], dict):
+            service["relationships"] = {
+                rel_key: _collapse_relationship_data(rel_value)
+                for rel_key, rel_value in service["relationships"].items()
+            }
+
+    if isinstance(data["data"], list):
+        for service in data["data"]:
+            _strip_single_service(service)
+    elif isinstance(data["data"], dict):
+        _strip_single_service(data["data"])
+
+    included = data.get("included")
+    if isinstance(included, list):
+        for resource in included:
+            _strip_minimal_included_resource(resource)
+
+    return data
+
+
+def strip_heavy_shift_data(data: dict[str, Any]) -> dict[str, Any]:
+    """Trim shift list responses to schedule/timing essentials plus minimal user refs."""
+    if not isinstance(data, dict) or "data" not in data:
+        return data
+
+    def _strip_single_shift(shift: Any) -> None:
+        if not isinstance(shift, dict):
+            return
+        _strip_resource_attributes(shift, SHIFT_ESSENTIAL_ATTRIBUTES)
+        relationships = shift.get("relationships")
+        if isinstance(relationships, dict):
+            kept_relationships = {}
+            for rel_key in ("user", "shift_override"):
+                if rel_key in relationships:
+                    kept_relationships[rel_key] = _collapse_relationship_data(relationships[rel_key])
+            shift["relationships"] = kept_relationships
+
+    if isinstance(data["data"], list):
+        for shift in data["data"]:
+            _strip_single_shift(shift)
+    elif isinstance(data["data"], dict):
+        _strip_single_shift(data["data"])
+
+    included = data.get("included")
+    if isinstance(included, list):
+        for resource in included:
+            _strip_minimal_included_resource(resource)
+
+    return data
 
 
 def strip_heavy_alert_data(data: dict[str, Any]) -> dict[str, Any]:
@@ -525,6 +716,7 @@ class AuthenticatedHTTPXClient:
         # OpenAPITool.run() calls response.json() after this returns, and
         # there is no other interception point for auto-generated tools.
         response = self._maybe_strip_alert_response(method, url, response)
+        response = self._maybe_strip_collection_response(method, url, response)
 
         return response
 
@@ -538,6 +730,14 @@ class AuthenticatedHTTPXClient:
             sub in url_str
             for sub in ["/alert_urgencies", "/alert_events", "/alert_sources", "/alert_routing"]
         )
+
+    @staticmethod
+    def _path_for_url(url: str) -> str:
+        """Return the path portion of a URL or path-like string."""
+        try:
+            return httpx.URL(str(url)).path
+        except Exception:
+            return str(url).split("?", 1)[0]
 
     @staticmethod
     def _maybe_strip_alert_response(
@@ -556,6 +756,31 @@ class AuthenticatedHTTPXClient:
             response._content = json.dumps(stripped).encode()  # noqa: SLF001
         except Exception:
             logger.debug(f"Could not strip alert response for {url}", exc_info=True)
+        return response
+
+    @classmethod
+    def _maybe_strip_collection_response(
+        cls, method: str, url: str, response: httpx.Response
+    ) -> httpx.Response:
+        """Trim known high-volume collection endpoints while keeping essential fields."""
+        if method.upper() != "GET" or not response.is_success:
+            return response
+
+        path = cls._path_for_url(url)
+        if path not in {"/v1/users", "/v1/services", "/v1/shifts"}:
+            return response
+
+        try:
+            data = response.json()
+            if path == "/v1/users":
+                stripped = strip_heavy_user_data(data)
+            elif path == "/v1/services":
+                stripped = strip_heavy_service_data(data)
+            else:
+                stripped = strip_heavy_shift_data(data)
+            response._content = json.dumps(stripped).encode()  # noqa: SLF001
+        except Exception:
+            logger.debug(f"Could not strip collection response for {url}", exc_info=True)
         return response
 
     async def get(self, url: str, **kwargs):
@@ -632,6 +857,9 @@ class AuthenticatedHTTPXClient:
             _record_upstream_response_context(request.method, response)
 
         response = self._maybe_strip_alert_response(request.method, str(request.url), response)
+        response = self._maybe_strip_collection_response(
+            request.method, str(request.url), response
+        )
         return response
 
     async def __aenter__(self):

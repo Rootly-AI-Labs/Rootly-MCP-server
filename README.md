@@ -16,6 +16,8 @@ The fastest way to get started is to connect to our hosted MCP server — no ins
 
 ### Claude Code
 
+**Hosted Server (Recommended)**
+
 ```bash
 claude mcp add --transport http rootly https://mcp.rootly.com/mcp \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
@@ -34,6 +36,26 @@ SSE fallback:
 claude mcp add --transport sse rootly-sse https://mcp.rootly.com/sse \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
+
+**Manual Configuration**
+
+Alternatively, create `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "type": "sse",
+      "url": "https://mcp.rootly.com/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_ROOTLY_API_TOKEN"
+      }
+    }
+  }
+}
+```
+
+Then restart Claude Code so it reloads the updated configuration.
 
 ### Gemini CLI
 
