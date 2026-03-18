@@ -12,6 +12,7 @@ import httpx
 from pydantic import Field
 
 from ..och_client import OnCallHealthClient
+from ..validators import validate_page_params
 
 JsonDict = dict[str, Any]
 MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
@@ -915,11 +916,12 @@ def register_oncall_tools(
                 "fields[incidents]": SHIFT_INCIDENT_QUERY_FIELDS,
             }
 
-            # Get incidents created during shift OR still active
-            # We'll fetch all incidents and filter in-memory for active ones
+            # Fetch incidents that started before the shift ended, then use
+            # in-memory filtering to keep incidents that were created, started,
+            # or resolved during the shift. We cannot safely apply a lower
+            # started_at bound here without dropping incidents that began
+            # before the shift and resolved during it.
             params["filter[started_at][lte]"] = end_time  # Started before shift ended
-            if not include_preexisting_active:
-                params["filter[started_at][gte]"] = start_time
 
             # Add severity filter if provided
             if severity:
@@ -1345,20 +1347,41 @@ def register_oncall_tools(
             bool,
             Field(description="Include user name and email in response (default: True)"),
         ] = True,
+        page_size: Annotated[
+            int,
+            Field(
+                description="Number of enriched shifts to return per page (max: 100). This paginates the MCP response even when the upstream shifts API does not."
+            ),
+        ] = 25,
+        page_number: Annotated[
+            int,
+            Field(
+                description="Page number of enriched shifts to return (1-indexed). Use this instead of relying on the generated listShifts pagination."
+            ),
+        ] = 1,
     ) -> dict:
         """
-        List on-call shifts with proper user filtering and enriched data.
+        List on-call shifts with reliable filtering, enrichment, and MCP-level pagination.
 
         Unlike the raw API, this tool:
         - Actually filters by user_ids (client-side filtering)
         - Includes user_name, user_email, schedule_name, team_name
         - Calculates total_hours for each shift
+        - Returns a predictable paginated result for MCP clients
 
-        Use this instead of the auto-generated listShifts when you need user filtering.
+        Use this instead of the auto-generated listShifts when you need user filtering
+        or dependable pagination on large tenants.
         """
         try:
             from datetime import datetime
 
+            page_size, page_number = validate_page_params(page_size, page_number)
+            if page_number == 0:
+                return mcp_error.tool_error(
+                    "page_number must be >= 1 for list_shifts",
+                    "validation_error",
+                    details={"page_number": page_number},
+                )
             # Build query parameters
             params: dict[str, Any] = {
                 "from": from_date,
@@ -1487,14 +1510,29 @@ def register_oncall_tools(
 
                 enriched_shifts.append(enriched_shift)
 
+            total_matching_shifts = len(enriched_shifts)
+            start_index = (page_number - 1) * page_size
+            end_index = start_index + page_size
+            paginated_shifts = enriched_shifts[start_index:end_index]
+            has_more = end_index < total_matching_shifts
+
             return {
                 "period": {"from": from_date, "to": to_date},
-                "total_shifts": len(enriched_shifts),
+                "total_shifts": total_matching_shifts,
+                "returned_shifts": len(paginated_shifts),
                 "filters_applied": {
                     "user_ids": list(user_id_filter) if user_id_filter else None,
                     "schedule_ids": schedule_ids if schedule_ids else None,
                 },
-                "shifts": enriched_shifts,
+                "meta": {
+                    "page_size": page_size,
+                    "page_number": page_number,
+                    "total_matching_shifts": total_matching_shifts,
+                    "returned_shifts": len(paginated_shifts),
+                    "has_more": has_more,
+                    "next_page": page_number + 1 if has_more else None,
+                },
+                "shifts": paginated_shifts,
             }
 
         except Exception as e:

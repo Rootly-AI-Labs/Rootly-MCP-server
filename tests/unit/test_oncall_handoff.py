@@ -121,7 +121,7 @@ class TestGetShiftIncidents:
         return mcp.tools, request
 
     @pytest.mark.asyncio
-    async def test_get_shift_incidents_uses_tighter_started_at_window(self):
+    async def test_get_shift_incidents_fetches_up_to_shift_end_with_essential_fields(self):
         tools, request = self._register_tools()
         response = Mock()
         response.status_code = 200
@@ -137,12 +137,48 @@ class TestGetShiftIncidents:
         assert request.await_args is not None
         args, kwargs = request.await_args
         assert args == ("GET", "/v1/incidents")
-        assert kwargs["params"]["filter[started_at][gte]"] == "2026-03-17T15:00:00Z"
         assert kwargs["params"]["filter[started_at][lte]"] == "2026-03-18T15:00:00Z"
         assert kwargs["params"]["fields[incidents]"] == SHIFT_INCIDENT_QUERY_FIELDS
         assert kwargs["params"]["page[number]"] == 1
         assert result["success"] is True
         assert result["summary"]["total_incidents"] == 0
+
+    @pytest.mark.asyncio
+    async def test_get_shift_incidents_keeps_incidents_resolved_during_shift(self):
+        tools, request = self._register_tools()
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "data": [
+                {
+                    "id": "inc-resolved-during-shift",
+                    "attributes": {
+                        "title": "Preexisting incident",
+                        "severity": {"name": "SEV 2"},
+                        "status": "resolved",
+                        "created_at": "2026-03-17T12:00:00Z",
+                        "started_at": "2026-03-17T12:30:00Z",
+                        "resolved_at": "2026-03-17T16:00:00Z",
+                        "summary": "Resolved during shift",
+                        "customer_impact_summary": "Minor impact",
+                        "mitigation": "Patched",
+                        "url": "https://rootly.com/incidents/1",
+                    },
+                }
+            ],
+            "meta": {"total_pages": 1},
+        }
+        request.return_value = response
+
+        result = await tools["get_shift_incidents"](
+            start_time="2026-03-17T15:00:00Z",
+            end_time="2026-03-18T15:00:00Z",
+        )
+
+        assert result["success"] is True
+        assert result["summary"]["total_incidents"] == 1
+        assert result["incidents"][0]["incident_id"] == "inc-resolved-during-shift"
+        assert result["incidents"][0]["status"] == "resolved"
 
     @pytest.mark.asyncio
     async def test_get_shift_incidents_truncates_large_results(self):
@@ -190,3 +226,250 @@ class TestGetShiftIncidents:
         assert first_incident["mitigation"].endswith("…")
         assert first_incident["narrative"] is not None
         assert len(first_incident["narrative"]) <= 400
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestListShifts:
+    """Test list_shifts pagination and filtering behavior."""
+
+    def _register_tools(self) -> tuple[dict[str, Any], AsyncMock]:
+        mcp = FakeMCP()
+        request = AsyncMock()
+        register_oncall_tools(
+            mcp=mcp,
+            make_authenticated_request=request,
+            mcp_error=FakeMCPError(),
+        )
+        return mcp.tools, request
+
+    def _response(self, payload: dict[str, Any]) -> Mock:
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = payload
+        return response
+
+    async def test_list_shifts_returns_requested_page_with_meta(self):
+        tools, request = self._register_tools()
+        request.side_effect = [
+            self._response(
+                {
+                    "data": [
+                        {
+                            "id": "2381",
+                            "type": "users",
+                            "attributes": {
+                                "full_name": "Quentin Rousseau",
+                                "email": "quentin@example.com",
+                            },
+                        },
+                        {
+                            "id": "94178",
+                            "type": "users",
+                            "attributes": {
+                                "full_name": "Gideon Lapshun",
+                                "email": "gideon@example.com",
+                            },
+                        },
+                    ]
+                }
+            ),
+            self._response(
+                {
+                    "data": [
+                        {
+                            "id": "schedule-1",
+                            "type": "schedules",
+                            "attributes": {
+                                "name": "Infrastructure - Primary",
+                                "owner_group_ids": ["team-1"],
+                            },
+                        }
+                    ]
+                }
+            ),
+            self._response(
+                {
+                    "data": [
+                        {
+                            "id": "team-1",
+                            "type": "teams",
+                            "attributes": {"name": "Infrastructure"},
+                        }
+                    ]
+                }
+            ),
+            self._response(
+                {
+                    "data": [
+                        {
+                            "id": "shift-1",
+                            "type": "shifts",
+                            "attributes": {
+                                "schedule_id": "schedule-1",
+                                "starts_at": "2026-02-09T08:00:00.000-08:00",
+                                "ends_at": "2026-02-09T16:00:00.000-08:00",
+                                "is_override": False,
+                            },
+                            "relationships": {"user": {"data": {"id": "2381", "type": "users"}}},
+                        },
+                        {
+                            "id": "shift-2",
+                            "type": "shifts",
+                            "attributes": {
+                                "schedule_id": "schedule-1",
+                                "starts_at": "2026-02-10T08:00:00.000-08:00",
+                                "ends_at": "2026-02-10T16:00:00.000-08:00",
+                                "is_override": False,
+                            },
+                            "relationships": {"user": {"data": {"id": "94178", "type": "users"}}},
+                        },
+                        {
+                            "id": "shift-3",
+                            "type": "shifts",
+                            "attributes": {
+                                "schedule_id": "schedule-1",
+                                "starts_at": "2026-02-11T08:00:00.000-08:00",
+                                "ends_at": "2026-02-11T16:00:00.000-08:00",
+                                "is_override": False,
+                            },
+                            "relationships": {"user": {"data": {"id": "2381", "type": "users"}}},
+                        },
+                    ],
+                    "included": [],
+                    "meta": {"total_pages": 1},
+                }
+            ),
+        ]
+
+        result = await tools["list_shifts"](
+            from_date="2026-02-09T00:00:00Z",
+            to_date="2026-02-12T00:00:00Z",
+            page_size=1,
+            page_number=2,
+        )
+
+        assert result["total_shifts"] == 3
+        assert result["returned_shifts"] == 1
+        assert result["meta"] == {
+            "page_size": 1,
+            "page_number": 2,
+            "total_matching_shifts": 3,
+            "returned_shifts": 1,
+            "has_more": True,
+            "next_page": 3,
+        }
+        assert len(result["shifts"]) == 1
+        assert result["shifts"][0]["shift_id"] == "shift-2"
+        assert result["shifts"][0]["user_name"] == "Gideon Lapshun"
+        assert request.await_count == 4
+
+    async def test_list_shifts_filters_before_pagination(self):
+        tools, request = self._register_tools()
+        request.side_effect = [
+            self._response(
+                {
+                    "data": [
+                        {
+                            "id": "2381",
+                            "type": "users",
+                            "attributes": {
+                                "full_name": "Quentin Rousseau",
+                                "email": "quentin@example.com",
+                            },
+                        },
+                        {
+                            "id": "94178",
+                            "type": "users",
+                            "attributes": {
+                                "full_name": "Gideon Lapshun",
+                                "email": "gideon@example.com",
+                            },
+                        },
+                    ]
+                }
+            ),
+            self._response(
+                {
+                    "data": [
+                        {
+                            "id": "schedule-1",
+                            "type": "schedules",
+                            "attributes": {
+                                "name": "Infrastructure - Primary",
+                                "owner_group_ids": ["team-1"],
+                            },
+                        }
+                    ]
+                }
+            ),
+            self._response(
+                {
+                    "data": [
+                        {
+                            "id": "team-1",
+                            "type": "teams",
+                            "attributes": {"name": "Infrastructure"},
+                        }
+                    ]
+                }
+            ),
+            self._response(
+                {
+                    "data": [
+                        {
+                            "id": "shift-1",
+                            "type": "shifts",
+                            "attributes": {
+                                "schedule_id": "schedule-1",
+                                "starts_at": "2026-02-09T08:00:00.000-08:00",
+                                "ends_at": "2026-02-09T16:00:00.000-08:00",
+                                "is_override": False,
+                            },
+                            "relationships": {"user": {"data": {"id": "2381", "type": "users"}}},
+                        },
+                        {
+                            "id": "shift-2",
+                            "type": "shifts",
+                            "attributes": {
+                                "schedule_id": "schedule-1",
+                                "starts_at": "2026-02-10T08:00:00.000-08:00",
+                                "ends_at": "2026-02-10T16:00:00.000-08:00",
+                                "is_override": False,
+                            },
+                            "relationships": {"user": {"data": {"id": "94178", "type": "users"}}},
+                        },
+                    ],
+                    "included": [],
+                    "meta": {"total_pages": 1},
+                }
+            ),
+        ]
+
+        result = await tools["list_shifts"](
+            from_date="2026-02-09T00:00:00Z",
+            to_date="2026-02-12T00:00:00Z",
+            user_ids="2381",
+            page_size=10,
+            page_number=1,
+        )
+
+        assert result["total_shifts"] == 1
+        assert result["returned_shifts"] == 1
+        assert result["meta"]["has_more"] is False
+        assert result["shifts"][0]["user_id"] == "2381"
+
+    async def test_list_shifts_rejects_page_number_zero(self):
+        tools, request = self._register_tools()
+
+        result = await tools["list_shifts"](
+            from_date="2026-02-09T00:00:00Z",
+            to_date="2026-02-12T00:00:00Z",
+            page_size=10,
+            page_number=0,
+        )
+
+        assert result["error"] is True
+        assert result["error_type"] == "validation_error"
+        assert "page_number must be >= 1" in result["message"]
+        request.assert_not_awaited()
