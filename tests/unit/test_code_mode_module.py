@@ -46,7 +46,17 @@ def test_build_code_mode_transform_uses_expected_discovery_tools():
     assert isinstance(transform, CodeMode)
     assert isinstance(transform.sandbox_provider, CompatibleMontySandboxProvider)
     discovery_names = [tool.name for tool in transform._build_discovery_tools()]  # noqa: SLF001
-    assert discovery_names == ["list_tools", "search", "get_schema", "tags"]
+    assert discovery_names == ["list_tools", "tool_search", "get_schema", "tags"]
+
+
+def test_build_code_mode_transform_includes_pagination_guidance():
+    transform = build_code_mode_transform()
+    assert transform.execute_description is not None
+
+    assert "tool_search only to discover tools" in transform.execute_description
+    assert "page_size, page_number, and max_results" in transform.execute_description
+    assert "per_page" in transform.execute_description
+    assert "await call_tool('search_incidents'" in transform.execute_description
 
 
 def test_create_rootly_codemode_server_adds_code_mode_transform():
