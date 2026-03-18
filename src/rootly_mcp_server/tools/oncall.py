@@ -915,11 +915,12 @@ def register_oncall_tools(
                 "fields[incidents]": SHIFT_INCIDENT_QUERY_FIELDS,
             }
 
-            # Get incidents created during shift OR still active
-            # We'll fetch all incidents and filter in-memory for active ones
+            # Fetch incidents that started before the shift ended, then use
+            # in-memory filtering to keep incidents that were created, started,
+            # or resolved during the shift. We cannot safely apply a lower
+            # started_at bound here without dropping incidents that began
+            # before the shift and resolved during it.
             params["filter[started_at][lte]"] = end_time  # Started before shift ended
-            if not include_preexisting_active:
-                params["filter[started_at][gte]"] = start_time
 
             # Add severity filter if provided
             if severity:

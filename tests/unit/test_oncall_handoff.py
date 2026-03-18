@@ -121,7 +121,7 @@ class TestGetShiftIncidents:
         return mcp.tools, request
 
     @pytest.mark.asyncio
-    async def test_get_shift_incidents_uses_tighter_started_at_window(self):
+    async def test_get_shift_incidents_fetches_up_to_shift_end_with_essential_fields(self):
         tools, request = self._register_tools()
         response = Mock()
         response.status_code = 200
@@ -137,12 +137,48 @@ class TestGetShiftIncidents:
         assert request.await_args is not None
         args, kwargs = request.await_args
         assert args == ("GET", "/v1/incidents")
-        assert kwargs["params"]["filter[started_at][gte]"] == "2026-03-17T15:00:00Z"
         assert kwargs["params"]["filter[started_at][lte]"] == "2026-03-18T15:00:00Z"
         assert kwargs["params"]["fields[incidents]"] == SHIFT_INCIDENT_QUERY_FIELDS
         assert kwargs["params"]["page[number]"] == 1
         assert result["success"] is True
         assert result["summary"]["total_incidents"] == 0
+
+    @pytest.mark.asyncio
+    async def test_get_shift_incidents_keeps_incidents_resolved_during_shift(self):
+        tools, request = self._register_tools()
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "data": [
+                {
+                    "id": "inc-resolved-during-shift",
+                    "attributes": {
+                        "title": "Preexisting incident",
+                        "severity": {"name": "SEV 2"},
+                        "status": "resolved",
+                        "created_at": "2026-03-17T12:00:00Z",
+                        "started_at": "2026-03-17T12:30:00Z",
+                        "resolved_at": "2026-03-17T16:00:00Z",
+                        "summary": "Resolved during shift",
+                        "customer_impact_summary": "Minor impact",
+                        "mitigation": "Patched",
+                        "url": "https://rootly.com/incidents/1",
+                    },
+                }
+            ],
+            "meta": {"total_pages": 1},
+        }
+        request.return_value = response
+
+        result = await tools["get_shift_incidents"](
+            start_time="2026-03-17T15:00:00Z",
+            end_time="2026-03-18T15:00:00Z",
+        )
+
+        assert result["success"] is True
+        assert result["summary"]["total_incidents"] == 1
+        assert result["incidents"][0]["incident_id"] == "inc-resolved-during-shift"
+        assert result["incidents"][0]["status"] == "resolved"
 
     @pytest.mark.asyncio
     async def test_get_shift_incidents_truncates_large_results(self):
