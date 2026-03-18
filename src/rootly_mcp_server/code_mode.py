@@ -58,15 +58,20 @@ def build_code_mode_transform() -> CodeMode:
     return CodeMode(
         discovery_tools=[
             ListTools(default_detail="brief"),
-            Search(default_detail="detailed", default_limit=12),
+            Search(name="tool_search", default_detail="detailed", default_limit=12),
             GetSchemas(default_detail="detailed"),
             GetTags(default_detail="brief"),
         ],
         execute_description=(
             "Write a short async Python block and chain await call_tool(name, params) calls "
-            "to complete a Rootly workflow. Prefer Rootly's higher-level custom tools when "
-            "they fit the task, then fall back to lower-level API tools as needed. Use return "
-            "to emit the final result."
+            "to complete a Rootly workflow. Use tool_search only to discover tools and their "
+            "schemas, then call the actual Rootly tool with the exact parameter names shown in "
+            "the schema. For paginated data tools, pass pagination arguments like page_size, "
+            "page_number, and max_results exactly as documented by that tool instead of inventing "
+            "alternatives like per_page. Prefer Rootly's higher-level custom tools when they fit "
+            "the task, then fall back to lower-level API tools as needed. Example: "
+            "await call_tool('search_incidents', {'query': '', 'page_size': 1, 'page_number': 1, "
+            "'max_results': 1}). Use return to emit the final result."
         ),
     )
 

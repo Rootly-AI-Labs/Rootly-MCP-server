@@ -261,3 +261,129 @@ class TestTransportModule:
         assert "labels" not in attrs
         assert result["data"][0]["relationships"]["alerts"] == {"count": 2}
         assert "included" not in result
+
+    def test_strip_heavy_user_data_keeps_profile_essentials(self):
+        data = {
+            "data": [
+                {
+                    "id": "u-1",
+                    "type": "users",
+                    "attributes": {
+                        "full_name": "Spencer Cheng",
+                        "email": "spencer@example.com",
+                        "time_zone": "UTC",
+                        "created_at": "2026-03-18T00:00:00Z",
+                        "updated_at": "2026-03-18T01:00:00Z",
+                        "avatar_url": "https://example.com/avatar.png",
+                    },
+                    "relationships": {
+                        "email_addresses": {"data": [{"id": "e-1"}, {"id": "e-2"}]},
+                        "role": {"data": {"id": "r-1", "type": "roles", "attributes": {"name": "Admin"}}},
+                    },
+                }
+            ],
+            "included": [
+                {
+                    "id": "r-1",
+                    "type": "roles",
+                    "attributes": {"name": "Admin", "permissions": ["all"]},
+                    "relationships": {"teams": {"data": [{"id": "t-1"}]}},
+                }
+            ],
+        }
+
+        result = transport.strip_heavy_user_data(data)
+        attrs = result["data"][0]["attributes"]
+        assert attrs["full_name"] == "Spencer Cheng"
+        assert attrs["email"] == "spencer@example.com"
+        assert "avatar_url" not in attrs
+        assert result["data"][0]["relationships"]["email_addresses"] == {"count": 2}
+        assert result["data"][0]["relationships"]["role"] == {"data": {"id": "r-1", "type": "roles"}}
+        included_role = result["included"][0]
+        assert included_role["attributes"] == {"name": "Admin"}
+        assert "relationships" not in included_role
+
+    def test_strip_heavy_service_data_keeps_operational_essentials(self):
+        data = {
+            "data": [
+                {
+                    "id": "svc-1",
+                    "type": "services",
+                    "attributes": {
+                        "name": "API",
+                        "slug": "api",
+                        "status": "operational",
+                        "description": "Core API",
+                        "owner_group_ids": ["team-1"],
+                        "incidents_count": 4,
+                        "created_at": "2026-03-18T00:00:00Z",
+                        "updated_at": "2026-03-18T01:00:00Z",
+                        "pagerduty_id": "PD123",
+                        "slack_channels": [{"id": "C1"}],
+                    },
+                    "relationships": {
+                        "teams": {"data": [{"id": "team-1"}, {"id": "team-2"}]},
+                        "alert_urgency": {"data": {"id": "urg-1", "type": "alert_urgencies"}},
+                    },
+                }
+            ]
+        }
+
+        result = transport.strip_heavy_service_data(data)
+        attrs = result["data"][0]["attributes"]
+        assert attrs["name"] == "API"
+        assert attrs["status"] == "operational"
+        assert "pagerduty_id" not in attrs
+        assert "slack_channels" not in attrs
+        assert result["data"][0]["relationships"]["teams"] == {"count": 2}
+        assert result["data"][0]["relationships"]["alert_urgency"] == {
+            "data": {"id": "urg-1", "type": "alert_urgencies"}
+        }
+
+    def test_strip_heavy_shift_data_keeps_timing_and_minimal_user(self):
+        data = {
+            "data": [
+                {
+                    "id": "shift-1",
+                    "type": "shifts",
+                    "attributes": {
+                        "schedule_id": "sched-1",
+                        "rotation_id": "rot-1",
+                        "starts_at": "2026-03-18T00:00:00Z",
+                        "ends_at": "2026-03-18T08:00:00Z",
+                        "is_override": False,
+                        "notes": "extra",
+                    },
+                    "relationships": {
+                        "user": {"data": {"id": "u-1", "type": "users"}},
+                        "shift_override": {"data": None},
+                        "schedule_rotation": {"data": {"id": "rot-1", "type": "schedule_rotations"}},
+                    },
+                }
+            ],
+            "included": [
+                {
+                    "id": "u-1",
+                    "type": "users",
+                    "attributes": {
+                        "full_name": "Spencer Cheng",
+                        "email": "spencer@example.com",
+                        "time_zone": "UTC",
+                        "avatar_url": "https://example.com/avatar.png",
+                    },
+                }
+            ],
+        }
+
+        result = transport.strip_heavy_shift_data(data)
+        attrs = result["data"][0]["attributes"]
+        assert attrs["schedule_id"] == "sched-1"
+        assert attrs["starts_at"] == "2026-03-18T00:00:00Z"
+        assert "notes" not in attrs
+        assert sorted(result["data"][0]["relationships"]) == ["shift_override", "user"]
+        included_user = result["included"][0]
+        assert included_user["attributes"] == {
+            "full_name": "Spencer Cheng",
+            "email": "spencer@example.com",
+            "time_zone": "UTC",
+        }
