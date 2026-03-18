@@ -37,32 +37,25 @@ claude mcp add --transport sse rootly-sse https://mcp.rootly.com/sse \
   --header "Authorization: Bearer YOUR_ROOTLY_API_TOKEN"
 ```
 
-**Local Development**
+**Manual Configuration**
 
-For local development, install the package and configure with `.mcp.json`:
-
-```bash
-# Install in development mode
-pip install -e .
-```
-
-Create `.mcp.json` in your project root:
+Alternatively, create `.mcp.json` in your project root:
 
 ```json
 {
   "mcpServers": {
-    "rootly-mcp": {
-      "command": "fastmcp",
-      "args": ["run", "--module", "rootly_mcp_server"],
-      "env": {
-        "ROOTLY_API_TOKEN": "YOUR_ROOTLY_API_TOKEN"
+    "rootly": {
+      "type": "sse",
+      "url": "https://mcp.rootly.com/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_ROOTLY_API_TOKEN"
       }
     }
   }
 }
 ```
 
-Then restart Claude Code (Cmd+Shift+P → "Developer: Reload Window").
+Then restart Claude Code so it reloads the updated configuration.
 
 ### Gemini CLI
 
