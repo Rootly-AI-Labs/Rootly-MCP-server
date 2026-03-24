@@ -6,17 +6,54 @@
 [![Python Version](https://img.shields.io/pypi/pyversions/rootly-mcp-server.svg)](https://pypi.org/project/rootly-mcp-server/)
 [![Install MCP Server](https://cursor.com/deeplink/mcp-install-dark.svg)](https://cursor.com/install-mcp?name=rootly&config=eyJ1cmwiOiJodHRwczovL21jcC5yb290bHkuY29tL3NzZSIsImhlYWRlcnMiOnsiQXV0aG9yaXphdGlvbiI6IkJlYXJlciA8WU9VUl9ST09UTFlfQVBJX1RPS0VOPiJ9fQ==)
 
-An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overview) that integrates seamlessly with MCP-compatible editors like Cursor, Windsurf, and Claude. Resolve production incidents in under a minute without leaving your IDE.
+An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overview) for Cursor, Windsurf, Claude, and other MCP clients.
 
 ![Demo GIF](https://raw.githubusercontent.com/Rootly-AI-Labs/Rootly-MCP-server/refs/heads/main/rootly-mcp-server-demo.gif)
 
 ## Quick Start
 
-The fastest way to get started is to connect to our hosted MCP server — no installation required.
+Use the hosted MCP server. No local installation required.
 
-### Claude Code
+### Hosted Transport Options
 
-**Hosted Server (Recommended)**
+- **Streamable HTTP (recommended):** `https://mcp.rootly.com/mcp`
+- **SSE (fallback):** `https://mcp.rootly.com/sse`
+- **Code Mode:** `https://mcp.rootly.com/mcp-codemode`
+
+### General Remote Setup
+
+Use this header:
+
+```text
+Authorization: Bearer YOUR_ROOTLY_API_TOKEN
+```
+
+Default endpoint:
+
+```text
+https://mcp.rootly.com/mcp
+```
+
+SSE fallback:
+
+```text
+https://mcp.rootly.com/sse
+```
+
+Code Mode:
+
+```text
+https://mcp.rootly.com/mcp-codemode
+```
+
+### Agent Setup
+
+<details>
+<summary><strong>Claude Code</strong></summary>
+
+<br>
+
+**Streamable HTTP**
 
 ```bash
 claude mcp add --transport http rootly https://mcp.rootly.com/mcp \
@@ -39,7 +76,7 @@ claude mcp add --transport sse rootly-sse https://mcp.rootly.com/sse \
 
 **Manual Configuration**
 
-Alternatively, create `.mcp.json` in your project root:
+Create `.mcp.json` in your project root:
 
 ```json
 {
@@ -55,9 +92,14 @@ Alternatively, create `.mcp.json` in your project root:
 }
 ```
 
-Then restart Claude Code so it reloads the updated configuration.
+Restart Claude Code after updating the config.
 
-### Gemini CLI
+</details>
+
+<details>
+<summary><strong>Gemini CLI</strong></summary>
+
+<br>
 
 Install the extension:
 
@@ -81,7 +123,12 @@ Or configure manually in `~/.gemini/settings.json`:
 }
 ```
 
-### Cursor
+</details>
+
+<details>
+<summary><strong>Cursor</strong></summary>
+
+<br>
 
 Add to `.cursor/mcp.json` or `~/.cursor/mcp.json`:
 
@@ -98,7 +145,12 @@ Add to `.cursor/mcp.json` or `~/.cursor/mcp.json`:
 }
 ```
 
-### Windsurf
+</details>
+
+<details>
+<summary><strong>Windsurf</strong></summary>
+
+<br>
 
 Add to `~/.codeium/windsurf/mcp_config.json`:
 
@@ -115,7 +167,12 @@ Add to `~/.codeium/windsurf/mcp_config.json`:
 }
 ```
 
-### Codex
+</details>
+
+<details>
+<summary><strong>Codex</strong></summary>
+
+<br>
 
 Add to `~/.codex/config.toml`:
 
@@ -125,7 +182,12 @@ url = "https://mcp.rootly.com/mcp"
 bearer_token_env_var = "ROOTLY_API_TOKEN"
 ```
 
-### Claude Desktop
+</details>
+
+<details>
+<summary><strong>Claude Desktop</strong></summary>
+
+<br>
 
 Add to `claude_desktop_config.json`:
 
@@ -146,9 +208,11 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
+</details>
+
 ## Rootly CLI
 
-We also offer a standalone CLI for managing incidents, alerts, services, on-call schedules, and more directly from your terminal.
+Standalone CLI for incidents, alerts, services, and on-call operations.
 
 Install via Homebrew:
 
@@ -166,7 +230,7 @@ For more details, see the [Rootly CLI repository](https://github.com/rootlyhq/ro
 
 ## Alternative Installation (Local)
 
-If you prefer to run the MCP server locally, configure your editor with one of the options below. The package will be automatically downloaded and installed when you first open your editor.
+Run the MCP server locally if you do not want to use the hosted service.
 
 ### Prerequisites
 
@@ -175,17 +239,17 @@ If you prefer to run the MCP server locally, configure your editor with one of t
   ```bash
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
-- [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F) with appropriate permissions (see below)
+- [Rootly API token](https://docs.rootly.com/api-reference/overview#how-to-generate-an-api-key%3F)
 
-### API Token Permissions
+### API Token Types
 
-The MCP server requires a Rootly API token. Choose the appropriate token type based on your needs:
+Choose the token type based on the access you need:
 
-- **Global API Key** (Recommended): Full access to all entities across your Rootly instance. Required for organization-wide visibility across teams, schedules, and incidents.
-- **Team API Key**: Team Admin permissions with full read/edit access to entities owned by that team. Suitable for team-specific workflows.
-- **Personal API Key**: Inherits the permissions of the user who created it. Works for individual use cases but may have limited visibility.
+- **Global API Key**: Full access across the Rootly instance. Best for organization-wide visibility.
+- **Team API Key**: Access limited to entities owned by that team.
+- **Personal API Key**: Access matches the user who created it.
 
-For full functionality of tools like `get_oncall_handoff_summary`, `get_oncall_shift_metrics`, and organization-wide incident search, a **Global API Key** is recommended.
+A **Global API Key** is recommended for tools like `get_oncall_handoff_summary`, `get_oncall_shift_metrics`, and org-wide incident search.
 
 ### With uv
 
@@ -215,7 +279,7 @@ Choose one transport per server process:
 
 - **Streamable HTTP** endpoint path: `/mcp`
 - **SSE** endpoint path: `/sse`
-- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode. Set `ROOTLY_CODE_MODE_ENABLED=false` to disable it or `ROOTLY_CODE_MODE_PATH` to customize the path.
+- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode
 
 Example Docker run (Streamable HTTP):
 
@@ -278,7 +342,7 @@ docker run -p 8000:8000 \
 
 ## Supported Tools
 
-The default server configuration currently exposes **101 tools** (including custom agentic tools and OpenAPI-generated tools).
+The default server configuration exposes **101 tools**.
 
 ### Custom Agentic Tools
 
@@ -394,7 +458,7 @@ Delete operations are intentionally scoped to screenshot coverage paths:
 
 ## On-Call Health Integration
 
-Rootly MCP integrates with [On-Call Health](https://oncallhealth.ai) to detect workload health risk in scheduled responders.
+Integrates with [On-Call Health](https://oncallhealth.ai) to detect workload health risk in scheduled responders.
 
 ### Setup
 
@@ -428,11 +492,11 @@ Returns at-risk users who are scheduled, recommended safe replacements, and acti
 
 ## Example Skills
 
-Want to get started quickly? We provide pre-built Claude Code skills that showcase the full power of the Rootly MCP server:
+Pre-built Claude Code skills:
 
 ### 🚨 [Rootly Incident Responder](examples/skills/rootly-incident-responder.md)
 
-An AI-powered incident response specialist that:
+This skill:
 - Analyzes production incidents with full context
 - Finds similar historical incidents using ML-based similarity matching
 - Suggests solutions based on past successful resolutions
@@ -451,7 +515,7 @@ cp examples/skills/rootly-incident-responder.md .claude/skills/
 # @rootly-incident-responder analyze incident #12345
 ```
 
-This skill demonstrates a complete incident response workflow using Rootly's intelligent tools combined with GitHub integration for code correlation.
+It demonstrates a full incident response workflow using Rootly tools and GitHub context.
 
 ### On-Call Shift Metrics
 
