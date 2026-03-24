@@ -22,28 +22,49 @@ Use the hosted MCP server. No local installation required.
 
 ### General Remote Setup
 
-Use this header:
+Default remote config:
 
-```text
-Authorization: Bearer YOUR_ROOTLY_API_TOKEN
-```
-
-Default endpoint:
-
-```text
-https://mcp.rootly.com/mcp
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "url": "https://mcp.rootly.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_ROOTLY_API_TOKEN"
+      }
+    }
+  }
+}
 ```
 
 SSE fallback:
 
-```text
-https://mcp.rootly.com/sse
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "url": "https://mcp.rootly.com/sse",
+      "headers": {
+        "Authorization": "Bearer YOUR_ROOTLY_API_TOKEN"
+      }
+    }
+  }
+}
 ```
 
 Code Mode:
 
-```text
-https://mcp.rootly.com/mcp-codemode
+```json
+{
+  "mcpServers": {
+    "rootly": {
+      "url": "https://mcp.rootly.com/mcp-codemode",
+      "headers": {
+        "Authorization": "Bearer YOUR_ROOTLY_API_TOKEN"
+      }
+    }
+  }
+}
 ```
 
 ### Agent Setup
