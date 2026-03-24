@@ -22,7 +22,7 @@ Use the hosted MCP server. No local installation required.
 
 ### General Remote Setup
 
-Default remote config:
+Default remote config (HTTP streamable):
 
 ```json
 {
