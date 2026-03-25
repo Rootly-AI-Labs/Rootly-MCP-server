@@ -1,15 +1,18 @@
 """Tests for Rootly Code Mode helpers."""
 
 from types import SimpleNamespace
-from typing import Any
-from unittest.mock import patch
+from typing import Any, cast
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastmcp.experimental.transforms.code_mode import CodeMode
+from fastmcp.tools.function_tool import FunctionTool
 
 from rootly_mcp_server.code_mode import (
     DEFAULT_CODE_MODE_PATH,
     CompatibleMontySandboxProvider,
+    _format_execute_exception,
+    _normalize_execute_tool_name,
     build_code_mode_transform,
     code_mode_enabled_from_env,
     code_mode_path_from_env,
@@ -56,6 +59,9 @@ def test_build_code_mode_transform_includes_pagination_guidance():
     assert "tool_search only to discover tools" in transform.execute_description
     assert "page_size, page_number, and max_results" in transform.execute_description
     assert "per_page" in transform.execute_description
+    assert "mcp__rootly-codemode__tool_search" in transform.execute_description
+    assert "rootly:getCurrentUser" in transform.execute_description
+    assert "Avoid imports such as json or asyncio" in transform.execute_description
     assert "await call_tool('search_incidents'" in transform.execute_description
 
 
@@ -157,3 +163,111 @@ async def test_compatible_monty_provider_uses_modern_constructor_when_supported(
     monty_runner = captured["monty_runner"]
     assert isinstance(monty_runner, ModernMonty)
     assert monty_runner.external_functions == ["call_tool"]
+
+
+def test_normalize_execute_tool_name_handles_prefixes_and_aliases():
+    assert _normalize_execute_tool_name("mcp__rootly-codemode__tool_search") == "tool_search"
+    assert _normalize_execute_tool_name("rootly:getCurrentUser") == "getCurrentUser"
+    assert _normalize_execute_tool_name("search") == "tool_search"
+
+
+def test_format_execute_exception_returns_friendlier_messages():
+    unknown_tool = _format_execute_exception(
+        Exception("Unknown tool: mcp__rootly-codemode__tool_search")
+    )
+    assert unknown_tool is not None
+    assert "Use tool_search to discover available tools" in unknown_tool
+
+    missing_import = _format_execute_exception(
+        Exception("ModuleNotFoundError: No module named 'json'")
+    )
+    assert missing_import is not None
+    assert "restricted sandbox" in missing_import
+
+    asyncio_sleep = _format_execute_exception(
+        Exception("AttributeError: module 'asyncio' has no attribute 'sleep'")
+    )
+    assert asyncio_sleep is not None
+    assert "does not provide `asyncio.sleep()`" in asyncio_sleep
+
+    parser_error = _format_execute_exception(Exception("Expected name, got Subscript(...)"))
+    assert parser_error is not None
+    assert "restricted Python subset" in parser_error
+
+
+@pytest.mark.asyncio
+async def test_execute_normalizes_namespaced_discovery_tool_calls():
+    class FakeSandboxProvider:
+        async def run(self, code, *, inputs=None, external_functions=None):
+            assert external_functions is not None
+            return await external_functions["call_tool"](
+                "mcp__rootly-codemode__tool_search",
+                {"query": "alerts"},
+            )
+
+    transform = build_code_mode_transform()
+    transform.sandbox_provider = FakeSandboxProvider()
+    execute_tool = cast(FunctionTool, transform._get_execute_tool())  # noqa: SLF001
+
+    fake_fastmcp = SimpleNamespace(
+        list_tools=AsyncMock(return_value=[]),
+        call_tool=AsyncMock(return_value=SimpleNamespace(structured_content={"ok": True}, content=[])),
+    )
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+
+    result = await execute_tool.fn("return 1", ctx=ctx)
+
+    assert result == {"ok": True}
+    fake_fastmcp.call_tool.assert_awaited_once_with("tool_search", {"query": "alerts"})
+
+
+@pytest.mark.asyncio
+async def test_execute_normalizes_namespaced_backend_tool_calls():
+    class FakeSandboxProvider:
+        async def run(self, code, *, inputs=None, external_functions=None):
+            assert external_functions is not None
+            return await external_functions["call_tool"]("rootly:getCurrentUser", {})
+
+    transform = build_code_mode_transform()
+    transform.sandbox_provider = FakeSandboxProvider()
+    execute_tool = cast(FunctionTool, transform._get_execute_tool())  # noqa: SLF001
+
+    backend_tools = [SimpleNamespace(name="getCurrentUser")]
+    fake_fastmcp = SimpleNamespace(
+        list_tools=AsyncMock(return_value=backend_tools),
+        call_tool=AsyncMock(
+            return_value=SimpleNamespace(structured_content={"id": "u_1"}, content=[])
+        ),
+    )
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+
+    result = await execute_tool.fn("return 1", ctx=ctx)
+
+    assert result == {"id": "u_1"}
+    fake_fastmcp.call_tool.assert_awaited_once_with("getCurrentUser", {})
+
+
+@pytest.mark.asyncio
+async def test_execute_returns_friendlier_unknown_tool_errors():
+    class FakeSandboxProvider:
+        async def run(self, code, *, inputs=None, external_functions=None):
+            assert external_functions is not None
+            return await external_functions["call_tool"](
+                "mcp__rootly-codemode__missing_tool",
+                {},
+            )
+
+    transform = build_code_mode_transform()
+    transform.sandbox_provider = FakeSandboxProvider()
+    execute_tool = cast(FunctionTool, transform._get_execute_tool())  # noqa: SLF001
+
+    fake_fastmcp = SimpleNamespace(
+        list_tools=AsyncMock(return_value=[]),
+        call_tool=AsyncMock(),
+    )
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+
+    with pytest.raises(ValueError, match="Use tool_search to discover available tools"):
+        await execute_tool.fn("return 1", ctx=ctx)
+
+    fake_fastmcp.call_tool.assert_not_awaited()
