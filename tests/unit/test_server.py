@@ -12,7 +12,7 @@ import json
 import os
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import Mock, mock_open, patch
+from unittest.mock import AsyncMock, Mock, mock_open, patch
 
 import mcp.types as mt
 import pytest
@@ -22,6 +22,7 @@ from rootly_mcp_server.server import (
     DEFAULT_ALLOWED_PATHS,
     DEFAULT_DELETE_ALLOWED_PATHS,
     AuthenticatedHTTPXClient,
+    _auth_header_state,
     _current_tool_identity,
     _extract_client_ip,
     _extract_request_id,
@@ -30,6 +31,7 @@ from rootly_mcp_server.server import (
     _fingerprint_auth_header,
     _format_traceback_excerpt,
     _load_swagger_spec,
+    _validate_bearer_auth_header,
     create_rootly_mcp_server,
 )
 
@@ -213,6 +215,131 @@ class TestAuthenticatedHTTPXClient:
 
 
 @pytest.mark.unit
+class TestHostedAuthRequestValidation:
+    """Test hosted auth validation in the request path."""
+
+    @pytest.mark.asyncio
+    async def test_hosted_request_forwards_valid_bearer_header(self, mock_httpx_client):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.is_error = False
+        mock_response.is_success = True
+        mock_response.text = ""
+        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+
+        captured: dict[str, Any] = {}
+
+        def capture_alert_tools(**kwargs):
+            captured["request"] = kwargs["make_authenticated_request"]
+
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            with patch("rootly_mcp_server.server.register_alert_tools", side_effect=capture_alert_tools):
+                with patch("rootly_mcp_server.server.register_incident_tools"):
+                    with patch("rootly_mcp_server.server.register_oncall_tools"):
+                        with patch("rootly_mcp_server.server.register_resource_handlers"):
+                            mock_load_spec.return_value = {
+                                "openapi": "3.0.0",
+                                "info": {"title": "Test API", "version": "1.0.0"},
+                                "paths": {},
+                                "components": {"schemas": {}},
+                            }
+                            create_rootly_mcp_server(hosted=True)
+
+        request = captured["request"]
+        with patch(
+            "fastmcp.server.dependencies.get_http_headers",
+            return_value={"authorization": "Bearer rootly_valid_token"},
+        ):
+            await request("GET", "/v1/incidents")
+
+        mock_httpx_client.request.assert_awaited_once()
+        call_headers = mock_httpx_client.request.call_args.kwargs["headers"]
+        assert call_headers["Authorization"] == "Bearer rootly_valid_token"
+
+    @pytest.mark.asyncio
+    async def test_hosted_request_uses_session_auth_fallback(self, mock_httpx_client):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.is_error = False
+        mock_response.is_success = True
+        mock_response.text = ""
+        mock_httpx_client.request = AsyncMock(return_value=mock_response)
+
+        captured: dict[str, Any] = {}
+
+        def capture_alert_tools(**kwargs):
+            captured["request"] = kwargs["make_authenticated_request"]
+
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            with patch("rootly_mcp_server.server.register_alert_tools", side_effect=capture_alert_tools):
+                with patch("rootly_mcp_server.server.register_incident_tools"):
+                    with patch("rootly_mcp_server.server.register_oncall_tools"):
+                        with patch("rootly_mcp_server.server.register_resource_handlers"):
+                            mock_load_spec.return_value = {
+                                "openapi": "3.0.0",
+                                "info": {"title": "Test API", "version": "1.0.0"},
+                                "paths": {},
+                                "components": {"schemas": {}},
+                            }
+                            create_rootly_mcp_server(hosted=True)
+
+        request = captured["request"]
+        token_ctx = server_module._session_auth_token.set("Bearer rootly_session_token")
+        try:
+            with patch("fastmcp.server.dependencies.get_http_headers", return_value={}):
+                await request("GET", "/v1/incidents")
+        finally:
+            server_module._session_auth_token.reset(token_ctx)
+
+        mock_httpx_client.request.assert_awaited_once()
+        call_headers = mock_httpx_client.request.call_args.kwargs["headers"]
+        assert call_headers["Authorization"] == "Bearer rootly_session_token"
+
+    @pytest.mark.asyncio
+    async def test_hosted_request_rejects_malformed_auth_before_upstream_call(self, mock_httpx_client):
+        mock_httpx_client.request = AsyncMock()
+
+        captured: dict[str, Any] = {}
+
+        def capture_alert_tools(**kwargs):
+            captured["request"] = kwargs["make_authenticated_request"]
+
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            with patch("rootly_mcp_server.server.register_alert_tools", side_effect=capture_alert_tools):
+                with patch("rootly_mcp_server.server.register_incident_tools"):
+                    with patch("rootly_mcp_server.server.register_oncall_tools"):
+                        with patch("rootly_mcp_server.server.register_resource_handlers"):
+                            mock_load_spec.return_value = {
+                                "openapi": "3.0.0",
+                                "info": {"title": "Test API", "version": "1.0.0"},
+                                "paths": {},
+                                "components": {"schemas": {}},
+                            }
+                            create_rootly_mcp_server(hosted=True)
+
+        request = captured["request"]
+        error_ctx = server_module._session_error_context.set({})
+        try:
+            with patch(
+                "fastmcp.server.dependencies.get_http_headers",
+                return_value={"authorization": "rootly_malformed_token"},
+            ):
+                with pytest.raises(
+                    server_module.RootlyAuthenticationError,
+                    match="Invalid Authorization header format",
+                ):
+                    await request("GET", "/v1/incidents")
+                error_context = server_module._session_error_context.get()
+                assert error_context is not None
+                assert error_context["auth_header_state"] == "invalid_format"
+                assert "Invalid Authorization header format" in error_context["error_message"]
+        finally:
+            server_module._session_error_context.reset(error_ctx)
+
+        mock_httpx_client.request.assert_not_awaited()
+
+
+@pytest.mark.unit
 class TestToolUsageIdentityHelpers:
     """Test helper utilities used for tool usage observability."""
 
@@ -237,6 +364,32 @@ class TestToolUsageIdentityHelpers:
         assert len(fingerprint) == 16
         assert "rootly_secret_token" not in fingerprint
 
+    def test_auth_header_state_classifies_common_cases(self):
+        assert _auth_header_state("") == "missing"
+        assert _auth_header_state("rootly_token_only") == "invalid_format"
+        assert _auth_header_state("Bearer   ") == "missing_token"
+        assert _auth_header_state("Bearer rootly_secret_token") == "bearer"
+
+    def test_validate_bearer_auth_header_accepts_valid_bearer_format(self):
+        assert (
+            _validate_bearer_auth_header("Bearer rootly_secret_token")
+            == "Bearer rootly_secret_token"
+        )
+
+    @pytest.mark.parametrize(
+        ("header", "expected_fragment"),
+        [
+            ("", "Missing Authorization header"),
+            ("rootly_secret_token", "Invalid Authorization header format"),
+            ("Bearer   ", "Authorization header is missing a token"),
+        ],
+    )
+    def test_validate_bearer_auth_header_rejects_bad_formats(
+        self, header: str, expected_fragment: str
+    ):
+        with pytest.raises(server_module.RootlyAuthenticationError, match=expected_fragment):
+            _validate_bearer_auth_header(header)
+
     def test_current_tool_identity_uses_session_fallback(self):
         token_ctx = server_module._session_auth_token.set("Bearer rootly_session_token")
         ip_ctx = server_module._session_client_ip.set("192.0.2.8")
@@ -258,6 +411,18 @@ class TestToolUsageIdentityHelpers:
         assert identity["request_id"] == "req-session-1"
         assert identity["transport"] == "sse"
         assert identity["transport_effective"] == "sse"
+        assert identity["auth_header_state"] == "bearer"
+
+    def test_current_tool_identity_reports_invalid_auth_header_shape(self):
+        token_ctx = server_module._session_auth_token.set("rootly_session_token")
+        try:
+            with patch("fastmcp.server.dependencies.get_http_headers", return_value={}):
+                identity = _current_tool_identity()
+        finally:
+            server_module._session_auth_token.reset(token_ctx)
+
+        assert identity["token_fingerprint"] == _fingerprint_auth_header("rootly_session_token")
+        assert identity["auth_header_state"] == "invalid_format"
 
     def test_current_tool_identity_prefers_session_transport_over_runtime(self):
         token_ctx = server_module._session_auth_token.set("Bearer rootly_session_token")
@@ -293,6 +458,7 @@ class TestToolUsageIdentityHelpers:
                     duration_ms=123.456,
                     arg_keys=["page_size", "page_number"],
                     identity={
+                        "auth_header_state": "bearer",
                         "token_fingerprint": "abc123",
                         "client_ip": "203.0.113.10",
                         "request_id": "req-1",
@@ -314,6 +480,7 @@ class TestToolUsageIdentityHelpers:
         assert payload["transport_effective"] == "sse"
         assert payload["transport_runtime"] == "both"
         assert payload["mcp_mode"] == "classic"
+        assert payload["auth_header_state"] == "bearer"
 
     def test_log_tool_usage_event_includes_error_context(self):
         with patch.object(server_module, "_configure_tool_usage_json_logger"):
