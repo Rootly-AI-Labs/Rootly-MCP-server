@@ -18,6 +18,7 @@ import mcp.types as mt
 from fastmcp import FastMCP
 
 from . import legacy_server, payload_stripping, server_defaults, spec_transform, transport
+from .exceptions import RootlyAuthenticationError
 from .mcp_error import MCPError
 from .security import mask_sensitive_data, sanitize_error_message
 from .tools.alerts import register_alert_tools
@@ -80,6 +81,37 @@ def _fingerprint_auth_header(auth_header: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
 
 
+def _auth_header_state(auth_header: str) -> str:
+    """Classify Authorization header shape without exposing token contents."""
+    raw = (auth_header or "").strip()
+    if not raw:
+        return "missing"
+    parts = raw.split(None, 1)
+    if not parts or parts[0].lower() != "bearer":
+        return "invalid_format"
+    if len(parts) == 1 or not parts[1].strip():
+        return "missing_token"
+    return "bearer"
+
+
+def _validate_bearer_auth_header(auth_header: str) -> str:
+    """Validate hosted Authorization headers before forwarding them upstream."""
+    state = _auth_header_state(auth_header)
+    if state == "missing":
+        raise RootlyAuthenticationError(
+            "Missing Authorization header. Expected 'Authorization: Bearer <ROOTLY_API_TOKEN>'."
+        )
+    if state == "invalid_format":
+        raise RootlyAuthenticationError(
+            "Invalid Authorization header format. Expected 'Authorization: Bearer <ROOTLY_API_TOKEN>'."
+        )
+    if state == "missing_token":
+        raise RootlyAuthenticationError(
+            "Authorization header is missing a token. Expected 'Authorization: Bearer <ROOTLY_API_TOKEN>'."
+        )
+    return auth_header.strip()
+
+
 def _tool_usage_logging_enabled() -> bool:
     """Return whether per-tool usage logging is enabled."""
     return os.getenv("ROOTLY_TOOL_USAGE_LOGGING", "true").lower() in ("1", "true", "yes")
@@ -124,6 +156,7 @@ def _current_tool_identity() -> dict[str, str]:
 
     return {
         "token_fingerprint": _fingerprint_auth_header(auth_header),
+        "auth_header_state": _auth_header_state(auth_header),
         "client_ip": client_ip,
         "request_id": request_id,
         # Keep `transport` backward-compatible while introducing explicit fields.
@@ -156,6 +189,7 @@ def _log_tool_usage_event(
         "tool_arg_count": len(arg_keys),
         "tool_arg_keys": arg_keys[:20],
         "token_fingerprint": identity.get("token_fingerprint", ""),
+        "auth_header_state": identity.get("auth_header_state", ""),
         "client_ip": identity.get("client_ip", ""),
         "request_id": identity.get("request_id", ""),
         "transport": identity.get("transport", ""),
@@ -470,6 +504,7 @@ def create_rootly_mcp_server(
         """Make an authenticated request, extracting token from MCP headers in hosted mode."""
         # In hosted mode, get token from MCP request headers
         if hosted:
+            request_headers: dict[str, str] = {}
             try:
                 from fastmcp.server.dependencies import get_http_headers
 
@@ -483,23 +518,36 @@ def create_rootly_mcp_server(
                 logger.debug(
                     f"make_authenticated_request: client_ip={client_ip}, headers_keys={list(request_headers.keys()) if request_headers else []}"
                 )
-                auth_header = request_headers.get("authorization", "") if request_headers else ""
-                if auth_header:
+                direct_auth_header = request_headers.get("authorization", "") if request_headers else ""
+                effective_auth_header = direct_auth_header or _session_auth_token.get("")
+                if direct_auth_header:
                     logger.debug("make_authenticated_request: Found auth header, adding to request")
-                    # Add authorization header to the request
-                    if "headers" not in kwargs:
-                        kwargs["headers"] = {}
-                    kwargs["headers"]["Authorization"] = auth_header
+                elif effective_auth_header:
+                    logger.debug(
+                        "make_authenticated_request: No direct MCP auth header; using captured session context"
+                    )
                 else:
-                    has_session_auth = bool(_session_auth_token.get(""))
-                    if has_session_auth:
-                        logger.debug(
-                            "make_authenticated_request: No direct MCP auth header; using captured session context"
-                        )
-                    else:
-                        logger.warning(
-                            "make_authenticated_request: No authorization header found in MCP headers or session context"
-                        )
+                    logger.warning(
+                        "make_authenticated_request: No authorization header found in MCP headers or session context"
+                    )
+
+                validated_auth_header = _validate_bearer_auth_header(effective_auth_header)
+                if "headers" not in kwargs:
+                    kwargs["headers"] = {}
+                kwargs["headers"]["Authorization"] = validated_auth_header
+            except RootlyAuthenticationError as e:
+                effective_auth_header = (
+                    request_headers.get("authorization", "") if request_headers else ""
+                ) or _session_auth_token.get("")
+                error_context = dict(_session_error_context.get() or {})
+                error_context.update(
+                    {
+                        "auth_header_state": _auth_header_state(effective_auth_header),
+                        "error_message": str(e),
+                    }
+                )
+                _session_error_context.set(error_context)
+                raise
             except Exception as e:
                 logger.warning(f"make_authenticated_request: Failed to get headers: {e}")
 
