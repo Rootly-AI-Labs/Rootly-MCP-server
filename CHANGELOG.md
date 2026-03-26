@@ -7,51 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.2.13] - 2026-03-26
+## [2.2.13] - Released 2026-03-26
 
-### Changed
-- Simplified the README quick start and added clearer hosted remote configuration examples for HTTP streamable, SSE, and Code Mode
-- Upgraded `fastmcp[code-mode]` to `3.1.1` and refreshed CI dependencies
+### Highlights
+- Improved hosted auth validation and Code Mode `execute` error handling
+- Patched vulnerable `authlib` and `requests` dependencies
 
-### Fixed
+### Fixes
 - Validate hosted `Authorization` headers earlier and log auth header state to make malformed token issues easier to diagnose
 - Hardened Code Mode `execute` by normalizing common client-prefixed tool names and returning clearer parser, import, and runtime errors
 
-### Security
-- Patched vulnerable `authlib` and `requests` dependencies
+### Docs / Dependencies
+- Simplified the README quick start and added clearer hosted remote configuration examples for HTTP streamable, SSE, and Code Mode
+- Upgraded `fastmcp[code-mode]` to `3.1.1` and refreshed CI dependencies
 
-## [2.2.12] - 2026-03-18
+## [2.2.12] - Released 2026-03-18
 
-### Added
+### Highlights
+- Reduced oversized shift and collection payloads and added pagination to `list_shifts`
+
+### Features
 - Added MCP-level pagination to `list_shifts`, including pagination metadata and validation for invalid page numbers
 
-### Changed
+### Fixes
+- Trimmed `get_shift_incidents` results to avoid oversized responses
+- Preserved incidents that started before a shift but were resolved during it
+
+### Docs / Dependencies
 - Slimmed heavy collection payloads for generated tools such as `listUsers`, `listServices`, and `listShifts`
 - Clarified Code Mode tool discovery and pagination guidance for paginated calls
 - Added and simplified Claude Code setup examples in the documentation
 
-### Fixed
-- Trimmed `get_shift_incidents` results to avoid oversized responses
-- Preserved incidents that started before a shift but were resolved during it
+## [2.2.11] - Released 2026-03-16
 
-## [2.2.11] - 2026-03-16
+### Highlights
+- Added incident update and readback support for PIR workflows
 
-### Added
+### Features
 - Added `updateIncident` for scoped incident updates in the PIR lifecycle
 - Added `getIncident` and incident readback support for PIR verification
 
-### Changed
+### Fixes
 - Updated `search_incidents` to include retrospective progress status in readback results
-- Scoped GitHub Actions workflow permissions more tightly
-
-### Fixed
 - Made Code Mode `execute` compatible with older Monty runtimes
 - Patched vulnerable `black` and `PyJWT` dependencies
 - Fixed CI usage of `actions/upload-artifact`
 
-## [2.2.10] - 2026-03-12
+### Docs / Dependencies
+- Scoped GitHub Actions workflow permissions more tightly
 
-### Added
+## [2.2.10] - Released 2026-03-12
+
+### Highlights
+- Rolled out hosted dual transport, Code Mode, and richer observability support
+
+### Features
 - Added a hosted Code Mode endpoint and enabled Code Mode by default in hosted dual-mode deployments
 - Added streamable HTTP and SSE dual-transport support in a single hosted process
 - Added screenshot coverage, escalation APIs, and tighter allowlist path matching
@@ -59,90 +69,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added Gemini CLI extension support and editor-specific setup documentation
 - Added branch-based staging deployment pipeline support
 
-### Changed
-- Reorganized Quick Start documentation by editor and added Rootly CLI guidance
-- Refreshed vulnerable runtime dependencies and normalized log severity handling
-
-### Fixed
+### Fixes
 - Restored legacy server parity while preserving compatibility with FastMCP 3.x `list_tools()` and `send()` behavior
 - Forwarded auth tokens correctly in hosted SSE and streamable HTTP paths
 - Reduced hosted auth noise, improved graceful shutdown behavior, and preserved error context across multi-call tools
 - Fixed non-string incident severity handling in `shift_incidents`
 
-## [2.2.9] - 2026-02-24
+### Docs / Dependencies
+- Reorganized Quick Start documentation by editor and added Rootly CLI guidance
+- Refreshed vulnerable runtime dependencies and normalized log severity handling
 
-### Fixed
+## [2.2.9] - Released 2026-02-24
+
+### Fixes
 - Added an auth header event hook for hosted mode so downstream API requests consistently carry the caller's bearer token
 
-## [2.2.8] - 2026-02-24
+## [2.2.8] - Released 2026-02-24
 
-### Added
+### Features
 - Added filter parameters to `listAlerts`
 - Added transport and hosting mode to the Rootly `User-Agent`
 
-### Security
+### Docs / Dependencies
 - Hardened the Dockerfile and added `.dockerignore`
 
-## [2.2.6] - 2026-02-19
+## [2.2.6] - Released 2026-02-19
 
-### Added
+### Highlights
+- Added alert lookup by short ID and reduced alert payload size
+
+### Features
 - Added `get_alert_by_short_id` so alerts can be fetched by short ID or full alert URL
 
-### Changed
-- Reduced alert API response payload size significantly and added User-Agent tracking
-
-### Fixed
+### Fixes
 - Included alert `url` and `created_at` in alert field selection
 - Removed the `timeout` parameter from `FastMCP.from_openapi()` for FastMCP 3.0 compatibility
 
-## [2.2.4] - 2026-02-18
+### Docs / Dependencies
+- Reduced alert API response payload size significantly and added User-Agent tracking
 
-### Added
+## [2.2.4] - Released 2026-02-18
+
+### Features
 - Added MCP registry metadata
 
-### Fixed
+### Fixes
 - Enforced JSON:API headers through an `httpx` event hook to resolve hosted `415` errors more reliably
 
-## [2.2.3] - 2026-02-05
+## [2.2.3] - Released 2026-02-05
 
-### Added
+### Features
 - Added debug logging for HTTP requests and headers
 
-## [2.2.2] - 2026-02-05
+## [2.2.2] - Released 2026-02-05
 
-### Fixed
+### Fixes
 - Removed existing content-type headers case-insensitively before setting JSON:API headers
 
-## [2.2.1] - 2026-02-05
+## [2.2.1] - Released 2026-02-05
 
-### Fixed
+### Fixes
 - Always set JSON:API headers regardless of request kwargs to prevent hosted `415` failures
 
-## [2.2.0] - 2026-02-05
+## [2.2.0] - Released 2026-02-05
 
-### Changed
-- Replaced `burnout` terminology with `health risk` across the On-Call Health feature set
+### Highlights
+- Renamed On-Call Health terminology from `burnout` to `health risk`
 
-## [2.1.4] - 2026-02-05
+## [2.1.4] - Released 2026-02-05
 
-### Fixed
+### Fixes
 - Resolved hosted MCP `415 Unsupported Media Type` errors
 
-## [2.1.3] - 2026-02-05
+## [2.1.3] - Released 2026-02-05
 
-### Added
+### Highlights
+- Added the first On-Call Health integration
+
+### Features
 - Added the On-Call Health integration for burnout-risk detection
 - Added unit tests for the On-Call Health integration
 
-### Changed
-- Streamlined the README and moved development setup details into `CONTRIBUTING.md`
-
-### Fixed
+### Fixes
 - Added proper type hints to `och_client.py`
 
-## [2.1.2] - 2026-02-05
+### Docs / Dependencies
+- Streamlined the README and moved development setup details into `CONTRIBUTING.md`
 
-### Added
+## [2.1.2] - Released 2026-02-05
+
+### Features
 - Added on-call AI workflow tools
 
 ## [2.1.1] - 2026-02-04
