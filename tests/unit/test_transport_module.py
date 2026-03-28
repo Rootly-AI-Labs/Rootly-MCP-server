@@ -508,3 +508,179 @@ class TestTransportModule:
             "email": "spencer@example.com",
             "time_zone": "UTC",
         }
+
+
+class TestAuthCaptureMiddlewareWWWAuthenticate:
+    """Tests for WWW-Authenticate header injection on 401 responses."""
+
+    @pytest.mark.asyncio
+    async def test_401_response_includes_www_authenticate_header(self):
+        """When downstream app returns 401, middleware injects WWW-Authenticate."""
+
+        async def app(scope, receive, send):
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [(b"content-type", b"text/plain")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b"Unauthorized"})
+
+        middleware = transport.AuthCaptureMiddleware(app)
+        scope = {
+            "type": "http",
+            "path": "/mcp",
+            "headers": [],
+        }
+
+        transport._session_auth_token.set("")
+        transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
+
+        sent_messages = []
+
+        async def receive():
+            return {"type": "http.request"}
+
+        async def send(message):
+            sent_messages.append(message)
+
+        with patch("rootly_mcp_server.utils._MCP_SERVER_URL", "https://mcp.example.com"):
+            await middleware(scope, receive, send)
+
+        start_msg = sent_messages[0]
+        assert start_msg["status"] == 401
+        header_dict = dict(start_msg["headers"])
+        assert b"www-authenticate" in header_dict
+        assert (
+            header_dict[b"www-authenticate"]
+            == b'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource"'
+        )
+
+    @pytest.mark.asyncio
+    async def test_200_response_does_not_include_www_authenticate(self):
+        """Non-401 responses should not get WWW-Authenticate header."""
+
+        async def app(scope, receive, send):
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 200,
+                    "headers": [(b"content-type", b"text/plain")],
+                }
+            )
+            await send({"type": "http.response.body", "body": b"OK"})
+
+        middleware = transport.AuthCaptureMiddleware(app)
+        scope = {
+            "type": "http",
+            "path": "/mcp",
+            "headers": [],
+        }
+
+        transport._session_auth_token.set("")
+        transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
+
+        sent_messages = []
+
+        async def receive():
+            return {"type": "http.request"}
+
+        async def send(message):
+            sent_messages.append(message)
+
+        with patch("rootly_mcp_server.utils._MCP_SERVER_URL", "https://mcp.example.com"):
+            await middleware(scope, receive, send)
+
+        start_msg = sent_messages[0]
+        header_dict = dict(start_msg["headers"])
+        assert b"www-authenticate" not in header_dict
+
+    @pytest.mark.asyncio
+    async def test_401_on_non_mcp_path_does_not_inject_header(self):
+        """401 responses on non-MCP paths should not get WWW-Authenticate."""
+
+        async def app(scope, receive, send):
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [],
+                }
+            )
+            await send({"type": "http.response.body", "body": b"Unauthorized"})
+
+        middleware = transport.AuthCaptureMiddleware(app)
+        scope = {
+            "type": "http",
+            "path": "/healthz",
+            "headers": [],
+        }
+
+        transport._session_auth_token.set("")
+        transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
+
+        sent_messages = []
+
+        async def receive():
+            return {"type": "http.request"}
+
+        async def send(message):
+            sent_messages.append(message)
+
+        with patch("rootly_mcp_server.utils._MCP_SERVER_URL", "https://mcp.example.com"):
+            await middleware(scope, receive, send)
+
+        start_msg = sent_messages[0]
+        header_dict = dict(start_msg["headers"])
+        assert b"www-authenticate" not in header_dict
+
+    @pytest.mark.asyncio
+    async def test_www_authenticate_derives_url_from_request_headers(self):
+        """Without ROOTLY_MCP_SERVER_URL env var, URL is derived from request."""
+
+        async def app(scope, receive, send):
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [],
+                }
+            )
+            await send({"type": "http.response.body", "body": b"Unauthorized"})
+
+        middleware = transport.AuthCaptureMiddleware(app)
+        scope = {
+            "type": "http",
+            "path": "/mcp",
+            "headers": [
+                (b"host", b"mcp.rootly.com"),
+                (b"x-forwarded-proto", b"https"),
+            ],
+        }
+
+        transport._session_auth_token.set("")
+        transport._session_transport.set("")
+        transport._session_mcp_mode.set("")
+
+        sent_messages = []
+
+        async def receive():
+            return {"type": "http.request"}
+
+        async def send(message):
+            sent_messages.append(message)
+
+        with patch("rootly_mcp_server.utils._MCP_SERVER_URL", ""):
+            await middleware(scope, receive, send)
+
+        start_msg = sent_messages[0]
+        header_dict = dict(start_msg["headers"])
+        assert b"www-authenticate" in header_dict
+        assert (
+            header_dict[b"www-authenticate"]
+            == b'Bearer resource_metadata="https://mcp.rootly.com/.well-known/oauth-protected-resource"'
+        )
