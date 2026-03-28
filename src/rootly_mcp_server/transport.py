@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from .security import mask_sensitive_data
+from .utils import OAUTH_PROTECTED_RESOURCE_PATH, resolve_mcp_server_url
 
 logger = logging.getLogger(__name__)
 
@@ -317,15 +318,9 @@ class AuthCaptureMiddleware:
             # so MCP clients can discover the OAuth authorization server.
             async def _send_with_www_authenticate(message, *, _send=send, _request=request):
                 if message.get("type") == "http.response.start" and message.get("status") == 401:
-                    mcp_server_url = os.getenv("ROOTLY_MCP_SERVER_URL", "")
-                    if not mcp_server_url:
-                        scheme = _request.headers.get(
-                            "x-forwarded-proto", _request.url.scheme
-                        )
-                        host = _request.headers.get("host", _request.url.netloc)
-                        mcp_server_url = f"{scheme}://{host}"
+                    mcp_server_url = resolve_mcp_server_url(_request)
                     resource_metadata_url = (
-                        f"{mcp_server_url}/.well-known/oauth-protected-resource"
+                        f"{mcp_server_url}{OAUTH_PROTECTED_RESOURCE_PATH}"
                     )
                     headers = list(message.get("headers", []))
                     headers.append(

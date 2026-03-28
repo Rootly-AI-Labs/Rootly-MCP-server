@@ -3,10 +3,24 @@ Shared utilities for Rootly MCP Server.
 """
 
 import logging
+import os
 import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# OAuth 2.0 Protected Resource Metadata (RFC 9728)
+OAUTH_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
+
+
+def resolve_mcp_server_url(request) -> str:
+    """Derive the MCP server's public URL from env var or request headers."""
+    url = os.getenv("ROOTLY_MCP_SERVER_URL", "")
+    if not url:
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("host", request.url.netloc)
+        url = f"{scheme}://{host}"
+    return url
 
 
 def sanitize_parameter_name(name: str) -> str:

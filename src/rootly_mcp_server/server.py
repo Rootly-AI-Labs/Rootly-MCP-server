@@ -25,7 +25,7 @@ from .tools.alerts import register_alert_tools
 from .tools.incidents import register_incident_tools
 from .tools.oncall import register_oncall_tools
 from .tools.resources import register_resource_handlers
-from .utils import sanitize_parameters_in_spec
+from .utils import OAUTH_PROTECTED_RESOURCE_PATH, resolve_mcp_server_url, sanitize_parameters_in_spec
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -464,16 +464,11 @@ def create_rootly_mcp_server(
     # OAuth 2.0 Protected Resource Metadata (RFC 9728)
     # MCP clients fetch this to discover which authorization server to use.
     if hosted:
+        from starlette.responses import JSONResponse
 
-        @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
+        @mcp.custom_route(OAUTH_PROTECTED_RESOURCE_PATH, methods=["GET"])
         async def oauth_protected_resource(request):
-            from starlette.responses import JSONResponse
-
-            mcp_server_url = os.getenv("ROOTLY_MCP_SERVER_URL", "")
-            if not mcp_server_url:
-                scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
-                host = request.headers.get("host", request.url.netloc)
-                mcp_server_url = f"{scheme}://{host}"
+            mcp_server_url = resolve_mcp_server_url(request)
 
             return JSONResponse(
                 {
