@@ -1092,6 +1092,8 @@ class TestOAuthProtectedResourceRoute:
             routes = server._get_additional_http_routes()
             route_paths = [r.path for r in routes]
             assert OAUTH_PROTECTED_RESOURCE_PATH in route_paths
+            # RFC 9728 §5: path-suffixed variant
+            assert OAUTH_PROTECTED_RESOURCE_PATH + "/{path:path}" in route_paths
 
     def test_oauth_route_not_registered_in_non_hosted_mode(self, mock_httpx_client):
         """In non-hosted mode, /.well-known/oauth-protected-resource route is NOT registered."""

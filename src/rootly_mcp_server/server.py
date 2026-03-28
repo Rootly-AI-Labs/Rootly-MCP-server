@@ -466,8 +466,7 @@ def create_rootly_mcp_server(
     if hosted:
         from starlette.responses import JSONResponse
 
-        @mcp.custom_route(OAUTH_PROTECTED_RESOURCE_PATH, methods=["GET"])
-        async def oauth_protected_resource(request):
+        async def _oauth_protected_resource_handler(request):
             mcp_server_url = resolve_mcp_server_url(request)
 
             cache = "max-age=3600" if is_mcp_server_url_static() else "no-store"
@@ -485,6 +484,16 @@ def create_rootly_mcp_server(
                 },
                 headers={"Cache-Control": cache},
             )
+
+        # RFC 9728 §5: clients may request the path-suffixed variant first
+        # (e.g. /.well-known/oauth-protected-resource/mcp for a resource at /mcp).
+        @mcp.custom_route(OAUTH_PROTECTED_RESOURCE_PATH + "/{path:path}", methods=["GET"])
+        async def oauth_protected_resource_suffixed(request):
+            return await _oauth_protected_resource_handler(request)
+
+        @mcp.custom_route(OAUTH_PROTECTED_RESOURCE_PATH, methods=["GET"])
+        async def oauth_protected_resource(request):
+            return await _oauth_protected_resource_handler(request)
 
     # Add some custom tools for enhanced functionality
 
