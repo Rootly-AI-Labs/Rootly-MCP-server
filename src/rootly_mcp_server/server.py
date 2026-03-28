@@ -25,7 +25,7 @@ from .tools.alerts import register_alert_tools
 from .tools.incidents import register_incident_tools
 from .tools.oncall import register_oncall_tools
 from .tools.resources import register_resource_handlers
-from .utils import OAUTH_PROTECTED_RESOURCE_PATH, resolve_mcp_server_url, sanitize_parameters_in_spec
+from .utils import OAUTH_PROTECTED_RESOURCE_PATH, is_mcp_server_url_static, resolve_mcp_server_url, sanitize_parameters_in_spec
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -470,7 +470,7 @@ def create_rootly_mcp_server(
         async def oauth_protected_resource(request):
             mcp_server_url = resolve_mcp_server_url(request)
 
-            cache = "max-age=3600" if os.getenv("ROOTLY_MCP_SERVER_URL") else "no-store"
+            cache = "max-age=3600" if is_mcp_server_url_static() else "no-store"
             return JSONResponse(
                 {
                     "resource": mcp_server_url,

@@ -12,15 +12,22 @@ logger = logging.getLogger(__name__)
 # OAuth 2.0 Protected Resource Metadata (RFC 9728)
 OAUTH_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
 
+# Cached at import time — static for the lifetime of the process.
+_MCP_SERVER_URL = os.getenv("ROOTLY_MCP_SERVER_URL", "")
+
 
 def resolve_mcp_server_url(request) -> str:
     """Derive the MCP server's public URL from env var or request headers."""
-    url = os.getenv("ROOTLY_MCP_SERVER_URL", "")
-    if not url:
-        scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
-        host = request.headers.get("host", request.url.netloc)
-        url = f"{scheme}://{host}"
-    return url
+    if _MCP_SERVER_URL:
+        return _MCP_SERVER_URL
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    host = request.headers.get("host", request.url.netloc)
+    return f"{scheme}://{host}"
+
+
+def is_mcp_server_url_static() -> bool:
+    """Whether the MCP server URL comes from a fixed env var (vs. request headers)."""
+    return bool(_MCP_SERVER_URL)
 
 
 def sanitize_parameter_name(name: str) -> str:

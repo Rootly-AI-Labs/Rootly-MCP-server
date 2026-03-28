@@ -239,14 +239,6 @@ def _infer_mcp_mode_from_path(
     return ""
 
 
-def _get_auth_capture_paths() -> set[str]:
-    """Get MCP HTTP paths that should capture auth headers."""
-    sse_path = _normalize_path(os.getenv("FASTMCP_SSE_PATH", "/sse"))
-    message_path = _normalize_path(os.getenv("FASTMCP_MESSAGE_PATH", "/messages"))
-    streamable_path = _normalize_path(os.getenv("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp"))
-    code_mode_path = _normalize_path(os.getenv("ROOTLY_CODE_MODE_PATH", "/mcp-codemode"))
-    return {sse_path, message_path, streamable_path, code_mode_path}
-
 
 class AuthCaptureMiddleware:
     """ASGI middleware that captures the Authorization header into a ContextVar.
@@ -314,23 +306,19 @@ class AuthCaptureMiddleware:
                     effective_transport or "unknown",
                     mcp_mode or "unknown",
                 )
-            # Wrap send to inject WWW-Authenticate on 401 responses
-            # so MCP clients can discover the OAuth authorization server.
-            async def _send_with_www_authenticate(message, *, _send=send, _request=request):
+            # Pre-compute the WWW-Authenticate value so the send wrapper
+            # only needs a cheap status check per ASGI message.
+            resource_metadata_url = (
+                f"{resolve_mcp_server_url(request)}{OAUTH_PROTECTED_RESOURCE_PATH}"
+            )
+            www_auth_value = f'Bearer resource_metadata="{resource_metadata_url}"'.encode()
+
+            async def _send_with_www_authenticate(message):
                 if message.get("type") == "http.response.start" and message.get("status") == 401:
-                    mcp_server_url = resolve_mcp_server_url(_request)
-                    resource_metadata_url = (
-                        f"{mcp_server_url}{OAUTH_PROTECTED_RESOURCE_PATH}"
-                    )
-                    headers = list(message.get("headers", []))
-                    headers.append(
-                        (
-                            b"www-authenticate",
-                            f'Bearer resource_metadata="{resource_metadata_url}"'.encode(),
-                        )
-                    )
-                    message = {**message, "headers": headers}
-                await _send(message)
+                    response_headers = list(message.get("headers", []))
+                    response_headers.append((b"www-authenticate", www_auth_value))
+                    message = {**message, "headers": response_headers}
+                await send(message)
 
             await self.app(scope, receive, _send_with_www_authenticate)
             return

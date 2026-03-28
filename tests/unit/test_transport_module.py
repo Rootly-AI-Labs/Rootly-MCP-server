@@ -546,7 +546,7 @@ class TestAuthCaptureMiddlewareWWWAuthenticate:
         async def send(message):
             sent_messages.append(message)
 
-        with patch.dict("os.environ", {"ROOTLY_MCP_SERVER_URL": "https://mcp.example.com"}):
+        with patch("rootly_mcp_server.utils._MCP_SERVER_URL", "https://mcp.example.com"):
             await middleware(scope, receive, send)
 
         start_msg = sent_messages[0]
@@ -591,7 +591,7 @@ class TestAuthCaptureMiddlewareWWWAuthenticate:
         async def send(message):
             sent_messages.append(message)
 
-        with patch.dict("os.environ", {"ROOTLY_MCP_SERVER_URL": "https://mcp.example.com"}):
+        with patch("rootly_mcp_server.utils._MCP_SERVER_URL", "https://mcp.example.com"):
             await middleware(scope, receive, send)
 
         start_msg = sent_messages[0]
@@ -631,7 +631,7 @@ class TestAuthCaptureMiddlewareWWWAuthenticate:
         async def send(message):
             sent_messages.append(message)
 
-        with patch.dict("os.environ", {"ROOTLY_MCP_SERVER_URL": "https://mcp.example.com"}):
+        with patch("rootly_mcp_server.utils._MCP_SERVER_URL", "https://mcp.example.com"):
             await middleware(scope, receive, send)
 
         start_msg = sent_messages[0]
@@ -674,11 +674,7 @@ class TestAuthCaptureMiddlewareWWWAuthenticate:
         async def send(message):
             sent_messages.append(message)
 
-        with patch.dict("os.environ", {}, clear=False):
-            # Ensure env var is not set
-            import os
-
-            os.environ.pop("ROOTLY_MCP_SERVER_URL", None)
+        with patch("rootly_mcp_server.utils._MCP_SERVER_URL", ""):
             await middleware(scope, receive, send)
 
         start_msg = sent_messages[0]
