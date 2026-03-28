@@ -461,6 +461,35 @@ def create_rootly_mcp_server(
 
         return PlainTextResponse("OK")
 
+    # OAuth 2.0 Protected Resource Metadata (RFC 9728)
+    # MCP clients fetch this to discover which authorization server to use.
+    if hosted:
+
+        @mcp.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])
+        async def oauth_protected_resource(request):
+            from starlette.responses import JSONResponse
+
+            mcp_server_url = os.getenv("ROOTLY_MCP_SERVER_URL", "")
+            if not mcp_server_url:
+                scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+                host = request.headers.get("host", request.url.netloc)
+                mcp_server_url = f"{scheme}://{host}"
+
+            return JSONResponse(
+                {
+                    "resource": mcp_server_url,
+                    "authorization_servers": [base_url],
+                    "scopes_supported": [
+                        "openid",
+                        "profile",
+                        "email",
+                        "all",
+                    ],
+                    "bearer_methods_supported": ["header"],
+                },
+                headers={"Cache-Control": "max-age=3600"},
+            )
+
     # Add some custom tools for enhanced functionality
 
     @mcp.tool()

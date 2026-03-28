@@ -313,6 +313,33 @@ class AuthCaptureMiddleware:
                     effective_transport or "unknown",
                     mcp_mode or "unknown",
                 )
+            # Wrap send to inject WWW-Authenticate on 401 responses
+            # so MCP clients can discover the OAuth authorization server.
+            async def _send_with_www_authenticate(message, *, _send=send, _request=request):
+                if message.get("type") == "http.response.start" and message.get("status") == 401:
+                    mcp_server_url = os.getenv("ROOTLY_MCP_SERVER_URL", "")
+                    if not mcp_server_url:
+                        scheme = _request.headers.get(
+                            "x-forwarded-proto", _request.url.scheme
+                        )
+                        host = _request.headers.get("host", _request.url.netloc)
+                        mcp_server_url = f"{scheme}://{host}"
+                    resource_metadata_url = (
+                        f"{mcp_server_url}/.well-known/oauth-protected-resource"
+                    )
+                    headers = list(message.get("headers", []))
+                    headers.append(
+                        (
+                            b"www-authenticate",
+                            f'Bearer resource_metadata="{resource_metadata_url}"'.encode(),
+                        )
+                    )
+                    message = {**message, "headers": headers}
+                await _send(message)
+
+            await self.app(scope, receive, _send_with_www_authenticate)
+            return
+
         await self.app(scope, receive, send)
 
 
