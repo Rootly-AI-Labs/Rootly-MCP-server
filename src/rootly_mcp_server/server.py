@@ -470,6 +470,7 @@ def create_rootly_mcp_server(
         async def oauth_protected_resource(request):
             mcp_server_url = resolve_mcp_server_url(request)
 
+            cache = "max-age=3600" if os.getenv("ROOTLY_MCP_SERVER_URL") else "no-store"
             return JSONResponse(
                 {
                     "resource": mcp_server_url,
@@ -482,7 +483,7 @@ def create_rootly_mcp_server(
                     ],
                     "bearer_methods_supported": ["header"],
                 },
-                headers={"Cache-Control": "max-age=3600"},
+                headers={"Cache-Control": cache},
             )
 
     # Add some custom tools for enhanced functionality

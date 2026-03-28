@@ -17,7 +17,7 @@ def resolve_mcp_server_url(request) -> str:
     """Derive the MCP server's public URL from env var or request headers."""
     url = os.getenv("ROOTLY_MCP_SERVER_URL", "")
     if not url:
-        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
         host = request.headers.get("host", request.url.netloc)
         url = f"{scheme}://{host}"
     return url
