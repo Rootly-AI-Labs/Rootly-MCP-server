@@ -10,6 +10,10 @@ An MCP server for the [Rootly API](https://docs.rootly.com/api-reference/overvie
 
 ![Demo GIF](https://raw.githubusercontent.com/Rootly-AI-Labs/Rootly-MCP-server/refs/heads/main/rootly-mcp-server-demo.gif)
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/rootly-ai-labs-rootly-mcp-server).
+
 ## Quick Start
 
 Use the hosted MCP server. No local installation required.
