@@ -19,7 +19,7 @@ from fastmcp.experimental.transforms.code_mode import (
     _unwrap_tool_result,
 )
 from fastmcp.server.context import Context
-from fastmcp.tools.tool import Tool
+from fastmcp.tools import Tool
 from pydantic import Field
 
 from .server import create_rootly_mcp_server
