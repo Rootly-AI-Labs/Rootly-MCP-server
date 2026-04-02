@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.14] - Released 2026-04-02
+
 ### Highlights
 - Refreshed FastMCP and related runtime dependencies to address newly disclosed security advisories
 
@@ -14,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated Code Mode imports and test fixtures for FastMCP 3.2.0 compatibility
 
 ### Docs / Dependencies
+- Added a Dependabot cooldown for package ecosystem updates
 - Upgraded `fastmcp[code-mode]` to `3.2.0`
 - Upgraded transitive `cryptography` to `46.0.6`
 - Upgraded transitive `Pygments` to `2.20.0`
