@@ -36,7 +36,7 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-    "fastmcp[code-mode]==3.1.1",  # Pin to specific version with Code Mode support
+    "fastmcp[code-mode]==3.2.0",  # Pin to patched version with Code Mode support
     "authlib>=1.6.9",  # Override vulnerable transitive authlib from fastmcp
     "requests==2.33.0", # Pin to patched version
     "httpx==0.28.1",   # Pin to specific version
