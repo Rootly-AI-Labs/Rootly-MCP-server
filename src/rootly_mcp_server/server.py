@@ -25,7 +25,7 @@ from .tools.alerts import register_alert_tools
 from .tools.incidents import register_incident_tools
 from .tools.oncall import register_oncall_tools
 from .tools.resources import register_resource_handlers
-from .utils import sanitize_parameters_in_spec
+from .utils import OAUTH_PROTECTED_RESOURCE_PATH, is_mcp_server_url_static, resolve_mcp_server_url, sanitize_parameters_in_spec
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -460,6 +460,40 @@ def create_rootly_mcp_server(
         from starlette.responses import PlainTextResponse
 
         return PlainTextResponse("OK")
+
+    # OAuth 2.0 Protected Resource Metadata (RFC 9728)
+    # MCP clients fetch this to discover which authorization server to use.
+    if hosted:
+        from starlette.responses import JSONResponse
+
+        async def _oauth_protected_resource_handler(request):
+            mcp_server_url = resolve_mcp_server_url(request)
+
+            cache = "max-age=3600" if is_mcp_server_url_static() else "no-store"
+            return JSONResponse(
+                {
+                    "resource": mcp_server_url,
+                    "authorization_servers": [base_url],
+                    "scopes_supported": [
+                        "openid",
+                        "profile",
+                        "email",
+                        "all",
+                    ],
+                    "bearer_methods_supported": ["header"],
+                },
+                headers={"Cache-Control": cache},
+            )
+
+        # RFC 9728 §5: clients may request the path-suffixed variant first
+        # (e.g. /.well-known/oauth-protected-resource/mcp for a resource at /mcp).
+        @mcp.custom_route(OAUTH_PROTECTED_RESOURCE_PATH + "/{path:path}", methods=["GET"])
+        async def oauth_protected_resource_suffixed(request):
+            return await _oauth_protected_resource_handler(request)
+
+        @mcp.custom_route(OAUTH_PROTECTED_RESOURCE_PATH, methods=["GET"])
+        async def oauth_protected_resource(request):
+            return await _oauth_protected_resource_handler(request)
 
     # Add some custom tools for enhanced functionality
 
