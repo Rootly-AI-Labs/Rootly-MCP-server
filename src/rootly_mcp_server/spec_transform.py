@@ -527,7 +527,57 @@ def _filter_openapi_spec(
                                         f"Cleaned broken reference in {method.upper()} {path} response: {ref_path}"
                                     )
 
+    # Post-process: ensure every array-type schema has an `items` property.
+    # Required by VS Code Copilot Agent Mode and the JSON Schema spec.
+    for path, path_item in filtered_spec.get("paths", {}).items():
+        for method, operation in path_item.items():
+            if method.lower() not in ["get", "post", "put", "delete", "patch"]:
+                continue
+            for param in operation.get("parameters", []):
+                if "schema" in param:
+                    _ensure_array_items(param["schema"])
+            if "requestBody" in operation:
+                for content_info in operation["requestBody"].get("content", {}).values():
+                    if "schema" in content_info:
+                        _ensure_array_items(content_info["schema"])
+
     return filtered_spec
+
+
+def _ensure_array_items(schema: dict[str, Any]) -> None:
+    """Recursively ensure every ``"type": "array"`` node has an ``"items"`` property.
+
+    VS Code GitHub Copilot Agent Mode (and the JSON Schema spec) require that
+    every array-typed schema includes ``items``.  The Rootly OpenAPI spec
+    sometimes omits it, which triggers validation errors in strict MCP clients.
+
+    This function modifies *schema* in-place.  A missing ``items`` is filled
+    with ``{}`` (accepts any element type), which is the minimally-restrictive
+    default recommended by JSON Schema.
+    """
+    if not isinstance(schema, dict):
+        return
+
+    if schema.get("type") == "array" and "items" not in schema:
+        schema["items"] = {}
+
+    # Recurse into object properties
+    for prop_schema in schema.get("properties", {}).values():
+        _ensure_array_items(prop_schema)
+
+    # Recurse into items (array element schema)
+    if "items" in schema and isinstance(schema["items"], dict):
+        _ensure_array_items(schema["items"])
+
+    # Recurse into combination keywords
+    for keyword in ("allOf", "anyOf", "oneOf"):
+        for sub in schema.get(keyword, []):
+            _ensure_array_items(sub)
+
+    # Recurse into additionalProperties if it is a schema dict
+    additional = schema.get("additionalProperties")
+    if isinstance(additional, dict):
+        _ensure_array_items(additional)
 
 
 def _has_broken_references(schema_def: dict[str, Any]) -> bool:
