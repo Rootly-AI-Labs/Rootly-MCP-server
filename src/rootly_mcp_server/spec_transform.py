@@ -565,14 +565,23 @@ def _ensure_array_items(schema: dict[str, Any]) -> None:
     for prop_schema in schema.get("properties", {}).values():
         _ensure_array_items(prop_schema)
 
-    # Recurse into items (array element schema)
-    if "items" in schema and isinstance(schema["items"], dict):
-        _ensure_array_items(schema["items"])
+    # Recurse into items (array element schema or tuple-validation list)
+    if "items" in schema:
+        if isinstance(schema["items"], dict):
+            _ensure_array_items(schema["items"])
+        elif isinstance(schema["items"], list):
+            for item_schema in schema["items"]:
+                _ensure_array_items(item_schema)
 
     # Recurse into combination keywords
     for keyword in ("allOf", "anyOf", "oneOf"):
         for sub in schema.get(keyword, []):
             _ensure_array_items(sub)
+
+    # Recurse into `not` schema
+    if_not = schema.get("not")
+    if isinstance(if_not, dict):
+        _ensure_array_items(if_not)
 
     # Recurse into additionalProperties if it is a schema dict
     additional = schema.get("additionalProperties")

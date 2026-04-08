@@ -108,6 +108,25 @@ class TestEnsureArrayItems:
         _ensure_array_items(schema)
         assert schema["items"] == {}
 
+    def test_tuple_validation_items_list_recursed(self):
+        """When items is a list (tuple validation), each element schema is recursed."""
+        schema = {
+            "type": "array",
+            "items": [
+                {"type": "string"},
+                {"type": "array"},  # nested array missing items
+            ],
+        }
+        _ensure_array_items(schema)
+        assert schema["items"][0] == {"type": "string"}
+        assert schema["items"][1]["items"] == {}
+
+    def test_not_keyword_recursed(self):
+        """Arrays inside a 'not' schema also get items."""
+        schema = {"not": {"type": "array"}}
+        _ensure_array_items(schema)
+        assert schema["not"]["items"] == {}
+
 
 @pytest.mark.unit
 class TestFilterOpenAPISpecArrayItems:
