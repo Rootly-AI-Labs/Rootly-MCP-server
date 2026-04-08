@@ -34,6 +34,7 @@ from rootly_mcp_server.server import (
     _validate_bearer_auth_header,
     create_rootly_mcp_server,
 )
+from rootly_mcp_server.utils import OAUTH_PROTECTED_RESOURCE_PATH
 
 
 @pytest.mark.unit
@@ -1068,3 +1069,45 @@ class TestDefaultConfiguration:
         assert isinstance(SWAGGER_URL, str)
         assert SWAGGER_URL.startswith("https://")
         assert "swagger" in SWAGGER_URL.lower()
+
+
+@pytest.mark.unit
+class TestOAuthProtectedResourceRoute:
+    """Tests for OAuth protected resource metadata route."""
+
+    def test_oauth_route_registered_in_hosted_mode(self, mock_httpx_client):
+        """In hosted mode, /.well-known/oauth-protected-resource route is registered."""
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            mock_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": "Test API", "version": "1.0.0"},
+                "paths": {},
+                "components": {"schemas": {}},
+            }
+            mock_load_spec.return_value = mock_spec
+
+            server = create_rootly_mcp_server(hosted=True)
+
+            # Check that the route is in additional HTTP routes
+            routes = server._get_additional_http_routes()
+            route_paths = [r.path for r in routes]
+            assert OAUTH_PROTECTED_RESOURCE_PATH in route_paths
+            # RFC 9728 §5: path-suffixed variant
+            assert OAUTH_PROTECTED_RESOURCE_PATH + "/{path:path}" in route_paths
+
+    def test_oauth_route_not_registered_in_non_hosted_mode(self, mock_httpx_client):
+        """In non-hosted mode, /.well-known/oauth-protected-resource route is NOT registered."""
+        with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:
+            mock_spec = {
+                "openapi": "3.0.0",
+                "info": {"title": "Test API", "version": "1.0.0"},
+                "paths": {},
+                "components": {"schemas": {}},
+            }
+            mock_load_spec.return_value = mock_spec
+
+            server = create_rootly_mcp_server(hosted=False)
+
+            routes = server._get_additional_http_routes()
+            route_paths = [r.path for r in routes]
+            assert OAUTH_PROTECTED_RESOURCE_PATH not in route_paths

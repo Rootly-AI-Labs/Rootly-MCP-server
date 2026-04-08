@@ -12,6 +12,7 @@ from typing import Any
 import httpx
 
 from .security import mask_sensitive_data
+from .utils import OAUTH_PROTECTED_RESOURCE_PATH, resolve_mcp_server_url
 
 logger = logging.getLogger(__name__)
 
@@ -238,14 +239,6 @@ def _infer_mcp_mode_from_path(
     return ""
 
 
-def _get_auth_capture_paths() -> set[str]:
-    """Get MCP HTTP paths that should capture auth headers."""
-    sse_path = _normalize_path(os.getenv("FASTMCP_SSE_PATH", "/sse"))
-    message_path = _normalize_path(os.getenv("FASTMCP_MESSAGE_PATH", "/messages"))
-    streamable_path = _normalize_path(os.getenv("FASTMCP_STREAMABLE_HTTP_PATH", "/mcp"))
-    code_mode_path = _normalize_path(os.getenv("ROOTLY_CODE_MODE_PATH", "/mcp-codemode"))
-    return {sse_path, message_path, streamable_path, code_mode_path}
-
 
 class AuthCaptureMiddleware:
     """ASGI middleware that captures the Authorization header into a ContextVar.
@@ -313,6 +306,23 @@ class AuthCaptureMiddleware:
                     effective_transport or "unknown",
                     mcp_mode or "unknown",
                 )
+            # Pre-compute the WWW-Authenticate value so the send wrapper
+            # only needs a cheap status check per ASGI message.
+            resource_metadata_url = (
+                f"{resolve_mcp_server_url(request)}{OAUTH_PROTECTED_RESOURCE_PATH}"
+            )
+            www_auth_value = f'Bearer resource_metadata="{resource_metadata_url}"'.encode()
+
+            async def _send_with_www_authenticate(message):
+                if message.get("type") == "http.response.start" and message.get("status") == 401:
+                    response_headers = list(message.get("headers", []))
+                    response_headers.append((b"www-authenticate", www_auth_value))
+                    message = {**message, "headers": response_headers}
+                await send(message)
+
+            await self.app(scope, receive, _send_with_www_authenticate)
+            return
+
         await self.app(scope, receive, send)
 
 
