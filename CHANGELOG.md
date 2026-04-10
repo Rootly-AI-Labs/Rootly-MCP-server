@@ -5,7 +5,18 @@ All notable changes to the Rootly MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.15] - Released 2026-04-10
+
+### Highlights
+- Fixed escalation path tool schemas for strict MCP clients and added OpenAPI audit coverage to catch spec regressions earlier
+
+### Fixes
+- Ensured array schemas always include `items` so `createEscalationPath` and `updateEscalationPath` validate correctly
+- Patched the bundled swagger definitions for escalation path urgency rules
+
+### Docs / Dependencies
+- Added local and scheduled remote OpenAPI audit checks
+- Upgraded `requests` to `2.33.1`
 
 ## [2.2.14] - Released 2026-04-02
 
