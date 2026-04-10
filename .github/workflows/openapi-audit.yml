@@ -1,0 +1,80 @@
+name: OpenAPI Audit
+
+on:
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - ".github/workflows/openapi-audit.yml"
+      - ".github/openapi-audit-remote-baseline.json"
+      - "scripts/audit_openapi.py"
+      - "src/rootly_mcp_server/data/swagger.json"
+      - "src/rootly_mcp_server/spec_transform.py"
+      - "tests/unit/test_server.py"
+  push:
+    branches: [main, staging]
+    paths:
+      - ".github/workflows/openapi-audit.yml"
+      - ".github/openapi-audit-remote-baseline.json"
+      - "scripts/audit_openapi.py"
+      - "src/rootly_mcp_server/data/swagger.json"
+      - "src/rootly_mcp_server/spec_transform.py"
+      - "tests/unit/test_server.py"
+  workflow_dispatch:
+  schedule:
+    - cron: "23 12 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openapi-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bundled-audit:
+    name: Bundled Swagger Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@7eb50e6e20e1e2009087999ba91242e80253875f # v7
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Audit bundled swagger
+        run: uv run python scripts/audit_openapi.py --filtered-defaults --instantiate-server
+
+  remote-audit:
+    name: Remote Swagger Audit
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@7eb50e6e20e1e2009087999ba91242e80253875f # v7
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Audit remote swagger
+        run: >
+          uv run python scripts/audit_openapi.py
+          --remote
+          --baseline-json .github/openapi-audit-remote-baseline.json
+          --filtered-defaults
+          --instantiate-server
