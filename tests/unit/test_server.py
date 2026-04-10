@@ -91,6 +91,31 @@ class TestServerCreation:
 
             assert server is not None
 
+    def test_swagger_arrays_define_items(self):
+        """Ensure bundled swagger defines items for all array schemas."""
+        swagger_path = os.path.join(
+            os.path.dirname(server_module.__file__), "data", "swagger.json"
+        )
+        with open(swagger_path, encoding="utf-8") as f:
+            spec = json.load(f)
+
+        missing: list[str] = []
+
+        def walk(node: Any, path: str = "") -> None:
+            if isinstance(node, dict):
+                if node.get("type") == "array" and "items" not in node:
+                    missing.append(path or "<root>")
+                for key, value in node.items():
+                    walk(value, f"{path}.{key}" if path else key)
+                return
+            if isinstance(node, list):
+                for idx, value in enumerate(node):
+                    walk(value, f"{path}[{idx}]")
+
+        walk(spec)
+
+        assert not missing, f"Array schemas missing items: {missing[:5]}"
+
     def test_create_server_with_custom_paths(self, mock_httpx_client):
         """Test server creation with custom allowed paths."""
         with patch("rootly_mcp_server.server._load_swagger_spec") as mock_load_spec:

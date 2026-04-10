@@ -56184,7 +56184,10 @@
                             },
                             "urgency_ids": {
                               "type": "array",
-                              "description": "Alert urgency ids for which this escalation path should be used"
+                              "description": "Alert urgency ids for which this escalation path should be used",
+                              "items": {
+                                "type": "string"
+                              }
                             }
                           },
                           "required": [
@@ -56339,7 +56342,10 @@
                             },
                             "urgency_ids": {
                               "type": "array",
-                              "description": "Alert urgency ids for which this escalation path should be used"
+                              "description": "Alert urgency ids for which this escalation path should be used",
+                              "items": {
+                                "type": "string"
+                              }
                             }
                           },
                           "required": [
