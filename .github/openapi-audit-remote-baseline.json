@@ -1,0 +1,6 @@
+{
+  "missing_array_items": [
+    "components.schemas.new_escalation_policy_path.properties.data.properties.attributes.properties.rules.items.anyOf[0].properties.urgency_ids",
+    "components.schemas.update_escalation_policy_path.properties.data.properties.attributes.properties.rules.items.anyOf[0].properties.urgency_ids"
+  ]
+}

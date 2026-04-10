@@ -34,6 +34,7 @@ from rootly_mcp_server.server import (
     _validate_bearer_auth_header,
     create_rootly_mcp_server,
 )
+from rootly_mcp_server.spec_transform import audit_openapi_spec, has_openapi_audit_findings
 
 
 @pytest.mark.unit
@@ -91,30 +92,47 @@ class TestServerCreation:
 
             assert server is not None
 
-    def test_swagger_arrays_define_items(self):
-        """Ensure bundled swagger defines items for all array schemas."""
+    def test_bundled_swagger_audit_passes(self):
+        """Ensure the bundled swagger passes the full schema audit."""
         swagger_path = os.path.join(
             os.path.dirname(server_module.__file__), "data", "swagger.json"
         )
         with open(swagger_path, encoding="utf-8") as f:
             spec = json.load(f)
 
-        missing: list[str] = []
+        findings = audit_openapi_spec(spec)
 
-        def walk(node: Any, path: str = "") -> None:
-            if isinstance(node, dict):
-                if node.get("type") == "array" and "items" not in node:
-                    missing.append(path or "<root>")
-                for key, value in node.items():
-                    walk(value, f"{path}.{key}" if path else key)
-                return
-            if isinstance(node, list):
-                for idx, value in enumerate(node):
-                    walk(value, f"{path}[{idx}]")
+        assert not has_openapi_audit_findings(findings), findings
 
-        walk(spec)
+    def test_filtered_bundled_swagger_audit_passes(self):
+        """Ensure the shipped MCP-filtered spec passes the full schema audit."""
+        swagger_path = os.path.join(
+            os.path.dirname(server_module.__file__), "data", "swagger.json"
+        )
+        with open(swagger_path, encoding="utf-8") as f:
+            spec = json.load(f)
 
-        assert not missing, f"Array schemas missing items: {missing[:5]}"
+        filtered_spec = _filter_openapi_spec(
+            spec,
+            [f"/v1{path}" if not path.startswith("/v1") else path for path in DEFAULT_ALLOWED_PATHS],
+            delete_allowed_paths=[
+                f"/v1{path}" if not path.startswith("/v1") else path
+                for path in DEFAULT_DELETE_ALLOWED_PATHS
+            ],
+        )
+        findings = audit_openapi_spec(filtered_spec)
+
+        assert not has_openapi_audit_findings(findings), findings
+
+    def test_create_server_with_bundled_swagger(self):
+        """Ensure FastMCP can instantiate from the bundled swagger without schema errors."""
+        swagger_path = os.path.join(
+            os.path.dirname(server_module.__file__), "data", "swagger.json"
+        )
+
+        server = create_rootly_mcp_server(swagger_path=swagger_path, hosted=False)
+
+        assert server is not None
 
     def test_create_server_with_custom_paths(self, mock_httpx_client):
         """Test server creation with custom allowed paths."""

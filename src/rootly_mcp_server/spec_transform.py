@@ -6,11 +6,14 @@ import json
 import logging
 import os
 import re
+from collections import Counter
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, cast
 
 import requests
+
+from .utils import sanitize_parameter_name
 
 logger = logging.getLogger(__name__)
 
@@ -544,6 +547,129 @@ def _ensure_array_items(spec: Any) -> None:
     if isinstance(spec, list):
         for item in spec:
             _ensure_array_items(item)
+
+
+def _walk_openapi_tree(node: Any, visitor: Any, path: str = "") -> None:
+    """Walk an OpenAPI document and invoke a visitor with each node and its path."""
+    visitor(node, path)
+    if isinstance(node, dict):
+        for key, value in node.items():
+            child_path = f"{path}.{key}" if path else key
+            _walk_openapi_tree(value, visitor, child_path)
+        return
+    if isinstance(node, list):
+        for index, value in enumerate(node):
+            _walk_openapi_tree(value, visitor, f"{path}[{index}]")
+
+
+def collect_missing_array_items(spec: dict[str, Any]) -> list[str]:
+    """Collect array schema paths that do not define an items schema."""
+    missing: list[str] = []
+
+    def visitor(node: Any, path: str) -> None:
+        if isinstance(node, dict) and node.get("type") == "array" and "items" not in node:
+            missing.append(path or "<root>")
+
+    _walk_openapi_tree(spec, visitor)
+    return missing
+
+
+def collect_broken_internal_refs(spec: dict[str, Any]) -> list[dict[str, str]]:
+    """Collect broken internal $ref pointers in an OpenAPI document."""
+    broken: list[dict[str, str]] = []
+
+    def visitor(node: Any, path: str) -> None:
+        if not isinstance(node, dict):
+            return
+        ref = node.get("$ref")
+        if not isinstance(ref, str) or not ref.startswith("#/"):
+            return
+
+        current: Any = spec
+        for part in ref[2:].split("/"):
+            if not isinstance(current, dict) or part not in current:
+                broken.append({"path": path or "<root>", "ref": ref})
+                return
+            current = current[part]
+
+    _walk_openapi_tree(spec, visitor)
+    return broken
+
+
+def collect_duplicate_operation_ids(spec: dict[str, Any]) -> list[dict[str, Any]]:
+    """Collect duplicate OpenAPI operationIds."""
+    counts: Counter[str] = Counter()
+    for _path, path_item in spec.get("paths", {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method.lower() not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            if not isinstance(operation, dict):
+                continue
+            operation_id = operation.get("operationId")
+            if isinstance(operation_id, str):
+                counts[operation_id] += 1
+
+    return [
+        {"operationId": operation_id, "count": count}
+        for operation_id, count in sorted(counts.items())
+        if count > 1
+    ]
+
+
+def collect_sanitized_parameter_collisions(spec: dict[str, Any]) -> list[dict[str, str]]:
+    """Collect cases where distinct parameter names sanitize to the same MCP key."""
+    collisions: list[dict[str, str]] = []
+    for path, path_item in spec.get("paths", {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        path_level_params = path_item.get("parameters", [])
+        for method, operation in path_item.items():
+            if method.lower() not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            if not isinstance(operation, dict):
+                continue
+
+            seen: dict[str, str] = {}
+            parameters = list(path_level_params) + list(operation.get("parameters", []))
+            for param in parameters:
+                if not isinstance(param, dict):
+                    continue
+                name = param.get("name")
+                if not isinstance(name, str):
+                    continue
+                sanitized = sanitize_parameter_name(name)
+                previous = seen.get(sanitized)
+                if previous and previous != name:
+                    collisions.append(
+                        {
+                            "path": path,
+                            "method": method.upper(),
+                            "sanitized": sanitized,
+                            "first": previous,
+                            "second": name,
+                        }
+                    )
+                else:
+                    seen[sanitized] = name
+
+    return collisions
+
+
+def audit_openapi_spec(spec: dict[str, Any]) -> dict[str, list[Any]]:
+    """Audit an OpenAPI document for schema issues that break MCP tool generation."""
+    return {
+        "missing_array_items": collect_missing_array_items(spec),
+        "broken_internal_refs": collect_broken_internal_refs(spec),
+        "duplicate_operation_ids": collect_duplicate_operation_ids(spec),
+        "sanitized_parameter_collisions": collect_sanitized_parameter_collisions(spec),
+    }
+
+
+def has_openapi_audit_findings(findings: dict[str, list[Any]]) -> bool:
+    """Return True when any audit category contains findings."""
+    return any(findings.values())
 
 
 def _has_broken_references(schema_def: dict[str, Any]) -> bool:
