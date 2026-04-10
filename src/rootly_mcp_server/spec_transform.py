@@ -527,7 +527,23 @@ def _filter_openapi_spec(
                                         f"Cleaned broken reference in {method.upper()} {path} response: {ref_path}"
                                     )
 
+    _ensure_array_items(filtered_spec)
+
     return filtered_spec
+
+
+def _ensure_array_items(spec: Any) -> None:
+    """Ensure all array schemas define an items schema to satisfy tool validation."""
+    if isinstance(spec, dict):
+        if spec.get("type") == "array" and "items" not in spec:
+            # OpenAPI allows arrays without items, but MCP tool schema validation does not.
+            spec["items"] = {}
+        for value in spec.values():
+            _ensure_array_items(value)
+        return
+    if isinstance(spec, list):
+        for item in spec:
+            _ensure_array_items(item)
 
 
 def _has_broken_references(schema_def: dict[str, Any]) -> bool:
