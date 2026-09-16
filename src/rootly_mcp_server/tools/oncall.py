@@ -196,6 +196,33 @@ def _pages_fetched_phrase(report: dict[str, Any]) -> str:
     return f"{fetched} of {total} pages"
 
 
+def _shift_fetch_meta(report: dict[str, Any], to_raw: Any = None) -> dict[str, Any]:
+    """Keys describing why a shift query covers less than the range asked for.
+
+    The aggregating tools return one number per person or per schedule, so a
+    partial fetch reads as a quiet week rather than as a missing page. Each key
+    is present only when it applies, leaving an ordinary response untouched and
+    making any key here a real signal that the totals are short.
+
+    Callers merge the result into their own ``meta``, matching
+    ``get_oncall_shift_metrics`` and ``list_shifts``.
+    """
+    meta: dict[str, Any] = {}
+    if report.get("windows"):
+        meta["upstream_windows"] = report["windows"]
+    if report.get("truncated"):
+        meta["truncated"] = True
+        meta["truncation_note"] = (
+            "More shifts exist upstream than this query fetched "
+            f"({_pages_fetched_phrase(report)}). Narrow the date range, or "
+            "filter by schedule_ids or user_ids."
+        )
+    horizon_note = _shifts_future_horizon_note(to_raw)
+    if horizon_note:
+        meta["future_horizon_note"] = horizon_note
+    return meta
+
+
 def _truncate_text(value: Any, max_length: int = 280) -> str | None:
     """Keep large narrative fields compact enough for MCP clients."""
     if not value:
@@ -2349,6 +2376,16 @@ def register_oncall_tools(
             from collections import defaultdict
             from datetime import datetime
 
+            date_error = _date_argument_error(
+                {"start_date": start_date, "end_date": end_date}, required=True
+            )
+            if date_error:
+                return mcp_error.tool_error(
+                    f"Failed to get on-call schedule summary: {date_error}",
+                    "validation_error",
+                    details={"start_date": start_date, "end_date": end_date},
+                )
+
             # Parse filter IDs
             schedule_id_filter = set()
             if schedule_ids:
@@ -2361,9 +2398,10 @@ def register_oncall_tools(
             # Fetch lookup maps
             users_map, schedules_map, teams_map = await _fetch_users_and_schedules_maps()
 
-            # Build schedule -> team mapping and apply team filter
+            # Build schedule -> team mapping for naming, for every schedule
+            # rather than only the selected ones: a shift names its schedule
+            # whether or not a filter was applied.
             schedule_to_team = {}
-            filtered_schedule_ids = set()
             for schedule_id, schedule in schedules_map.items():
                 owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
                 team_id = owner_group_ids[0] if owner_group_ids else None
@@ -2376,23 +2414,63 @@ def register_oncall_tools(
                     "schedule_name": schedule.get("attributes", {}).get("name", "Unknown Schedule"),
                 }
 
-                # Apply filters
-                if schedule_id_filter and schedule_id not in schedule_id_filter:
-                    continue
-                if team_id_filter and (not team_id or team_id not in team_id_filter):
-                    continue
-                filtered_schedule_ids.add(schedule_id)
+            # `None` means "every schedule", which is not the same as the empty
+            # set. Collapsing the two is what let a filter matching nothing fall
+            # through to an unfiltered answer: the guard below read the empty set
+            # as "no filter" and aggregated the whole workspace under the
+            # caller's filter.
+            selected_schedule_ids: set[str] | None = None
+            if schedule_id_filter:
+                # Taken at face value rather than intersected with the lookup
+                # map, which pages out at a few hundred schedules: a real id
+                # missing from that map must not read as a bad filter.
+                selected_schedule_ids = set(schedule_id_filter)
+            if team_id_filter:
+                team_schedule_ids = {
+                    sid
+                    for sid, info in schedule_to_team.items()
+                    if info["team_id"] is not None and str(info["team_id"]) in team_id_filter
+                }
+                selected_schedule_ids = (
+                    team_schedule_ids
+                    if selected_schedule_ids is None
+                    else selected_schedule_ids & team_schedule_ids
+                )
 
-            # If no filters, include all schedules
-            if not schedule_id_filter and not team_id_filter:
-                filtered_schedule_ids = set(schedules_map.keys())
+            if selected_schedule_ids is not None and not selected_schedule_ids:
+                supplied = " and ".join(
+                    name
+                    for name, given in (
+                        ("schedule_ids", schedule_id_filter),
+                        ("team_ids", team_id_filter),
+                    )
+                    if given
+                )
+                return {
+                    "period": {"start": start_date, "end": end_date},
+                    "total_schedules": 0,
+                    "total_responders": 0,
+                    "schedule_coverage": [],
+                    "responder_load": [],
+                    "note": (
+                        "No schedule matched the filter, so this is an empty result "
+                        f"rather than a summary of the workspace. Check {supplied}: "
+                        "team_ids takes team IDs and schedule_ids takes schedule IDs, "
+                        "and a team owning no schedules matches nothing."
+                    ),
+                }
 
-            # Fetch shifts (concurrent pagination via _fetch_all_pages)
+            # Fetch shifts (concurrent pagination via _fetch_all_pages). The
+            # selection goes upstream as `schedule_ids[]` so the page budget is
+            # spent on shifts that can appear in the answer, rather than pulling
+            # the workspace and discarding most of it.
             shift_params: dict[str, Any] = {
                 "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
                 "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
                 "include": "user,on_call_role",
             }
+            if selected_schedule_ids is not None:
+                shift_params["schedule_ids[]"] = sorted(selected_schedule_ids)
 
             def _merge_users(included: list[dict[str, Any]]) -> None:
                 for resource in included:
@@ -2401,12 +2479,14 @@ def register_oncall_tools(
                         if isinstance(uid, str):
                             users_map[uid] = resource
 
+            fetch_report: dict[str, Any] = {}
             all_shifts = await _fetch_all_pages(
                 "/v1/shifts",
                 asyncio.Semaphore(10),
                 extra_params=shift_params,
                 on_included=_merge_users,
                 required=True,
+                report=fetch_report,
             )
 
             # Aggregate by schedule and user
@@ -2439,8 +2519,13 @@ def register_oncall_tools(
                 attrs = shift.get("attributes", {})
                 schedule_id = attrs.get("schedule_id")
 
-                # Apply schedule filter
-                if filtered_schedule_ids and schedule_id not in filtered_schedule_ids:
+                # Backstop for the upstream `schedule_ids[]` filter. `is not
+                # None` rather than a truthiness test: an empty selection means
+                # nothing matches, and is already returned above.
+                if (
+                    selected_schedule_ids is not None
+                    and str(schedule_id) not in selected_schedule_ids
+                ):
                     continue
 
                 # Get user info
@@ -2548,12 +2633,14 @@ def register_oncall_tools(
             formatted_load.sort(key=lambda x: x["total_hours"], reverse=True)
             formatted_coverage.sort(key=lambda x: x["schedule_name"])
 
+            fetch_meta = _shift_fetch_meta(fetch_report, shift_params["to"])
             return {
                 "period": {"start": start_date, "end": end_date},
                 "total_schedules": len(formatted_coverage),
                 "total_responders": len(formatted_load),
                 "schedule_coverage": formatted_coverage,
                 "responder_load": formatted_load,
+                **({"meta": fetch_meta} if fetch_meta else {}),
             }
 
         except Exception as e:
@@ -2826,6 +2913,16 @@ def register_oncall_tools(
         try:
             from datetime import datetime
 
+            date_error = _date_argument_error(
+                {"start_date": start_date, "end_date": end_date}, required=True
+            )
+            if date_error:
+                return mcp_error.tool_error(
+                    f"Failed to create override recommendation: {date_error}",
+                    "validation_error",
+                    details={"start_date": start_date, "end_date": end_date},
+                )
+
             # Parse exclusions
             exclude_set = set()
             if exclude_user_ids:
@@ -2893,11 +2990,15 @@ def register_oncall_tools(
                                     rotation_users.add(str(user_id))
 
             # Fetch shifts to calculate current load for rotation users
-            # (concurrent pagination via _fetch_all_pages).
+            # (concurrent pagination via _fetch_all_pages). Load is only ever
+            # read for rotation users, so they go upstream as `user_ids[]`:
+            # fetching the workspace to keep a handful of rows could push a
+            # candidate's shifts past the last page and score them as free.
             shift_params: dict[str, Any] = {
                 "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
                 "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
                 "include": "user",
+                "user_ids[]": sorted(rotation_users),
             }
 
             def _merge_users(included: list[dict[str, Any]]) -> None:
@@ -2907,13 +3008,21 @@ def register_oncall_tools(
                         if isinstance(uid, str):
                             users_map[uid] = resource
 
-            all_shifts = await _fetch_all_pages(
-                "/v1/shifts",
-                asyncio.Semaphore(10),
-                extra_params=shift_params,
-                on_included=_merge_users,
-                required=True,
-            )
+            fetch_report: dict[str, Any] = {}
+            if rotation_users:
+                all_shifts = await _fetch_all_pages(
+                    "/v1/shifts",
+                    asyncio.Semaphore(10),
+                    extra_params=shift_params,
+                    on_included=_merge_users,
+                    required=True,
+                    report=fetch_report,
+                )
+            else:
+                # No candidates to score. An empty `user_ids[]` is dropped
+                # rather than matching nobody, so asking anyway would fetch the
+                # workspace to answer a question that already has no answer.
+                all_shifts = []
 
             # Calculate load per user
             user_load: dict[str, float] = {}
@@ -2993,6 +3102,7 @@ def register_oncall_tools(
                 }
 
             # Build response with optional warning
+            fetch_meta = _shift_fetch_meta(fetch_report, shift_params["to"])
             response = {
                 "schedule_name": schedule_name,
                 "original_user": {
@@ -3005,6 +3115,7 @@ def register_oncall_tools(
                 },
                 "recommended_replacements": recommendations[:5],  # Top 5
                 "override_payload": override_payload,
+                **({"meta": fetch_meta} if fetch_meta else {}),
             }
 
             # Add warning if no recommendations available
@@ -3085,6 +3196,16 @@ def register_oncall_tools(
         Available only in self-hosted deployments. Requires ONCALLHEALTH_API_KEY environment variable.
         """
         try:
+            date_error = _date_argument_error(
+                {"start_date": start_date, "end_date": end_date}, required=True
+            )
+            if date_error:
+                return mcp_error.tool_error(
+                    f"Failed to check health risk: {date_error}",
+                    "validation_error",
+                    details={"start_date": start_date, "end_date": end_date},
+                )
+
             # Validate OCH API key is configured
             if not os.environ.get("ONCALLHEALTH_API_KEY"):
                 raise PermissionError(
@@ -3137,14 +3258,36 @@ def register_oncall_tools(
             users_map.update({str(k): v for k, v in lookup_users.items()})
             schedules_map.update({str(k): v for k, v in lookup_schedules.items()})
 
-            # Fetch shifts (concurrent pagination via _fetch_all_pages)
+            # Fetch shifts (concurrent pagination via _fetch_all_pages).
+            #
+            # `/v1/shifts` takes `from`/`to` and nothing else: it has no
+            # `filter[...]` parameters, and an unsupported query parameter is
+            # ignored rather than rejected. Asking with `filter[starts_at_lte]`
+            # therefore applied no date bound at all, and every shift the
+            # endpoint returned was correlated against the at-risk users and
+            # reported as "scheduled for the period" -- a shift from a year
+            # earlier could raise action_required for a week it had nothing to
+            # do with.
+            #
+            # Only the users being reported on can appear in the answer, so they
+            # go upstream as `user_ids[]` as well. Bound once here and reused for
+            # the scoring below, so the users fetched and the users scored cannot
+            # drift apart.
+            replacement_candidates = safe_users[:5] if include_replacements else []
+            examined_user_ids = sorted(
+                {
+                    str(user["rootly_user_id"])
+                    for user in [*at_risk_users, *replacement_candidates]
+                    if user.get("rootly_user_id")
+                }
+            )
             shift_params: dict[str, Any] = {
-                "filter[starts_at_lte]": (end_date if "T" in end_date else f"{end_date}T23:59:59Z"),
-                "filter[ends_at_gte]": (
-                    start_date if "T" in start_date else f"{start_date}T00:00:00Z"
-                ),
-                "include": "user,schedule",
+                "from": start_date if "T" in start_date else f"{start_date}T00:00:00Z",
+                "to": end_date if "T" in end_date else f"{end_date}T23:59:59Z",
+                "include": "user",
             }
+            if examined_user_ids:
+                shift_params["user_ids[]"] = examined_user_ids
 
             def _merge_users_and_schedules(included: list[dict[str, Any]]) -> None:
                 for resource in included:
@@ -3156,6 +3299,7 @@ def register_oncall_tools(
                     elif resource.get("type") == "schedules":
                         schedules_map[rid] = resource
 
+            fetch_report: dict[str, Any] = {}
             all_shifts.extend(
                 await _fetch_all_pages(
                     "/v1/shifts",
@@ -3163,6 +3307,7 @@ def register_oncall_tools(
                     extra_params=shift_params,
                     on_included=_merge_users_and_schedules,
                     required=True,
+                    report=fetch_report,
                 )
             )
 
@@ -3186,8 +3331,11 @@ def register_oncall_tools(
 
                     if shift_user_id == rootly_id_str:
                         attrs = shift.get("attributes", {})
-                        schedule_rel = relationships.get("schedule", {}).get("data") or {}
-                        schedule_id = str(schedule_rel.get("id", ""))
+                        # From the attribute, not a `schedule` relationship:
+                        # `/v1/shifts` has no such relationship to include, so
+                        # reading one named every schedule "Unknown". The
+                        # sibling tools all resolve it this way.
+                        schedule_id = str(attrs.get("schedule_id") or "")
                         schedule_info = schedules_map.get(schedule_id, {})
                         schedule_name = schedule_info.get("attributes", {}).get("name", "Unknown")
 
@@ -3237,51 +3385,47 @@ def register_oncall_tools(
 
             # 6. Get recommended replacements (if requested)
             recommended_replacements = []
-            if include_replacements and safe_users:
-                safe_rootly_ids = [
-                    str(u["rootly_user_id"]) for u in safe_users[:10] if u.get("rootly_user_id")
-                ]
+            if include_replacements and replacement_candidates:
+                # The same slice the shift query was built from, so the users
+                # scored here and the users fetched above cannot drift apart:
+                # scoring a user whose shifts were never requested would report
+                # them as free.
+                for user in replacement_candidates:
+                    rootly_id = user.get("rootly_user_id")
+                    if not rootly_id:
+                        continue
 
-                if safe_rootly_ids:
-                    # Calculate current hours for safe users
-                    for user in safe_users[:5]:
-                        rootly_id = user.get("rootly_user_id")
-                        if not rootly_id:
-                            continue
+                    rootly_id_str = str(rootly_id)
+                    user_hours = 0.0
 
-                        rootly_id_str = str(rootly_id)
-                        user_hours = 0.0
+                    for shift in all_shifts:
+                        relationships = shift.get("relationships", {})
+                        user_rel = relationships.get("user", {}).get("data") or {}
+                        shift_user_id = str(user_rel.get("id", ""))
 
-                        for shift in all_shifts:
-                            relationships = shift.get("relationships", {})
-                            user_rel = relationships.get("user", {}).get("data") or {}
-                            shift_user_id = str(user_rel.get("id", ""))
+                        if shift_user_id == rootly_id_str:
+                            attrs = shift.get("attributes", {})
+                            starts_at = attrs.get("starts_at")
+                            ends_at = attrs.get("ends_at")
+                            if starts_at and ends_at:
+                                try:
+                                    start_dt = datetime.fromisoformat(
+                                        starts_at.replace("Z", "+00:00")
+                                    )
+                                    end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
+                                    user_hours += (end_dt - start_dt).total_seconds() / 3600
+                                except (ValueError, AttributeError):
+                                    pass
 
-                            if shift_user_id == rootly_id_str:
-                                attrs = shift.get("attributes", {})
-                                starts_at = attrs.get("starts_at")
-                                ends_at = attrs.get("ends_at")
-                                if starts_at and ends_at:
-                                    try:
-                                        start_dt = datetime.fromisoformat(
-                                            starts_at.replace("Z", "+00:00")
-                                        )
-                                        end_dt = datetime.fromisoformat(
-                                            ends_at.replace("Z", "+00:00")
-                                        )
-                                        user_hours += (end_dt - start_dt).total_seconds() / 3600
-                                    except (ValueError, AttributeError):
-                                        pass
-
-                        recommended_replacements.append(
-                            {
-                                "user_name": user["user_name"],
-                                "user_id": int(rootly_id),
-                                "och_score": user["och_score"],
-                                "risk_level": user["risk_level"],
-                                "current_hours_in_period": round(user_hours, 1),
-                            }
-                        )
+                    recommended_replacements.append(
+                        {
+                            "user_name": user["user_name"],
+                            "user_id": int(rootly_id),
+                            "och_score": user["och_score"],
+                            "risk_level": user["risk_level"],
+                            "current_hours_in_period": round(user_hours, 1),
+                        }
+                    )
 
             # 7. Build summary
             total_scheduled_hours = sum(u["total_hours"] for u in at_risk_scheduled)
@@ -3295,6 +3439,7 @@ def register_oncall_tools(
             else:
                 message = "No at-risk users are scheduled for the period."
 
+            fetch_meta = _shift_fetch_meta(fetch_report, shift_params["to"])
             return {
                 "period": {"start": start_date, "end": end_date},
                 "och_analysis_id": och_analysis_id,
@@ -3308,6 +3453,7 @@ def register_oncall_tools(
                     "action_required": action_required,
                     "message": message,
                 },
+                **({"meta": fetch_meta} if fetch_meta else {}),
             }
 
         except PermissionError as e:

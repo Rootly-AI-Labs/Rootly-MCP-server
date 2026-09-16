@@ -5,6 +5,19 @@ All notable changes to the Rootly MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **`check_oncall_health_risk` ignored the date range it was given**: it bounded its shift query with `filter[starts_at_lte]`/`filter[ends_at_gte]`, but `/v1/shifts` takes `from`/`to` and has no `filter[...]` parameters at all. An unsupported query parameter is ignored rather than rejected, so no date bound was ever applied: shifts from any period were correlated against the at-risk users and reported as scheduled for the week asked about, raising `action_required` for work that had nothing to do with it. It now sends `from`/`to`. The same tool resolved each shift's schedule through a `schedule` relationship that `/v1/shifts` does not have, so every shift was reported against schedule "Unknown"; it now reads `schedule_id` from the shift's attributes, as the sibling tools already did.
+- **`get_oncall_schedule_summary` silently ignored a filter that matched nothing**: `schedule_ids` and `team_ids` were applied through a set that was empty both when no filter was given and when the filter matched nothing, and the guard treated empty as "no filter". A typo'd schedule ID, or a team ID passed to `schedule_ids`, therefore returned the entire workspace's on-call summary presented as the filtered result. An unmatched filter now returns an empty result with a note naming the arguments to check, and a selection is never confused with the absence of one.
+- **The on-call aggregating tools reported partial answers as complete**: `get_oncall_schedule_summary`, `create_override_recommendation` and `check_oncall_health_risk` fetch shifts through a bounded page budget, but did not surface when that budget cut the fetch short. These tools return one number per person or per schedule, so a truncated fetch reads as a quiet week rather than as a missing page. They now report `meta.truncated` and `meta.truncation_note`, matching `get_oncall_shift_metrics` and `list_shifts`.
+- **Unusable dates are refused rather than answered**: the same three tools interpolated `start_date`/`end_date` into the query without validating them. Upstream ignores an unusable bound instead of rejecting it, so a value like `"last tuesday"` returned a confident summary of a different period. They now reject it with a validation error, using the check the other shift tools (including `check_responder_availability`, since #235) already apply.
+
+### Changed
+
+- **The on-call aggregating tools now filter shifts upstream**: the three tools above fetched the whole workspace's shifts and discarded the rows they could not use, spending a bounded page budget on shifts that were never eligible for the answer. `schedule_ids[]` and `user_ids[]` are now sent to `/v1/shifts`, so the budget is spent on shifts that can appear in the result — a candidate whose shifts previously fell past the last page fetched could be scored as free. (`check_responder_availability` already reads per-schedule shifts and rejects non-numeric IDs since #235, so it is unchanged here.)
+
 ## [2.3.22] - Released 2026-10-21
 
 ### Security
