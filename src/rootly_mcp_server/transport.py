@@ -1105,7 +1105,9 @@ class AuthenticatedHTTPXClient:
             elif isinstance(value, dict):
                 heartbeat = heartbeat or value.get("type") == "heartbeats"
                 for key, child in value.items():
-                    if heartbeat and key == "secret" and child is not None:
+                    # The inbound email address also authenticates pings by
+                    # possession, without a separate bearer secret.
+                    if heartbeat and key in {"secret", "email_address"} and child is not None:
                         value[key] = "[REDACTED]"
                         changed = True
                     else:

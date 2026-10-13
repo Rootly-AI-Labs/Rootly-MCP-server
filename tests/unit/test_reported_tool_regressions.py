@@ -62,6 +62,8 @@ async def test_heartbeat_credentials_never_reach_tool_response(monkeypatch, meth
                 "type": "heartbeats",
                 "attributes": {
                     "secret": "live-ping-credential",
+                    "email_address": "heartbeat-test-credential@example.com",
+                    "ping_url": "https://api.rootly.com/v1/heartbeats/hb-1/ping",
                     "name": "Nightly backup",
                     "status": "active",
                 },
@@ -71,8 +73,11 @@ async def test_heartbeat_credentials_never_reach_tool_response(monkeypatch, meth
     }
     result = await transport_response(monkeypatch, method, path, payload)
     assert "live-ping-credential" not in result.text
+    assert "heartbeat-test-credential@example.com" not in result.text
     assert result.json()["data"][0]["attributes"] == {
         "secret": "[REDACTED]",
+        "email_address": "[REDACTED]",
+        "ping_url": "https://api.rootly.com/v1/heartbeats/hb-1/ping",
         "name": "Nightly backup",
         "status": "active",
     }
@@ -81,7 +86,15 @@ async def test_heartbeat_credentials_never_reach_tool_response(monkeypatch, meth
 
 @pytest.mark.parametrize("via_send", [False, True])
 async def test_creation_can_return_new_heartbeat_credential(monkeypatch, via_send):
-    payload = {"data": {"type": "heartbeats", "attributes": {"secret": "new-credential"}}}
+    payload = {
+        "data": {
+            "type": "heartbeats",
+            "attributes": {
+                "secret": "new-credential",
+                "email_address": "heartbeat-new-credential@example.com",
+            },
+        }
+    }
     result = await transport_response(
         monkeypatch, "POST", "/v1/heartbeats", payload, via_send=via_send
     )
@@ -101,7 +114,11 @@ async def test_generated_list_heartbeats_redacts_text_and_structured_output(monk
                         {
                             "id": "hb-1",
                             "type": "heartbeats",
-                            "attributes": {"name": "Backup", "secret": "list-credential"},
+                            "attributes": {
+                                "name": "Backup",
+                                "secret": "list-credential",
+                                "email_address": "heartbeat-list-credential@example.com",
+                            },
                         }
                     ]
                 }
@@ -114,6 +131,7 @@ async def test_generated_list_heartbeats_redacts_text_and_structured_output(monk
     assert "list-credential" not in str(result.structured_content)
     assert result.structured_content is not None
     assert result.structured_content["data"][0]["attributes"]["secret"] == "[REDACTED]"
+    assert result.structured_content["data"][0]["attributes"]["email_address"] == "[REDACTED]"
 
 
 async def test_heartbeat_secret_redacted_when_embedded_in_alert_detail(monkeypatch):
