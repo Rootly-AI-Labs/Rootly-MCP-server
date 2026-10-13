@@ -231,7 +231,7 @@ def _normalize_incident_severity(severity: Any) -> str:
         return "unknown"
 
     if isinstance(severity, dict):
-        for key in ("name", "slug", "label", "value", "severity", "title", "id"):
+        for key in ("name", "slug", "label", "value", "severity", "title"):
             value = severity.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
@@ -251,6 +251,19 @@ def _normalize_incident_severity(severity: Any) -> str:
         return "unknown"
 
     return str(severity)
+
+
+def _shift_user_id(shift: dict[str, Any]) -> str | None:
+    """Read both legacy user links and current user-assignee representations."""
+    attrs = shift.get("attributes", {})
+    rels = shift.get("relationships", {})
+    user = rels.get("user", {}).get("data") or {}
+    user_id = user.get("id") or attrs.get("user_id")
+    if user_id is None:
+        assignee = rels.get("assignee", {}).get("data") or {}
+        if assignee.get("type") == "users":
+            user_id = assignee.get("id")
+    return str(user_id) if user_id is not None else None
 
 
 class MCPErrorLike(Protocol):
@@ -768,7 +781,11 @@ def register_oncall_tools(
 
             first_data = first_response.json()
             all_schedules = list(first_data.get("data", []))
-            total_pages = min(int(first_data.get("meta", {}).get("total_pages", 1)), max_pages)
+            total_pages = int(first_data.get("meta", {}).get("total_pages", 1))
+            if total_pages > max_pages:
+                raise RootlyAPIError(
+                    "Schedule listing is incomplete; the handoff cannot be determined"
+                )
 
             if total_pages > 1:
 
@@ -848,33 +865,23 @@ def register_oncall_tools(
             # Fetch shifts for all target schedules in parallel (capped by
             # request_semaphore). Was: N sequential awaits, the dominant
             # cost in this tool's p95 latency.
-            shifts_starts_gte = (now - timedelta(days=1)).isoformat()
-            shifts_starts_lte = (now + timedelta(days=7)).isoformat()
-
             async def _fetch_shifts_for_schedule(schedule_id: str):
-                async with request_semaphore:
-                    return await make_authenticated_request(
-                        "GET",
-                        "/v1/shifts",
-                        params={
-                            "schedule_ids[]": [schedule_id],
-                            "filter[starts_at][gte]": shifts_starts_gte,
-                            "filter[starts_at][lte]": shifts_starts_lte,
-                            "include": "user,on_call_role",
-                            "page[size]": 50,
-                        },
-                    )
+                return await _fetch_schedule_shift_window(
+                    schedule_id,
+                    now.isoformat(),
+                    (now + timedelta(days=7)).isoformat(),
+                    request_semaphore,
+                )
 
             shift_responses = await asyncio.gather(
                 *(_fetch_shifts_for_schedule(s.get("id")) for s in target_schedules),
-                return_exceptions=True,
             )
+            # Calculated shifts can start at the API's current time, a few
+            # milliseconds after the query began. Evaluate against the read time.
+            now = datetime.now(tz)
 
             handoff_data = []
             for schedule, shifts_response in zip(target_schedules, shift_responses, strict=True):
-                if isinstance(shifts_response, BaseException) or not shifts_response:
-                    continue
-
                 schedule_id = schedule.get("id")
                 schedule_attrs = schedule.get("attributes", {})
                 schedule_name = schedule_attrs.get("name", "Unknown Schedule")
@@ -887,7 +894,7 @@ def register_oncall_tools(
                     team_attrs = teams_map.get(team_id, {}).get("attributes", {})
                     team_name = team_attrs.get("name", "Unknown Team")
 
-                shifts_data = shifts_response.json()
+                shifts_data = shifts_response
                 shifts = shifts_data.get("data", [])
                 included = shifts_data.get("included", [])
 
@@ -907,6 +914,8 @@ def register_oncall_tools(
                 for shift in sorted(
                     shifts, key=lambda s: s.get("attributes", {}).get("starts_at", "")
                 ):
+                    if _shift_user_id(shift) is None:
+                        continue  # A coverage gap is not an on-call responder.
                     attrs = shift.get("attributes", {})
                     starts_at_str = attrs.get("starts_at")
                     ends_at_str = attrs.get("ends_at")
@@ -919,7 +928,7 @@ def register_oncall_tools(
                         ends_at = datetime.fromisoformat(ends_at_str.replace("Z", "+00:00"))
 
                         # Current shift: ongoing now
-                        if starts_at <= now <= ends_at:
+                        if starts_at <= now < ends_at:
                             current_shift = shift
                         # Next shift: starts after now and no current shift found yet
                         elif starts_at > now and not next_shift:
@@ -940,8 +949,7 @@ def register_oncall_tools(
                 if current_shift:
                     current_attrs = current_shift.get("attributes", {})
                     current_rels = current_shift.get("relationships", {})
-                    user_data = current_rels.get("user", {}).get("data") or {}
-                    user_id = user_data.get("id")
+                    user_id = _shift_user_id(current_shift)
                     role_data = current_rels.get("on_call_role", {}).get("data") or {}
                     role_id = role_data.get("id")
 
@@ -969,8 +977,7 @@ def register_oncall_tools(
                 if next_shift:
                     next_attrs = next_shift.get("attributes", {})
                     next_rels = next_shift.get("relationships", {})
-                    user_data = next_rels.get("user", {}).get("data") or {}
-                    user_id = user_data.get("id")
+                    user_id = _shift_user_id(next_shift)
                     role_data = next_rels.get("on_call_role", {}).get("data") or {}
                     role_id = role_data.get("id")
 
@@ -1145,9 +1152,43 @@ def register_oncall_tools(
             # before the shift and resolved during it.
             params["filter[started_at][lte]"] = end_time  # Started before shift ended
 
-            # Add severity filter if provided
+            # The API's severity filter matches a tenant's slug (e.g. sev0),
+            # not its level (critical). Resolve the advertised level/name/ID
+            # against configured severities and pass the actual IDs.
             if severity:
-                params["filter[severity]"] = severity.lower()
+                severity_report: dict[str, Any] = {}
+                severities = await _fetch_all_pages(
+                    "/v1/severities",
+                    asyncio.Semaphore(10),
+                    required=True,
+                    report=severity_report,
+                )
+                if severity_report.get("truncated"):
+                    raise RootlyAPIError("Severity lookup was truncated; narrow the query")
+                requested = severity.strip().casefold()
+                matches = [
+                    item["id"]
+                    for item in severities
+                    if item.get("id")
+                    and any(
+                        value is not None and str(value).strip().casefold() == requested
+                        for value in (
+                            item["id"],
+                            *(
+                                item.get("attributes", {}).get(key)
+                                for key in ("name", "slug", "severity")
+                            ),
+                        )
+                    )
+                ]
+                if not matches:
+                    return mcp_error.tool_error(
+                        "Unknown severity. Use a configured severity name, slug, ID, "
+                        "or level from list_severities.",
+                        "validation_error",
+                    )
+                key = "filter[severity_id]" if len(matches) == 1 else "filter[severity_id][in]"
+                params[key] = ",".join(matches)
 
             # Add status filter if provided
             if status:
@@ -1413,7 +1454,9 @@ def register_oncall_tools(
         ] = "",
         severity: Annotated[
             str,
-            Field(description="Filter by severity: 'critical', 'high', 'medium', 'low' (optional)"),
+            Field(
+                description="Filter by configured severity name, slug, ID, or level (critical, high, medium, low)"
+            ),
         ] = "",
         status: Annotated[
             str,
@@ -1456,7 +1499,100 @@ def register_oncall_tools(
     }
     _lookup_maps_lock = asyncio.Lock()
 
-    # Helper function to fetch a paginated JSON:API resource concurrently.
+    async def _fetch_schedule_shift_window(
+        schedule_id: str,
+        start: str,
+        end: str,
+        semaphore: asyncio.Semaphore,
+        *,
+        clip_to_window: bool = False,
+    ) -> dict[str, Any]:
+        """Derive overlapping shifts, including ones that began before the window.
+
+        The global /shifts endpoint on older API versions selects shifts by
+        start time. Per-schedule calculation covers overlaps and future shifts.
+        This endpoint is unpaginated; split only by its 30-day range limit.
+        """
+        windows = _split_date_windows(start, end, 30)
+        bounds = [(a.isoformat(), b.isoformat()) for a, b in windows] or [(start, end)]
+        data: list[dict[str, Any]] = []
+        included: list[dict[str, Any]] = []
+        seen: set[tuple[Any, ...]] = set()
+        for window_start, window_end in bounds:
+            async with semaphore:
+                response = await make_authenticated_request(
+                    "GET",
+                    f"/v1/schedules/{schedule_id}/shifts",
+                    params={
+                        "from": window_start,
+                        "to": window_end,
+                        "include": "user,assignee,on_call_role",
+                    },
+                )
+            if response is None or response.status_code != 200:
+                raise RootlyAPIError(f"Could not load shifts for schedule {schedule_id}")
+            payload = response.json()
+            for shift in payload.get("data", []):
+                attrs = shift.get("attributes", {})
+                if clip_to_window:
+                    shift_start = _parse_iso_datetime(attrs.get("starts_at"))
+                    shift_end = _parse_iso_datetime(attrs.get("ends_at"))
+                    bound_start = _parse_iso_datetime(window_start)
+                    bound_end = _parse_iso_datetime(window_end)
+                    if (
+                        shift_start is None
+                        or shift_end is None
+                        or bound_start is None
+                        or bound_end is None
+                    ):
+                        raise RootlyAPIError(
+                            "A shift has invalid timestamps; availability cannot be determined"
+                        )
+                    overlap_start = max(shift_start, bound_start)
+                    overlap_end = min(shift_end, bound_end)
+                    if overlap_end <= overlap_start:
+                        continue
+                    # Each query window contributes only its own hours, even
+                    # when the API returns the full spanning shift every time.
+                    attrs = {
+                        **attrs,
+                        "starts_at": overlap_start.isoformat(),
+                        "ends_at": overlap_end.isoformat(),
+                    }
+                    shift = {**shift, "attributes": attrs}
+                key = (shift.get("id"), attrs.get("starts_at"), attrs.get("ends_at"))
+                if key not in seen:
+                    seen.add(key)
+                    data.append(shift)
+            included.extend(payload.get("included", []))
+        if clip_to_window and len(bounds) > 1:
+            # Window boundaries are an API detail, not additional shifts.
+            # Join contiguous segments only when the upstream shift and
+            # assignee identities match; distinct rotations remain distinct.
+            merged: list[dict[str, Any]] = []
+            previous_by_identity: dict[tuple[Any, ...], dict[str, Any]] = {}
+            for shift in sorted(data, key=lambda item: item["attributes"]["starts_at"]):
+                attrs = shift["attributes"]
+                identity = (
+                    shift.get("id"),
+                    _shift_user_id(shift),
+                    attrs.get("rotation_id"),
+                    attrs.get("is_override"),
+                    attrs.get("is_shadow"),
+                )
+                previous = previous_by_identity.get(identity)
+                if (
+                    shift.get("id") is not None
+                    and previous is not None
+                    and previous["attributes"]["ends_at"] == attrs["starts_at"]
+                ):
+                    previous["attributes"]["ends_at"] = attrs["ends_at"]
+                else:
+                    merged.append(shift)
+                    previous_by_identity[identity] = shift
+            data = merged
+        return {"data": data, "included": included}
+
     async def _fetch_all_pages(
         path: str,
         semaphore: asyncio.Semaphore,
@@ -2467,11 +2603,10 @@ def register_oncall_tools(
         or to check availability before assigning new shifts.
 
         Returns scheduled users with their shifts and total hours,
-        plus users who are not scheduled.
+        plus users who are not scheduled. Shift times and hours are clipped to
+        the requested window; date-only end dates include that entire UTC day.
         """
         try:
-            from datetime import datetime
-
             if not user_ids:
                 return mcp_error.tool_error(
                     "user_ids parameter is required",
@@ -2479,45 +2614,76 @@ def register_oncall_tools(
                 )
 
             # Parse user IDs
-            user_id_list = [uid.strip() for uid in user_ids.split(",") if uid.strip()]
+            user_id_list = list(
+                dict.fromkeys(uid.strip() for uid in user_ids.split(",") if uid.strip())
+            )
+            if not user_id_list or not all(uid.isdigit() for uid in user_id_list):
+                return mcp_error.tool_error(
+                    "user_ids must contain numeric user IDs", "validation_error"
+                )
             user_id_set = set(user_id_list)
 
-            # Fetch lookup maps
-            users_map, schedules_map, teams_map = await _fetch_users_and_schedules_maps()
+            date_error = _date_argument_error(
+                {"start_date": start_date, "end_date": end_date}, required=True
+            )
+            if date_error:
+                return mcp_error.tool_error(date_error, "validation_error")
+            window_start = _parse_iso_datetime(start_date)
+            window_end = _parse_iso_datetime(end_date)
+            assert window_start is not None and window_end is not None
+            if len(end_date.strip()) == 10:
+                window_end += timedelta(days=1)
+            if window_end <= window_start:
+                return mcp_error.tool_error("end_date must be after start_date", "validation_error")
+            # Validate the total span before any requests.
+            _split_date_windows(window_start.isoformat(), window_end.isoformat(), 30)
+
+            schedule_report: dict[str, Any] = {}
+            semaphore = asyncio.Semaphore(10)
+            users, schedules, teams = await asyncio.gather(
+                _fetch_all_pages("/v1/users", semaphore),
+                _fetch_all_pages("/v1/schedules", semaphore, required=True, report=schedule_report),
+                _fetch_all_pages("/v1/teams", semaphore),
+            )
+            if schedule_report.get("truncated"):
+                raise RootlyAPIError(
+                    "Schedule lookup was truncated; availability cannot be determined"
+                )
+            schedules_map = {item["id"]: item for item in schedules}
+            users_map = {item["id"]: item for item in users}
+            teams_map = {item["id"]: item for item in teams}
 
             # Build schedule -> team mapping
             schedule_to_team = {}
             for schedule_id, schedule in schedules_map.items():
                 owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
-                if owner_group_ids:
-                    team_id = owner_group_ids[0]
-                    team = teams_map.get(team_id, {})
-                    schedule_to_team[schedule_id] = {
-                        "schedule_name": schedule.get("attributes", {}).get("name", "Unknown"),
-                        "team_name": team.get("attributes", {}).get("name", "Unknown Team"),
-                    }
+                team = teams_map.get(owner_group_ids[0], {}) if owner_group_ids else {}
+                schedule_to_team[schedule_id] = {
+                    "schedule_name": schedule.get("attributes", {}).get("name", "Unknown"),
+                    "team_name": team.get("attributes", {}).get("name", "Unknown Team"),
+                }
 
-            # Fetch shifts (concurrent pagination via _fetch_all_pages)
-            shift_params: dict[str, Any] = {
-                "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
-                "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
-                "include": "user,on_call_role",
-            }
-
-            def _merge_users(included: list[dict[str, Any]]) -> None:
-                for resource in included:
-                    if resource.get("type") == "users":
-                        uid = resource.get("id")
-                        if isinstance(uid, str):
-                            users_map[uid] = resource
-
-            all_shifts = await _fetch_all_pages(
-                "/v1/shifts",
-                asyncio.Semaphore(10),
-                extra_params=shift_params,
-                on_included=_merge_users,
-                required=True,
+            semaphore = asyncio.Semaphore(10)
+            results = await asyncio.gather(
+                *(
+                    _fetch_schedule_shift_window(
+                        sid,
+                        window_start.isoformat(),
+                        window_end.isoformat(),
+                        semaphore,
+                        clip_to_window=True,
+                    )
+                    for sid in schedules_map
+                )
             )
+            all_shifts = []
+            for sid, result in zip(schedules_map, results, strict=True):
+                for resource in result["included"]:
+                    if resource.get("type") == "users":
+                        users_map[str(resource["id"])] = resource
+                for shift in result["data"]:
+                    shift.setdefault("attributes", {}).setdefault("schedule_id", sid)
+                    all_shifts.append(shift)
 
             # Group shifts by user
             user_shifts: dict[str, list] = {uid: [] for uid in user_id_list}
@@ -2525,10 +2691,7 @@ def register_oncall_tools(
 
             for shift in all_shifts:
                 attrs = shift.get("attributes", {})
-                relationships = shift.get("relationships", {})
-
-                user_rel = relationships.get("user", {}).get("data") or {}
-                raw_user_id = user_rel.get("id")
+                raw_user_id = _shift_user_id(shift)
 
                 # Skip shifts without a user
                 if not raw_user_id:
@@ -2544,21 +2707,24 @@ def register_oncall_tools(
 
                 starts_at = attrs.get("starts_at")
                 ends_at = attrs.get("ends_at")
-                hours = 0.0
-                if starts_at and ends_at:
-                    try:
-                        start_dt = datetime.fromisoformat(starts_at.replace("Z", "+00:00"))
-                        end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
-                        hours = round((end_dt - start_dt).total_seconds() / 3600, 1)
-                    except (ValueError, AttributeError):
-                        pass
+                start_dt = _parse_iso_datetime(starts_at)
+                end_dt = _parse_iso_datetime(ends_at)
+                if start_dt is None or end_dt is None:
+                    raise RootlyAPIError(
+                        "A shift has invalid timestamps; availability cannot be determined"
+                    )
+                overlap_start = max(start_dt, window_start)
+                overlap_end = min(end_dt, window_end)
+                if overlap_end <= overlap_start:
+                    continue
+                hours = (overlap_end - overlap_start).total_seconds() / 3600
 
                 user_shifts[user_id].append(
                     {
                         "schedule_name": sched_info.get("schedule_name", "Unknown"),
                         "starts_at": starts_at,
                         "ends_at": ends_at,
-                        "hours": hours,
+                        "hours": round(hours, 1),
                     }
                 )
                 user_hours[user_id] += hours

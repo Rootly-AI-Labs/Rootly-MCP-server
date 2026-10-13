@@ -597,7 +597,7 @@ The default tool surface depends on deployment profile:
 - `list_shifts`
 - `search_incidents`
 - `suggest_solutions`
-- `update_incident` - scoped incident update tool for `summary` and `retrospective_progress_status`
+- `update_incident` - update native incident fields with severity validation; retrospective status changes require the Rootly UI
 
 ### OpenAPI-Generated Tools
 
