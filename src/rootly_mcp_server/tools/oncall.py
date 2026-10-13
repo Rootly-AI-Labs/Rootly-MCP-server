@@ -2630,7 +2630,8 @@ def register_oncall_tools(
                 return mcp_error.tool_error(date_error, "validation_error")
             window_start = _parse_iso_datetime(start_date)
             window_end = _parse_iso_datetime(end_date)
-            assert window_start is not None and window_end is not None
+            if window_start is None or window_end is None:
+                return mcp_error.tool_error("Invalid availability date range", "validation_error")
             if len(end_date.strip()) == 10:
                 window_end += timedelta(days=1)
             if window_end <= window_start:
