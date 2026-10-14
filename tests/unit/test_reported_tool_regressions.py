@@ -8,6 +8,7 @@ import pytest
 
 from rootly_mcp_server.mcp_error import MCPError as mcp_error
 from rootly_mcp_server.payload_stripping import strip_heavy_nested_data
+from rootly_mcp_server.server import create_rootly_mcp_server
 from rootly_mcp_server.tools.incidents import register_incident_tools
 from rootly_mcp_server.tools.oncall import register_oncall_tools
 from rootly_mcp_server.transport import AuthenticatedHTTPXClient
@@ -42,6 +43,109 @@ async def transport_response(monkeypatch, method, path, payload, *, via_send=Fal
         return await client.request(method, path)
     finally:
         await client.client.aclose()
+
+
+@pytest.mark.parametrize(
+    "method,path",
+    [
+        ("GET", "/v1/heartbeats"),
+        ("GET", "https://api.rootly.com/v1/heartbeats/?page[number]=2"),
+        ("GET", "/v1/heartbeats/hb-1"),
+        ("PUT", "/v1/heartbeats/hb-1"),
+    ],
+)
+async def test_heartbeat_credentials_never_reach_tool_response(monkeypatch, method, path):
+    payload = {
+        "data": [
+            {
+                "id": "hb-1",
+                "type": "heartbeats",
+                "attributes": {
+                    "secret": "live-ping-credential",
+                    "email_address": "heartbeat-test-credential@example.com",
+                    "ping_url": "https://api.rootly.com/v1/heartbeats/hb-1/ping",
+                    "name": "Nightly backup",
+                    "status": "active",
+                },
+            }
+        ],
+        "meta": {"total_pages": 2},
+    }
+    result = await transport_response(monkeypatch, method, path, payload)
+    assert "live-ping-credential" not in result.text
+    assert "heartbeat-test-credential@example.com" not in result.text
+    assert result.json()["data"][0]["attributes"] == {
+        "secret": "[REDACTED]",
+        "email_address": "[REDACTED]",
+        "ping_url": "https://api.rootly.com/v1/heartbeats/hb-1/ping",
+        "name": "Nightly backup",
+        "status": "active",
+    }
+    assert result.json()["meta"]["total_pages"] == 2
+
+
+@pytest.mark.parametrize("via_send", [False, True])
+async def test_creation_can_return_new_heartbeat_credential(monkeypatch, via_send):
+    payload = {
+        "data": {
+            "type": "heartbeats",
+            "attributes": {
+                "secret": "new-credential",
+                "email_address": "heartbeat-new-credential@example.com",
+            },
+        }
+    }
+    result = await transport_response(
+        monkeypatch, "POST", "/v1/heartbeats", payload, via_send=via_send
+    )
+    assert result.json() == payload
+
+
+async def test_generated_list_heartbeats_redacts_text_and_structured_output(monkeypatch):
+    monkeypatch.setenv("ROOTLY_API_TOKEN", "test-token")
+    monkeypatch.setattr(AuthenticatedHTTPXClient, "_get_api_token", lambda _: "test-token")
+    monkeypatch.setattr(
+        httpx.AsyncClient,
+        "send",
+        AsyncMock(
+            return_value=response(
+                {
+                    "data": [
+                        {
+                            "id": "hb-1",
+                            "type": "heartbeats",
+                            "attributes": {
+                                "name": "Backup",
+                                "secret": "list-credential",
+                                "email_address": "heartbeat-list-credential@example.com",
+                            },
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+    server = create_rootly_mcp_server(enabled_tools={"list_heartbeats"})
+    result = await server.call_tool("list_heartbeats", {})
+    assert "list-credential" not in str(result.content)
+    assert "list-credential" not in str(result.structured_content)
+    assert result.structured_content is not None
+    assert result.structured_content["data"][0]["attributes"]["secret"] == "[REDACTED]"
+    assert result.structured_content["data"][0]["attributes"]["email_address"] == "[REDACTED]"
+
+
+async def test_heartbeat_secret_redacted_when_embedded_in_alert_detail(monkeypatch):
+    payload = {
+        "data": {
+            "type": "alerts",
+            "attributes": {
+                "heartbeat": {"secret": "embedded-credential", "status": "expired"},
+            },
+        }
+    }
+    result = await transport_response(monkeypatch, "GET", "/v1/alerts/a-1", payload)
+    assert "embedded-credential" not in result.text
+    assert result.json()["data"]["attributes"]["heartbeat"]["status"] == "expired"
 
 
 @pytest.mark.parametrize("via_send", [False, True])
@@ -92,6 +196,19 @@ async def test_attach_alert_compacts_real_nested_incident_shape(
     assert alert["id"] == "a-1"
     assert alert["attributes"]["summary"] == "Test alert"
     assert result.json()["meta"]["total_count"] == 1
+
+
+async def test_heartbeat_delete_empty_success_stays_successful(monkeypatch):
+    monkeypatch.setattr(AuthenticatedHTTPXClient, "_get_api_token", lambda _: "test-token")
+    client = AuthenticatedHTTPXClient()
+    client.client.send = AsyncMock(return_value=httpx.Response(204))
+    try:
+        result = await client.send(
+            httpx.Request("DELETE", "https://api.rootly.com/v1/heartbeats/hb-1")
+        )
+        assert result.status_code == 204
+    finally:
+        await client.client.aclose()
 
 
 def incident_tools(request):

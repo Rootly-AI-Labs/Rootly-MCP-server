@@ -1067,6 +1067,7 @@ class AuthenticatedHTTPXClient:
         # Modifies response._content (private httpx attr) because FastMCP's
         # OpenAPITool.run() calls response.json() after this returns, and
         # there is no other interception point for auto-generated tools.
+        response = self._redact_heartbeat_response(method, url, response)
         response = self._maybe_strip_attach_alert_response(method, url, response)
         response = self._maybe_strip_alert_response(method, url, response)
         response = self._maybe_strip_collection_response(method, url, response)
@@ -1077,6 +1078,50 @@ class AuthenticatedHTTPXClient:
         response = self._maybe_annotate_alert_routing_deprecation(method, url, response)
         response = self._maybe_annotate_offset_pagination_limit(method, url, response)
 
+        return response
+
+    @classmethod
+    def _redact_heartbeat_response(
+        cls, method: str, url: str, response: httpx.Response
+    ) -> httpx.Response:
+        """Hide reusable ping credentials, including sideloaded heartbeat resources.
+
+        Only the explicit creation response can disclose the new credential.
+        This runs before FastMCP serializes generated tool results.
+        """
+        if not response.is_success or not response.content:
+            return response
+        path = cls._path_for_url(url).rstrip("/")
+        if method.upper() == "POST" and path == "/v1/heartbeats":
+            return response
+        heartbeat_endpoint = path == "/v1/heartbeats" or path.startswith("/v1/heartbeats/")
+        changed = False
+
+        def redact(value: Any, *, heartbeat: bool = False) -> None:
+            nonlocal changed
+            if isinstance(value, list):
+                for item in value:
+                    redact(item, heartbeat=heartbeat)
+            elif isinstance(value, dict):
+                heartbeat = heartbeat or value.get("type") == "heartbeats"
+                for key, child in value.items():
+                    # The inbound email address also authenticates pings by
+                    # possession, without a separate bearer secret.
+                    if heartbeat and key in {"secret", "email_address"} and child is not None:
+                        value[key] = "[REDACTED]"
+                        changed = True
+                    else:
+                        redact(child, heartbeat=heartbeat or key == "heartbeat")
+
+        try:
+            data = response.json()
+        except ValueError:
+            if heartbeat_endpoint:
+                raise RootlyValidationError("Cannot safely decode the heartbeat response")
+            return response
+        redact(data, heartbeat=heartbeat_endpoint)
+        if changed:
+            response._content = json.dumps(data).encode()
         return response
 
     @classmethod
@@ -1551,6 +1596,7 @@ class AuthenticatedHTTPXClient:
         if response.is_error:
             _record_upstream_response_context(request.method, response)
 
+        response = self._redact_heartbeat_response(request.method, str(request.url), response)
         response = self._maybe_strip_attach_alert_response(
             request.method, str(request.url), response
         )
