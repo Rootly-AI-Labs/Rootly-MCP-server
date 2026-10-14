@@ -113,7 +113,7 @@ class TestGetOncallHandoffSummary:
                 return self._ok({"data": schedules, "meta": {"total_pages": 1}})
             if url == "/v1/teams":
                 return self._ok({"data": []})
-            if url == "/v1/shifts":
+            if url.endswith("/shifts"):
                 return self._ok({"data": [], "included": []})
             raise AssertionError(f"unexpected call: {url}")
 
@@ -123,14 +123,14 @@ class TestGetOncallHandoffSummary:
 
         assert result["success"] is True
         # 1 schedules + 0 teams (no owner_group_ids) + 3 shifts = 4 total
-        shift_calls = [c for c in request.call_args_list if c[0][1] == "/v1/shifts"]
+        shift_calls = [c for c in request.call_args_list if c[0][1].endswith("/shifts")]
         assert len(shift_calls) == 3
         # Each schedule got its own shift fetch
-        seen_ids = {c[1]["params"]["schedule_ids[]"][0] for c in shift_calls}
+        seen_ids = {c[0][1].split("/")[3] for c in shift_calls}
         assert seen_ids == {"sched-0", "sched-1", "sched-2"}
 
-    async def test_continues_when_one_shift_fetch_fails(self):
-        """A failed shift fetch for one schedule must not break the others."""
+    async def test_reports_error_when_one_shift_fetch_fails(self):
+        """A failed shift fetch must not silently omit a schedule from the answer."""
         tools, request = self._register_handoff()
         schedules = [self._schedule(f"sched-{i}") for i in range(3)]
 
@@ -139,9 +139,9 @@ class TestGetOncallHandoffSummary:
                 return self._ok({"data": schedules, "meta": {"total_pages": 1}})
             if url == "/v1/teams":
                 return self._ok({"data": []})
-            if url == "/v1/shifts":
+            if url.endswith("/shifts"):
                 assert params is not None
-                if params["schedule_ids[]"][0] == "sched-1":
+                if url == "/v1/schedules/sched-1/shifts":
                     raise RuntimeError("upstream blip")
                 return self._ok({"data": [], "included": []})
             raise AssertionError(f"unexpected call: {url}")
@@ -149,10 +149,8 @@ class TestGetOncallHandoffSummary:
         request.side_effect = responder
         result = await tools["get_oncall_handoff_summary"]()
 
-        assert result["success"] is True
-        # Two surviving schedules processed; the failed one dropped silently.
-        ids = [s["schedule_id"] for s in result["schedules"]]
-        assert set(ids) == {"sched-0", "sched-2"}
+        assert result["error"] is True
+        assert "upstream blip" in result["message"]
 
     async def test_fetches_remaining_schedule_pages_when_paginated(self):
         """Multi-page schedule listings get all pages merged."""
@@ -168,7 +166,7 @@ class TestGetOncallHandoffSummary:
                 return self._ok({"data": data, "meta": {"total_pages": 2}})
             if url == "/v1/teams":
                 return self._ok({"data": []})
-            if url == "/v1/shifts":
+            if url.endswith("/shifts"):
                 return self._ok({"data": [], "included": []})
             raise AssertionError(f"unexpected call: {url}")
 

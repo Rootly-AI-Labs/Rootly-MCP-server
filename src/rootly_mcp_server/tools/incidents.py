@@ -20,7 +20,6 @@ MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
 StripHeavyNestedData = Callable[[JsonDict], JsonDict]
 GenerateRecommendation = Callable[[JsonDict], str]
 
-RETROSPECTIVE_PROGRESS_STATUSES = ("not_started", "active", "completed", "skipped")
 # Every retrospective in a list carries its whole document and the API enforces
 # no ceiling: page[size]=1000 returns about 1.1 million tokens. The page size is
 # the only lever, and this is the only place it exists.
@@ -1807,7 +1806,7 @@ def register_incident_tools(
             retrospective_progress_status: Annotated[
                 str | None,
                 Field(
-                    description="Retrospective/PIR status: one of not_started, active, completed, skipped"
+                    description="Unsupported by the public API; supplying this field returns a validation error without updating the incident"
                 ),
             ] = None,
             summary: Annotated[
@@ -1886,22 +1885,17 @@ def register_incident_tools(
             Only the arguments you provide are sent, so unspecified fields —
             including the lifecycle ``status`` — are left untouched.
             """
-            if retrospective_progress_status is not None and (
-                retrospective_progress_status not in RETROSPECTIVE_PROGRESS_STATUSES
-            ):
-                allowed = ", ".join(RETROSPECTIVE_PROGRESS_STATUSES)
-                return cast(
-                    JsonDict,
-                    mcp_error.tool_error(
-                        f"retrospective_progress_status must be one of: {allowed}",
-                        "validation_error",
-                    ),
-                )
-
             attributes: dict[str, Any] = {}
 
             if retrospective_progress_status is not None:
-                attributes["retrospective_progress_status"] = retrospective_progress_status
+                return cast(
+                    JsonDict,
+                    mcp_error.tool_error(
+                        "retrospective_progress_status is not supported by the public incident "
+                        "update API. Change the retrospective status in Rootly. No fields were updated.",
+                        "validation_error",
+                    ),
+                )
 
             # Text fields: normalize like create_incident so a whitespace-only
             # value isn't sent to the API verbatim.
@@ -1956,6 +1950,25 @@ def register_incident_tools(
             }
 
             try:
+                if "severity_id" in attributes:
+                    # Rootly silently maps unknown IDs to null. Validate before
+                    # any write so a typo cannot clear the existing severity.
+                    from urllib.parse import quote
+
+                    severity_response = await make_authenticated_request(
+                        "GET", f"/v1/severities/{quote(attributes['severity_id'], safe='')}"
+                    )
+                    if severity_response.status_code == 404:
+                        raise ValueError(
+                            "Unknown severity_id. Use list_severities to select a valid ID."
+                        )
+                    severity_response.raise_for_status()
+                    severity_data = severity_response.json().get("data")
+                    if (
+                        not isinstance(severity_data, dict)
+                        or severity_data.get("id") != attributes["severity_id"]
+                    ):
+                        raise ValueError("Unable to verify severity_id; no fields were updated.")
                 resolved_incident_id = await _resolve_incident_reference_to_uuid(
                     incident_id, make_authenticated_request
                 )

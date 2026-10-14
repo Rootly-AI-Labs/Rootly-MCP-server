@@ -603,7 +603,6 @@ class TestScopedIncidentUpdateTool:
 
         result = await tools["update_incident"](
             incident_id="11111111-1111-4111-8111-111111111111",
-            retrospective_progress_status="active",
             summary="Updated PIR summary",
         )
 
@@ -614,7 +613,6 @@ class TestScopedIncidentUpdateTool:
                 "data": {
                     "type": "incidents",
                     "attributes": {
-                        "retrospective_progress_status": "active",
                         "summary": "Updated PIR summary",
                     },
                 }
@@ -657,7 +655,7 @@ class TestScopedIncidentUpdateTool:
 
         result = await tools["update_incident"](
             incident_id="#4460",
-            retrospective_progress_status="active",
+            summary="Updated PIR summary",
         )
 
         assert request.await_args_list == [
@@ -676,9 +674,7 @@ class TestScopedIncidentUpdateTool:
                 json={
                     "data": {
                         "type": "incidents",
-                        "attributes": {
-                            "retrospective_progress_status": "active",
-                        },
+                        "attributes": {"summary": "Updated PIR summary"},
                     }
                 },
             ),
@@ -686,39 +682,18 @@ class TestScopedIncidentUpdateTool:
         assert result["data"]["id"] == "11111111-1111-4111-8111-111111111111"
 
     @pytest.mark.asyncio
-    async def test_update_incident_allows_skipped_status(self):
+    @pytest.mark.parametrize("pir_status", ["not_started", "active", "completed", "skipped"])
+    async def test_update_incident_rejects_unsupported_pir_before_any_write(self, pir_status):
         tools, request = self._register_tools()
-        response = Mock()
-        response.raise_for_status.return_value = None
-        response.json.return_value = {
-            "data": {
-                "id": "inc-123",
-                "type": "incidents",
-                "attributes": {
-                    "retrospective_progress_status": "skipped",
-                },
-            }
-        }
-        request.return_value = response
-
         result = await tools["update_incident"](
             incident_id="11111111-1111-4111-8111-111111111111",
-            retrospective_progress_status="skipped",
+            retrospective_progress_status=pir_status,
+            status="resolved",
         )
-
-        request.assert_awaited_once_with(
-            "PUT",
-            "/v1/incidents/11111111-1111-4111-8111-111111111111",
-            json={
-                "data": {
-                    "type": "incidents",
-                    "attributes": {
-                        "retrospective_progress_status": "skipped",
-                    },
-                }
-            },
-        )
-        assert result["data"]["attributes"]["retrospective_progress_status"] == "skipped"
+        request.assert_not_awaited()
+        assert result["error_type"] == "validation_error"
+        assert "not supported" in result["message"]
+        assert "No fields were updated" in result["message"]
 
     @pytest.mark.asyncio
     async def test_update_incident_requires_at_least_one_supported_field(self):
@@ -743,7 +718,7 @@ class TestScopedIncidentUpdateTool:
         request.assert_not_called()
         assert result["error"] is True
         assert result["error_type"] == "validation_error"
-        assert "retrospective_progress_status must be one of" in result["message"]
+        assert "not supported" in result["message"]
 
     @pytest.mark.asyncio
     async def test_update_incident_sets_native_fields(self):
@@ -752,7 +727,9 @@ class TestScopedIncidentUpdateTool:
         response = Mock()
         response.raise_for_status.return_value = None
         response.json.return_value = {"data": {"id": uuid, "type": "incidents", "attributes": {}}}
-        request.return_value = response
+        severity_response = Mock(status_code=200)
+        severity_response.json.return_value = {"data": {"id": "sev-1"}}
+        request.side_effect = [severity_response, response]
 
         await tools["update_incident"](
             incident_id=uuid,
@@ -767,7 +744,8 @@ class TestScopedIncidentUpdateTool:
             status="resolved",
         )
 
-        request.assert_awaited_once()
+        assert request.await_count == 2
+        assert request.await_args_list[0] == call("GET", "/v1/severities/sev-1")
         awaited_call = request.await_args
         assert awaited_call is not None
         method, path = awaited_call.args[0], awaited_call.args[1]
@@ -1528,9 +1506,7 @@ class TestIncidentToolsHardening:
         tools, request = self._register_tools()
         request.side_effect = [self._empty_filter_response()]
 
-        result = await tools["update_incident"](
-            incident_id="4460", retrospective_progress_status="active"
-        )
+        result = await tools["update_incident"](incident_id="4460", summary="New summary")
 
         assert result["error"] is True
         assert result["error_type"] == "not_found"
