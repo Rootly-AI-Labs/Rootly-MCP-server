@@ -67,7 +67,12 @@ async def test_heartbeat_credentials_never_reach_tool_response(monkeypatch, meth
                     "name": "Nightly backup",
                     "status": "active",
                 },
-            }
+            },
+            {
+                "id": "hb-2",
+                "type": "heartbeats",
+                "attributes": {"secret": None, "email_address": None},
+            },
         ],
         "meta": {"total_pages": 2},
     }
@@ -75,13 +80,32 @@ async def test_heartbeat_credentials_never_reach_tool_response(monkeypatch, meth
     assert "live-ping-credential" not in result.text
     assert "heartbeat-test-credential@example.com" not in result.text
     assert result.json()["data"][0]["attributes"] == {
-        "secret": "[REDACTED]",
-        "email_address": "[REDACTED]",
         "ping_url": "https://api.rootly.com/v1/heartbeats/hb-1/ping",
         "name": "Nightly backup",
         "status": "active",
     }
+    assert "secret" not in result.json()["data"][1]["attributes"]
+    assert "email_address" not in result.json()["data"][1]["attributes"]
     assert result.json()["meta"]["total_pages"] == 2
+
+
+async def test_heartbeat_response_without_credentials_is_unchanged(monkeypatch):
+    payload = {
+        "data": [
+            {
+                "id": "hb-1",
+                "type": "heartbeats",
+                "attributes": {
+                    "ping_url": "https://api.rootly.com/v1/heartbeats/hb-1/ping",
+                    "name": "Nightly backup",
+                    "status": "active",
+                },
+            }
+        ],
+        "meta": {"total_pages": 1},
+    }
+    result = await transport_response(monkeypatch, "GET", "/v1/heartbeats", payload)
+    assert result.json() == payload
 
 
 @pytest.mark.parametrize("via_send", [False, True])
@@ -101,7 +125,9 @@ async def test_creation_can_return_new_heartbeat_credential(monkeypatch, via_sen
     assert result.json() == payload
 
 
-async def test_generated_list_heartbeats_redacts_text_and_structured_output(monkeypatch):
+async def test_generated_list_heartbeats_omits_credentials_from_text_and_structured_output(
+    monkeypatch,
+):
     monkeypatch.setenv("ROOTLY_API_TOKEN", "test-token")
     monkeypatch.setattr(AuthenticatedHTTPXClient, "_get_api_token", lambda _: "test-token")
     monkeypatch.setattr(
@@ -130,11 +156,12 @@ async def test_generated_list_heartbeats_redacts_text_and_structured_output(monk
     assert "list-credential" not in str(result.content)
     assert "list-credential" not in str(result.structured_content)
     assert result.structured_content is not None
-    assert result.structured_content["data"][0]["attributes"]["secret"] == "[REDACTED]"
-    assert result.structured_content["data"][0]["attributes"]["email_address"] == "[REDACTED]"
+    attributes = result.structured_content["data"][0]["attributes"]
+    assert "secret" not in attributes
+    assert "email_address" not in attributes
 
 
-async def test_heartbeat_secret_redacted_when_embedded_in_alert_detail(monkeypatch):
+async def test_heartbeat_secret_omitted_when_embedded_in_alert_detail(monkeypatch):
     payload = {
         "data": {
             "type": "alerts",
@@ -145,7 +172,9 @@ async def test_heartbeat_secret_redacted_when_embedded_in_alert_detail(monkeypat
     }
     result = await transport_response(monkeypatch, "GET", "/v1/alerts/a-1", payload)
     assert "embedded-credential" not in result.text
-    assert result.json()["data"]["attributes"]["heartbeat"]["status"] == "expired"
+    heartbeat = result.json()["data"]["attributes"]["heartbeat"]
+    assert "secret" not in heartbeat
+    assert heartbeat["status"] == "expired"
 
 
 @pytest.mark.parametrize("via_send", [False, True])

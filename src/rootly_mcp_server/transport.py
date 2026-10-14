@@ -1084,10 +1084,10 @@ class AuthenticatedHTTPXClient:
     def _redact_heartbeat_response(
         cls, method: str, url: str, response: httpx.Response
     ) -> httpx.Response:
-        """Hide reusable ping credentials, including sideloaded heartbeat resources.
+        """Omit heartbeat ping credentials from tool responses outside create.
 
-        Only the explicit creation response can disclose the new credential.
-        This runs before FastMCP serializes generated tool results.
+        This mirrors Rootly's list, update, and destroy responses, and also
+        covers get_heartbeat, whose API response remains plaintext for Terraform.
         """
         if not response.is_success or not response.content:
             return response
@@ -1104,14 +1104,15 @@ class AuthenticatedHTTPXClient:
                     redact(item, heartbeat=heartbeat)
             elif isinstance(value, dict):
                 heartbeat = heartbeat or value.get("type") == "heartbeats"
-                for key, child in value.items():
-                    # The inbound email address also authenticates pings by
-                    # possession, without a separate bearer secret.
-                    if heartbeat and key in {"secret", "email_address"} and child is not None:
-                        value[key] = "[REDACTED]"
-                        changed = True
-                    else:
-                        redact(child, heartbeat=heartbeat or key == "heartbeat")
+                keys_to_remove = [
+                    key for key in value if heartbeat and key in {"secret", "email_address"}
+                ]
+                for key in keys_to_remove:
+                    del value[key]
+                if keys_to_remove:
+                    changed = True
+                for key, child in list(value.items()):
+                    redact(child, heartbeat=heartbeat or key == "heartbeat")
 
         try:
             data = response.json()
