@@ -289,6 +289,43 @@ Claude Desktop handles OAuth2 login automatically.
 
 </details>
 
+<details>
+<summary><strong>Databricks</strong></summary>
+
+<br>
+
+Register the hosted server in Unity Gateway so Supervisor Agent, AI Playground, and other Databricks agents can use it:
+
+1. In your workspace, open **Unity Gateway > MCPs**, click **+ MCP**, and choose **Connect an existing MCP server**.
+2. Pick a catalog and schema, name the MCP, and create a new connection with URL `https://mcp.rootly.com/mcp`.
+3. Choose an authentication method:
+   - **Dynamic Client Registration (recommended):** each user signs in to Rootly with their own account.
+   - **Bearer token:** paste a Rootly API token.
+4. Click **Create & load tools**, click **Login** if prompted, and select the tools to expose.
+
+Or create the connection with the Databricks SDK:
+
+```python
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service import catalog as c
+
+WorkspaceClient().connections.create(
+    name="rootly_connection",
+    parent="schemas/main.default",
+    connection_type=c.ConnectionType.HTTP,
+    options={
+        "host": "https://mcp.rootly.com",
+        "port": "443",
+        "base_path": "/mcp",
+        "bearer_token": "<YOUR_ROOTLY_API_TOKEN>",
+    },
+)
+```
+
+The full profile exposes about 250 tools. Use Unity Gateway tool selection to expose only what your agents need. See [docs/databricks-marketplace.md](docs/databricks-marketplace.md) for the Marketplace listing details.
+
+</details>
+
 ## Rootly CLI
 
 Standalone CLI for incidents, alerts, services, and on-call operations.
