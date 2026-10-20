@@ -37858,7 +37858,7 @@
               "maximum": 50,
               "default": 25
             },
-            "description": "Rows per page."
+            "description": "Maximum rows per page (1-50, default 25). A page can hold fewer rows when the response size budget is reached; keep paging while meta.page.next_cursor is present."
           },
           {
             "name": "page[cursor]",
@@ -37878,7 +37878,7 @@
                 "example": {
                   "data": [
                     {
-                      "id": "log-1",
+                      "id": "eyJzIjpbIjIwMjYtMTAtMjAgMDg6NTk6MDAiLCIyMDI2LTEwLTIwIDA4OjU5OjAwLjEyMzQ1Njc4OSIsImNoZWNrb3V0IiwibG9nLTEiLCJtYWluIl0sIm8iOiJvYnNlcnZhYmlsaXR5LWxvZ3M6djIifQ",
                       "type": "observability_logs",
                       "attributes": {
                         "timestamp": "2026-10-20T08:59:00.123Z",
