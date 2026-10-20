@@ -38148,7 +38148,7 @@
               "type": "string",
               "default": "service"
             },
-            "description": "Field to group by: `service`, `index`, `severity`, or `@` followed by an attribute key (e.g. `@http.status_code`). Defaults to `service`."
+            "description": "Field to group by: `service`, `index`, `severity`, or `@` followed by an attribute key (e.g. `@http.status_code`). Defaults to `service`. Secret-shaped attribute keys (password, token, auth, cookie, session, ...) are rejected with `invalid_parameter`. Secret-shaped values are returned redacted with `logs_query: null`."
           },
           {
             "name": "filter[query]",
