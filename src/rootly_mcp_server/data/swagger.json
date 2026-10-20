@@ -37818,7 +37818,7 @@
         "tags": [
           "Observability"
         ],
-        "description": "Search Rootly Observability logs with the Logs explorer query syntax (`service:`, `severity:`, `index:`, `trace_id:`, `@attribute:value`, `OR` inside field groups, `-` negation, `*` prefix, free text). Rows are newest first, clipped and redacted. `meta.query` and `meta.window` echo the effective query and window. Requires a personal or Global API key (Team API Keys are group-scoped and get 403 `unsupported_api_key`) or an OAuth token with the `all` scope, and the Observability logs read permission. Limited to 60 requests per minute per token.",
+        "description": "Search Rootly Observability logs with the Logs explorer query syntax (`service:`, `severity:`, `index:`, `trace_id:`, `@attribute:value`, `OR` inside field groups, `-` negation, `*` prefix, free text). Rows are newest first, clipped and redacted. `meta.query` and `meta.window` echo the effective query and window. Requires a personal or Global API key (Team API Keys are group-scoped and get 403 `unsupported_api_key`) or an OAuth token with the `obs.logs:read` (or `all`) scope, and the Observability logs read permission. Limited to 60 requests per minute per token.",
         "operationId": "listObservabilityLogs",
         "parameters": [
           {
@@ -38137,7 +38137,7 @@
         "tags": [
           "Observability"
         ],
-        "description": "List log patterns (clustered log templates) with counts against the previous window of the same length. Only `service:`, `severity:` and `pattern:` filters apply; others are echoed in `meta.ignored_filters`. Each pattern's `logs_query` drills into matching rows with `GET /v1/observability/logs`. Requires a personal or Global API key (Team API Keys are group-scoped and get 403 `unsupported_api_key`) or an OAuth token with the `all` scope, and the Observability logs read permission. Limited to 60 requests per minute per token.",
+        "description": "List log patterns (clustered log templates) with counts against the previous window of the same length. Only `service:`, `severity:` and `pattern:` filters apply; others are echoed in `meta.ignored_filters`. Each pattern's `logs_query` drills into matching rows with `GET /v1/observability/logs`. Requires a personal or Global API key (Team API Keys are group-scoped and get 403 `unsupported_api_key`) or an OAuth token with the `obs.logs:read` (or `all`) scope, and the Observability logs read permission. Limited to 60 requests per minute per token.",
         "operationId": "listObservabilityPatterns",
         "parameters": [
           {
