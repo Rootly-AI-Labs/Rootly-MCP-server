@@ -38094,6 +38094,34 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ClickHouse is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
           }
         }
       }
@@ -38208,10 +38236,10 @@
                     "ignored_filters": "index:main",
                     "window": {
                       "from": "2026-10-20T03:00:00.000000000Z",
-                      "to": "2026-10-20T09:00:00.000000000Z"
+                      "to": "2026-10-20T09:01:00.000000000Z"
                     },
                     "previous_window": {
-                      "from": "2026-10-19T21:00:00.000000000Z",
+                      "from": "2026-10-19T20:59:00.000000000Z",
                       "to": "2026-10-20T03:00:00.000000000Z"
                     },
                     "sort": "change",
@@ -38349,6 +38377,54 @@
           },
           "400": {
             "description": "Window outside pattern retention",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Observability is not available for the team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The role cannot read logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors_list"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ClickHouse is unavailable",
             "content": {
               "application/json": {
                 "schema": {
