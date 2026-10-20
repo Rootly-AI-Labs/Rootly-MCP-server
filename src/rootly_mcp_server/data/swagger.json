@@ -98310,12 +98310,12 @@
           "from": {
             "type": "string",
             "format": "date-time",
-            "description": "Resolved window start (UTC)"
+            "description": "Resolved window start (UTC, inclusive)"
           },
           "to": {
             "type": "string",
             "format": "date-time",
-            "description": "Resolved window end (UTC)"
+            "description": "Resolved window end (UTC). Inclusive for logs; exclusive for patterns, whose counts cover whole minutes in [from, to)"
           }
         }
       },
