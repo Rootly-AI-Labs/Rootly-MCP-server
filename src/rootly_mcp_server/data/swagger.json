@@ -38200,7 +38200,7 @@
               "maximum": 25,
               "default": 15
             },
-            "description": "Patterns to return."
+            "description": "Number of top patterns to return (1-25, default 15), ordered by sort. Not paginated: meta.truncated is true when more patterns matched; narrow filter[query] to see them."
           }
         ],
         "responses": {
