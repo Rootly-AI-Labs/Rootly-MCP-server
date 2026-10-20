@@ -98358,7 +98358,7 @@
                 },
                 "code": {
                   "type": "string",
-                  "description": "Stable machine-readable error code, e.g. invalid_range, outside_retention, search_requires_narrower_range, invalid_cursor, invalid_query, too_expensive, observability_unavailable, insufficient_scope, unavailable, rate_limited"
+                  "description": "Stable machine-readable error code, e.g. invalid_range, outside_retention, search_requires_narrower_range, invalid_cursor, invalid_query, too_expensive, invalid_parameter, observability_unavailable, insufficient_scope, unsupported_api_key, unavailable, rate_limited"
                 },
                 "title": {
                   "type": "string"
