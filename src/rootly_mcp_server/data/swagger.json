@@ -38137,7 +38137,7 @@
         "tags": [
           "Observability"
         ],
-        "description": "Count logs matching a Logs explorer query, grouped by `service`, `index`, `severity` or an attribute key (`@http.status_code`). Answers questions like \"errors per service in the last 6h\" (`filter[query]=severity:error`, `filter[from]=now-6h`, `group_by=service`). Values are ordered by count, largest first; `meta.total` counts every matching log, and each value's `logs_query` drills into its rows with `GET /v1/observability/logs`. A log can carry an attribute key more than once (log and resource attributes), so attribute counts can add up to more than `meta.total`; when logs match but none have the attribute, `data` is empty and `meta.warnings` has code attribute_missing. Requires a personal or Global API key (Team API Keys are group-scoped and get 403 `unsupported_api_key`) or an OAuth token with the `obs.logs:read` (or `all`) scope, and the Observability logs read permission. A Global API key uses its service user's Observability role, which starts as the team's default Observability role. Limited to 60 requests per minute per token; on this endpoint the X-RateLimit-* headers report that per-minute budget, not the default API limit. Every 429 returns the errors envelope with code rate_limited and a Retry-After header.",
+        "description": "Count logs matching a Logs explorer query, grouped by `service`, `index`, `severity` or an attribute key (`@http.status_code`). Answers questions like \"errors per service in the last 6h\" (`filter[query]=severity:error`, `filter[from]=now-6h`, `group_by=service`). Values are ordered by count, largest first; `meta.total` counts every matching log, and each value's `logs_query` drills into its rows with `GET /v1/observability/logs` (`null` for a blank attribute value, which the query syntax cannot select). A log can carry an attribute key more than once (log and resource attributes), so attribute counts can add up to more than `meta.total`; when logs match but none have the attribute, `data` is empty and `meta.warnings` has code attribute_missing. Requires a personal or Global API key (Team API Keys are group-scoped and get 403 `unsupported_api_key`) or an OAuth token with the `obs.logs:read` (or `all`) scope, and the Observability logs read permission. A Global API key uses its service user's Observability role, which starts as the team's default Observability role. Limited to 60 requests per minute per token; on this endpoint the X-RateLimit-* headers report that per-minute budget, not the default API limit. Every 429 returns the errors envelope with code rate_limited and a Retry-After header.",
         "operationId": "countObservabilityLogs",
         "parameters": [
           {
@@ -38270,7 +38270,8 @@
                                 "type": "integer"
                               },
                               "logs_query": {
-                                "type": "string"
+                                "type": "string",
+                                "nullable": true
                               }
                             }
                           }
