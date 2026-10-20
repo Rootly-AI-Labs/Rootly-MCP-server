@@ -38126,6 +38126,262 @@
         }
       }
     },
+    "/v1/observability/logs/counts": {
+      "get": {
+        "summary": "Count Observability logs by field",
+        "security": [
+          {
+            "bearer_auth": []
+          }
+        ],
+        "tags": [
+          "Observability"
+        ],
+        "description": "Count logs matching a Logs explorer query, grouped by `service`, `index`, `severity` or an attribute key (`@http.status_code`). Answers questions like \"errors per service in the last 6h\" (`filter[query]=severity:error`, `filter[from]=now-6h`, `group_by=service`). Values are ordered by count, largest first; `meta.total` counts every matching log, and each value's `logs_query` drills into its rows with `GET /v1/observability/logs` (`null` for a blank value, which the query syntax cannot select, or when the drill-down would exceed the query limits: 512 characters or 20 clauses). A log can carry an attribute key more than once (log, resource and scope attributes), so attribute counts can add up to more than `meta.total`; when logs match but none have the attribute, `data` is empty and `meta.warnings` has code attribute_missing. Requires a personal or Global API key (Team API Keys are group-scoped and get 403 `unsupported_api_key`) or an OAuth token with the `obs.logs:read` (or `all`) scope, and the Observability logs read permission. A Global API key uses its service user's Observability role, which starts as the team's default Observability role. Limited to 60 requests per minute per token; on this endpoint the X-RateLimit-* headers report that per-minute budget, not the default API limit. Every 429 returns the errors envelope with code rate_limited and a Retry-After header.",
+        "operationId": "countObservabilityLogs",
+        "parameters": [
+          {
+            "name": "group_by",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "service"
+            },
+            "description": "Field to group by: `service`, `index`, `severity`, or `@` followed by an attribute key (e.g. `@http.status_code`). Defaults to `service`."
+          },
+          {
+            "name": "filter[query]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Logs explorer query, e.g. `severity:error index:main`."
+          },
+          {
+            "name": "filter[from]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Window start: ISO8601 or relative like `now-6h`, `now-30m`, `now-2d`. Defaults to `now-1h`. Windows are at most 7 days, and 24 hours without an indexable term."
+          },
+          {
+            "name": "filter[to]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Window end: ISO8601 or relative like `now`. Defaults to `now`."
+          },
+          {
+            "name": "page[size]",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "description": "Number of top values to return (1-100, default 25). Not paginated: meta.truncated is true when more values matched."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts per value with the effective query and window",
+            "content": {
+              "application/json": {
+                "example": {
+                  "data": [
+                    {
+                      "id": "service:checkout",
+                      "type": "observability_log_counts",
+                      "attributes": {
+                        "value": "checkout",
+                        "count": 1204,
+                        "logs_query": "severity:error service:checkout"
+                      }
+                    },
+                    {
+                      "id": "service:payments",
+                      "type": "observability_log_counts",
+                      "attributes": {
+                        "value": "payments",
+                        "count": 311,
+                        "logs_query": "severity:error service:payments"
+                      }
+                    }
+                  ],
+                  "meta": {
+                    "query": "severity:error",
+                    "group_by": "service",
+                    "window": {
+                      "from": "2026-10-20T03:00:00.000000000Z",
+                      "to": "2026-10-20T09:00:00.000000000Z"
+                    },
+                    "total": 1515,
+                    "returned": 2,
+                    "truncated": false,
+                    "warnings": []
+                  }
+                },
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "type",
+                          "attributes"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string",
+                            "enum": [
+                              "observability_log_counts"
+                            ]
+                          },
+                          "attributes": {
+                            "type": "object",
+                            "required": [
+                              "value",
+                              "count",
+                              "logs_query"
+                            ],
+                            "properties": {
+                              "value": {
+                                "type": "string"
+                              },
+                              "count": {
+                                "type": "integer"
+                              },
+                              "logs_query": {
+                                "type": "string",
+                                "nullable": true
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "required": [
+                        "query",
+                        "group_by",
+                        "window",
+                        "total",
+                        "returned",
+                        "truncated",
+                        "warnings"
+                      ],
+                      "properties": {
+                        "query": {
+                          "type": "string"
+                        },
+                        "group_by": {
+                          "type": "string"
+                        },
+                        "window": {
+                          "$ref": "#/components/schemas/observability_window"
+                        },
+                        "total": {
+                          "type": "integer"
+                        },
+                        "returned": {
+                          "type": "integer"
+                        },
+                        "truncated": {
+                          "type": "boolean"
+                        },
+                        "warnings": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/observability_warning"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid group_by, query or window",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Observability is not available for the team",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The role cannot read logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/errors_list"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Seconds to wait before retrying"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "ClickHouse is unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/observability_errors"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/observability/patterns": {
       "get": {
         "summary": "List Observability log patterns",
@@ -98329,7 +98585,8 @@
           "code": {
             "type": "string",
             "enum": [
-              "no_data"
+              "no_data",
+              "attribute_missing"
             ]
           },
           "detail": {
