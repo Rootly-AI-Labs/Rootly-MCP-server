@@ -680,6 +680,7 @@ list_incident_form_field_selections
 list_incident_types
 list_observability_logs
 list_observability_patterns
+count_observability_logs
 list_on_call_roles
 list_on_call_shadows
 list_override_shifts

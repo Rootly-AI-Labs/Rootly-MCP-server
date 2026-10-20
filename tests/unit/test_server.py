@@ -376,6 +376,7 @@ class TestBundledIncidentFormFieldSelectionTools:
         assert "get_alert_event" in tool_names
         assert "list_observability_logs" in tool_names
         assert "list_observability_patterns" in tool_names
+        assert "count_observability_logs" in tool_names
         assert "list_status_pages" in tool_names
         assert "get_status_page" in tool_names
         assert "list_status_page_templates" in tool_names
