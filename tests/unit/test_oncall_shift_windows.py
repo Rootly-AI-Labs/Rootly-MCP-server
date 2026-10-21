@@ -778,6 +778,54 @@ class TestCuratedScheduleShifts:
         assert "truncated" not in result
 
     @pytest.mark.asyncio
+    async def test_windows_are_fetched_concurrently_in_stable_order(self):
+        # A year is 13 windows; fetched one after another it is 13 round trips
+        # in series. They run concurrently under the tool's 10-request bound,
+        # and the output keeps window order even when later windows answer
+        # first.
+        state = {"in_flight": 0, "max_in_flight": 0}
+
+        async def responder(method, path, params=None, **kwargs):
+            if not path.endswith("/shifts"):
+                return _ok({"data": [], "meta": {"total_pages": 1}})
+            start = _parse_iso_datetime((params or {}).get("from"))
+            assert start is not None
+            state["in_flight"] += 1
+            state["max_in_flight"] = max(state["max_in_flight"], state["in_flight"])
+            # Earlier windows answer last, so completion order is reversed.
+            await asyncio.sleep(0.001 * (400 - start.timetuple().tm_yday) / 10)
+            state["in_flight"] -= 1
+            return _ok({"data": [_shift(f"S-{start.date()}", starts=start.isoformat())]})
+
+        tools = _build_tools(responder)
+        result = await tools["get_schedule_shifts"](
+            id="s1", start_date="2026-01-01T00:00:00Z", end_date="2027-01-02T00:00:00Z"
+        )
+
+        assert not result.get("error"), result
+        assert result["upstream_windows"] == 13
+        assert 1 < state["max_in_flight"] <= 10
+        starts = [shift["attributes"]["starts_at"] for shift in result["shifts"]]
+        assert len(starts) == 13
+        assert starts == sorted(starts)
+
+    @pytest.mark.asyncio
+    async def test_one_failed_window_fails_the_whole_query(self):
+        def fail_second_window(params: dict[str, Any]) -> Mock:
+            if params["from"].startswith("2026-08-29"):
+                return _status(404)
+            return _ok({"data": [_shift()]})
+
+        responder, _ = _responder(fail_second_window)
+        tools = _build_tools(responder)
+        result = await tools["get_schedule_shifts"](
+            id="s1", start_date="2026-07-30", end_date="2026-09-28"
+        )
+
+        assert result["error"] is True
+        assert "total_shifts" not in result
+
+    @pytest.mark.asyncio
     async def test_a_transient_failure_is_retried_once(self):
         attempts = {"n": 0}
 

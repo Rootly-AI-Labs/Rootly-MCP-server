@@ -1569,7 +1569,8 @@ def register_oncall_tools(
         data: list[dict[str, Any]] = []
         included: list[dict[str, Any]] = []
         seen: set[tuple[Any, ...]] = set()
-        for window_start, window_end in bounds:
+
+        async def _fetch_bound(window_start: str | None, window_end: str | None) -> Any:
             params: dict[str, Any] = {}
             if window_start:
                 params["from"] = window_start
@@ -1595,7 +1596,14 @@ def register_oncall_tools(
                     f"Could not load shifts for schedule {schedule_id}"
                     + (f" (status {status})" if status else " (no response)")
                 )
-            payload = response.json()
+            return response.json()
+
+        # Windows are independent, so fetch them concurrently; the caller's
+        # semaphore bounds how many are in flight. gather() keeps results in
+        # window order, so merging and de-duplication below are unaffected,
+        # and any window failing fails the whole fetch.
+        payloads = await asyncio.gather(*(_fetch_bound(a, b) for a, b in bounds))
+        for (window_start, window_end), payload in zip(bounds, payloads, strict=True):
             for shift in payload.get("data", []):
                 attrs = shift.get("attributes", {})
                 if clip_to_window:
