@@ -111,19 +111,6 @@ KNOWN_VIOLATIONS: dict[tuple[str, str, str, str], str] = {
         "get_shift_incidents: filter[tags][] is not a /v1/incidents filter; the tags "
         "argument is silently ignored upstream"
     ),
-    # get_schedule_shifts pages /v1/schedules/{id}/shifts through the generic
-    # paginator, which adds page[size]/page[number]. The endpoint declares only
-    # from/to and is unpaginated (see _fetch_schedule_shift_window). Harmless
-    # below 100 shifts per window; at or above it the paginator re-requests
-    # "page 2..10", which upstream answers with the same unpaginated list.
-    ("GET", "/v1/schedules/{id}/shifts", "param", "page[size]"): (
-        "get_schedule_shifts paginates an unpaginated endpoint; >=100 shifts per "
-        "30-day window would be re-fetched as duplicate pages"
-    ),
-    ("GET", "/v1/schedules/{id}/shifts", "param", "page[number]"): (
-        "get_schedule_shifts paginates an unpaginated endpoint; >=100 shifts per "
-        "30-day window would be re-fetched as duplicate pages"
-    ),
     # _fetch_schedule_shift_window (handoff summary, responder availability)
     # sends include=user,assignee,on_call_role; the operation declares only
     # from/to. The handoff reads user names and role names from `included`, so
