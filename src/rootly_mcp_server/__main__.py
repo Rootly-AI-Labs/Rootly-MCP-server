@@ -35,6 +35,12 @@ from .server_defaults import (
     enabled_tools_from_env,
     resolve_write_tools_enabled,
 )
+from .sse_deprecation import (
+    CLI_SSE_DEPRECATION_WARNING,
+    SSE_SUNSET_DATE,
+    SSEDeprecationMiddleware,
+    with_sse_deprecation_instructions,
+)
 from .telemetry_scrubber import (
     redact_agentcat_telemetry_text,
     scrub_event_arguments,
@@ -576,19 +582,17 @@ async def _forward_streamable_http_request(selected_app: Any, request: "Request"
     return Response()
 
 
-def run_dual_http_server(
+def build_dual_http_app(
     server,
-    log_level: str,
     middleware: list | None = None,
     code_mode_server=None,
     code_mode_path: str | None = None,
     profiled_servers: dict[str, Any] | None = None,
     profiled_code_mode_servers: dict[str, Any] | None = None,
     default_tool_profile: str = server_defaults.HOSTED_TOOL_PROFILE_FULL,
-) -> None:
-    """Run SSE and streamable-http together on one ASGI server."""
+):
+    """Build the ASGI app serving SSE, streamable-http and Code Mode together."""
     import fastmcp
-    import uvicorn
     from fastmcp.server.http import StreamableHTTPASGIApp, create_base_app
     from mcp.server.sse import SseServerTransport
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -630,7 +634,10 @@ def run_dual_http_server(
             await selected_server._mcp_server.run(  # noqa: SLF001
                 streams[0],
                 streams[1],
-                selected_server._mcp_server.create_initialization_options(),  # noqa: SLF001
+                # SSE is deprecated: tell the model/client in this session only.
+                with_sse_deprecation_instructions(
+                    selected_server._mcp_server.create_initialization_options()  # noqa: SLF001
+                ),
             )
         return Response()
 
@@ -730,7 +737,12 @@ def run_dual_http_server(
                 await stack.enter_async_context(session_manager.run())
             yield
 
-    app_middleware = cast(list[Middleware], middleware or [])
+    # Outermost of ours, so the 401 from the auth middleware carries the
+    # deprecation headers too. A fresh list: create_base_app mutates it.
+    app_middleware = [
+        Middleware(SSEDeprecationMiddleware, sse_path=sse_path, message_path=message_path),
+        *cast(list[Middleware], middleware or []),
+    ]
     app = create_base_app(
         routes=routes,
         middleware=app_middleware,
@@ -742,6 +754,42 @@ def run_dual_http_server(
         [path for path in (sse_path, streamable_path, code_mode_path) if path]
     )
     app.state.transport_type = "both"
+    return app
+
+
+def run_dual_http_server(
+    server,
+    log_level: str,
+    middleware: list | None = None,
+    code_mode_server=None,
+    code_mode_path: str | None = None,
+    profiled_servers: dict[str, Any] | None = None,
+    profiled_code_mode_servers: dict[str, Any] | None = None,
+    default_tool_profile: str = server_defaults.HOSTED_TOOL_PROFILE_FULL,
+) -> None:
+    """Run SSE and streamable-http together on one ASGI server."""
+    import fastmcp
+    import uvicorn
+
+    logger = logging.getLogger(__name__)
+    app = build_dual_http_app(
+        server,
+        middleware=middleware,
+        code_mode_server=code_mode_server,
+        code_mode_path=code_mode_path,
+        profiled_servers=profiled_servers,
+        profiled_code_mode_servers=profiled_code_mode_servers,
+        default_tool_profile=default_tool_profile,
+    )
+    sse_path = fastmcp.settings.sse_path
+    streamable_path = fastmcp.settings.streamable_http_path
+    logger.info(
+        "SSE endpoint %s is deprecated and will be removed after %s; "
+        "clients should use %s (or Code Mode)",
+        sse_path,
+        SSE_SUNSET_DATE,
+        streamable_path,
+    )
 
     host = fastmcp.settings.host
     port = fastmcp.settings.port
@@ -921,6 +969,8 @@ def main():
         logger.info(f"Initializing server with name: {args.name}")
         # argparse already normalizes/validates --transport via type=normalize_transport
         normalized_transport = args.transport
+        if normalized_transport == "sse":
+            logger.warning(CLI_SSE_DEPRECATION_WARNING)
         code_mode_enabled = args.enable_code_mode or code_mode_enabled_from_env(default=True)
         enable_write_tools = resolve_write_tools_enabled(args.enable_write_tools)
         code_mode_path = (
@@ -1052,9 +1102,22 @@ def main():
                     default_tool_profile=default_hosted_tool_profile,
                 )
             else:
+                run_middleware = get_hosted_auth_middleware()
+                if normalized_transport == "sse":
+                    import fastmcp
+                    from starlette.middleware import Middleware
+
+                    run_middleware = [
+                        Middleware(
+                            SSEDeprecationMiddleware,
+                            sse_path=fastmcp.settings.sse_path,
+                            message_path=fastmcp.settings.message_path,
+                        ),
+                        *(run_middleware or []),
+                    ]
                 run_kwargs = {
                     "transport": normalized_transport,
-                    "middleware": get_hosted_auth_middleware(),
+                    "middleware": run_middleware,
                     # Override FastMCP's default of 0s to allow active SSE connections
                     # to finish gracefully during deployments (avoids 502s).
                     "uvicorn_config": {"timeout_graceful_shutdown": 30},

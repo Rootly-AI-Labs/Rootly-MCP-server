@@ -20,18 +20,6 @@
           "isSecret": true
         }
       ]
-    },
-    {
-      "type": "sse",
-      "url": "https://mcp.rootly.com/sse",
-      "headers": [
-        {
-          "name": "Authorization",
-          "description": "Bearer token for Rootly API (format: Bearer <YOUR_ROOTLY_API_TOKEN>)",
-          "isRequired": true,
-          "isSecret": true
-        }
-      ]
     }
   ],
   "packages": [
