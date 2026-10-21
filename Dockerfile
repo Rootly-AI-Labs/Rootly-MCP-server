@@ -10,12 +10,12 @@ FROM ghcr.io/astral-sh/uv:0.12.24 AS uv
 # ---------------------------------------------------------------------------
 # Builder: resolve nothing, install the lock into /opt/venv.
 #
-# Python 3.13 is the version CI's quality, integration and container jobs run
-# on. Both stages must use the same tag. Moving to 3.14 needs a lock that has
-# 3.14 wheels (scikit-learn 1.7.1 has none, so the build would compile it from
-# source and fail) and 3.14 in the CI test matrix first.
+# Both stages must use the same tag, and it must be a version the CI test
+# matrix covers (test_dependency_pins.py enforces this). Every locked package
+# needs a wheel for it: there is no compiler here, so a package without one
+# fails the build instead of being compiled from source.
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 
 COPY --from=uv /uv /usr/local/bin/uv
 
@@ -69,14 +69,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # ---------------------------------------------------------------------------
 # Runtime: same base image, no compiler, no uv, no build cache.
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim
+FROM python:3.14-slim
 
 # curl stays for container health checks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# The venv's interpreter symlinks to /usr/local/bin/python3.13, which is the
+# The venv's interpreter symlinks to /usr/local/bin/python3.14, which is the
 # same path in both stages because they share a base image.
 COPY --from=builder /opt/venv /opt/venv
 
