@@ -5,13 +5,14 @@ from __future__ import annotations
 import builtins
 import difflib
 import keyword
+import logging
 import os
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
-from fastmcp.exceptions import NotFoundError
+from fastmcp.exceptions import NotFoundError, ToolError
 from fastmcp.experimental.transforms.code_mode import (
     CodeMode,
     GetSchemas,
@@ -32,6 +33,7 @@ from .spec_transform import to_snake_case
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
+logger = logging.getLogger(__name__)
 
 # Discovery tools (list_tools, tool_search, get_schema, tags) only read the tool
 # catalog — safe, idempotent, no external side effects.
@@ -57,6 +59,10 @@ _EXECUTE_OUTPUT_SCHEMA: dict[str, Any] = {
 }
 
 DEFAULT_CODE_MODE_PATH = "/mcp-codemode"
+# Same per-execute budget fastmcp's CodeMode applies by default.
+DEFAULT_CODE_MODE_MAX_TOOL_CALLS = 50
+CODE_MODE_MAX_TOOL_CALLS_ENV = "ROOTLY_CODE_MODE_MAX_TOOL_CALLS"
+_TOOL_CALL_LIMIT_MARKER = "Tool call limit exceeded"
 _TOOL_NAME_PREFIXES = (
     "mcp__rootly-codemode__",
     "mcp__rootly__",
@@ -103,6 +109,30 @@ def code_mode_enabled_from_env(default: bool = True) -> bool:
 def code_mode_path_from_env() -> str:
     """Return the configured hosted Code Mode path."""
     return normalize_code_mode_path(os.getenv("ROOTLY_CODE_MODE_PATH", DEFAULT_CODE_MODE_PATH))
+
+
+def code_mode_max_tool_calls_from_env(default: int = DEFAULT_CODE_MODE_MAX_TOOL_CALLS) -> int:
+    """Return the per-execute tool call budget for hosted Code Mode.
+
+    Only a positive integer is accepted; anything else logs a warning and
+    keeps ``default``, so a bad value can never lift the limit.
+    """
+    raw = os.getenv(CODE_MODE_MAX_TOOL_CALLS_ENV)
+    if raw is None:
+        return default
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        value = 0
+    if value < 1:
+        logger.warning(
+            "Invalid %s=%r (expected a positive integer); falling back to %d",
+            CODE_MODE_MAX_TOOL_CALLS_ENV,
+            raw,
+            default,
+        )
+        return default
+    return value
 
 
 def _strip_tool_name_prefixes(tool_name: str) -> list[str]:
@@ -252,6 +282,13 @@ def _format_execute_exception(exc: Exception, tools: Sequence[Tool] = ()) -> str
     if undefined and (isinstance(exc, NameError) or "NameError" in message):
         return _undefined_name_message(undefined.group(1), tools)
 
+    if _TOOL_CALL_LIMIT_MARKER in message:
+        return (
+            f"{message} Do the work in fewer calls: use list tools with filters and a "
+            "larger page_size instead of one call per item, or split the workflow across "
+            "several execute calls and return intermediate results."
+        )
+
     if isinstance(exc, NotFoundError) or "Unknown tool:" in message:
         return (
             f"{message}. Use tool_search to discover available tools and call them "
@@ -305,6 +342,9 @@ class RootlyCodeMode(CodeMode):
 
     def _make_execute_tool(self) -> Tool:
         transform = self
+        # fastmcp's CodeMode stores this from its `max_tool_calls` constructor
+        # argument (default 50; None disables the limit).
+        max_tool_calls = self.max_tool_calls
 
         async def execute(
             code: Annotated[
@@ -325,8 +365,22 @@ class RootlyCodeMode(CodeMode):
                 *transform._build_discovery_tools(),
                 *await transform.get_tool_catalog(ctx),
             ]
+            # Per execute(): every call_tool() invocation counts, including the
+            # bare tool functions (they route through call_tool), discovery
+            # tools and unknown names -- the same semantics as fastmcp's own
+            # execute, which counts before resolving the name.
+            call_count = 0
 
             async def call_tool(tool_name: str, params: dict[str, Any] | None = None) -> Any:
+                nonlocal call_count
+                if max_tool_calls is not None:
+                    call_count += 1
+                    if call_count > max_tool_calls:
+                        raise ToolError(
+                            f"{_TOOL_CALL_LIMIT_MARKER}: at most {max_tool_calls} "
+                            "call_tool() invocations are allowed per execute()."
+                        )
+
                 resolution = resolve_tool_name(tool_name, tools)
                 if resolution.tool is None:
                     raise NotFoundError(resolution.error_message())
@@ -381,10 +435,17 @@ class RootlyCodeMode(CodeMode):
         )
 
 
-def build_code_mode_transform() -> CodeMode:
-    """Build the shared Code Mode transform used by hosted deployments."""
+def build_code_mode_transform(max_tool_calls: int | None = None) -> CodeMode:
+    """Build the shared Code Mode transform used by hosted deployments.
+
+    ``max_tool_calls`` caps call_tool() invocations per execute(); when omitted
+    it comes from ``ROOTLY_CODE_MODE_MAX_TOOL_CALLS`` (default 50).
+    """
     return RootlyCodeMode(
         sandbox_provider=MontySandboxProvider(),
+        max_tool_calls=(
+            max_tool_calls if max_tool_calls is not None else code_mode_max_tool_calls_from_env()
+        ),
         discovery_tools=[
             ListTools(default_detail="brief"),
             Search(name="tool_search", default_detail="detailed", default_limit=12),

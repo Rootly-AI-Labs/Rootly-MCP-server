@@ -389,7 +389,7 @@ Choose one transport per server process:
 
 - **Streamable HTTP** endpoint path: `/mcp`
 - **SSE (deprecated, removed after 2026-11-20)** endpoint path: `/sse`. `--transport sse` logs a deprecation warning at startup; use `--transport streamable-http` instead.
-- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode
+- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode. One `execute` call may make at most 50 tool calls; set `ROOTLY_CODE_MODE_MAX_TOOL_CALLS` to a positive integer to change that.
 
 Hosted and self-hosted deployments now both expose the full tool surface by default.
 

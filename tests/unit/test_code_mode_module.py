@@ -9,10 +9,13 @@ from fastmcp.experimental.transforms.code_mode import CodeMode, MontySandboxProv
 from fastmcp.tools.function_tool import FunctionTool
 
 from rootly_mcp_server.code_mode import (
+    DEFAULT_CODE_MODE_MAX_TOOL_CALLS,
     DEFAULT_CODE_MODE_PATH,
+    RootlyCodeMode,
     _format_execute_exception,
     build_code_mode_transform,
     code_mode_enabled_from_env,
+    code_mode_max_tool_calls_from_env,
     code_mode_path_from_env,
     create_rootly_codemode_server,
     resolve_tool_name,
@@ -512,3 +515,186 @@ def test_undefined_name_hint_builds_the_example_from_the_tool_schema():
     )
     assert paged is not None
     assert "await call_tool('list_alerts', {'page_size': 10})" in paged
+
+
+def _limited_execute(max_tool_calls: int | None, *backend_names: str) -> tuple[FunctionTool, Any]:
+    """Like `_real_execute`, with an explicit per-execute tool call budget."""
+    transform = build_code_mode_transform(max_tool_calls=max_tool_calls)
+    execute_tool = cast(FunctionTool, transform._get_execute_tool())  # noqa: SLF001
+    fake_fastmcp = SimpleNamespace(
+        list_tools=AsyncMock(return_value=_tools(*backend_names)),
+        call_tool=AsyncMock(
+            side_effect=lambda name, params: SimpleNamespace(
+                structured_content={"tool": name, "params": params}, content=[]
+            )
+        ),
+    )
+    return execute_tool, fake_fastmcp
+
+
+def _loop(call: str, times: int) -> str:
+    return f"n = 0\nfor i in range({times}):\n    await {call}\n    n += 1\nreturn n"
+
+
+_LIMITED_CALLS = pytest.mark.parametrize(
+    "call",
+    [
+        "call_tool('list_alerts', {'page_size': 1})",
+        "list_alerts(page_size=1)",
+        "tool_search(query='alerts')",
+    ],
+    ids=["call_tool", "bare_function", "discovery_tool"],
+)
+
+
+def test_build_code_mode_transform_defaults_to_fastmcp_tool_call_limit():
+    with patch.dict("os.environ", {}, clear=True):
+        transform = build_code_mode_transform()
+    assert transform.max_tool_calls == DEFAULT_CODE_MODE_MAX_TOOL_CALLS == 50
+    assert CodeMode().max_tool_calls == DEFAULT_CODE_MODE_MAX_TOOL_CALLS
+
+
+def test_build_code_mode_transform_keeps_monty_resource_limits():
+    # The sandbox's time and memory caps are the other half of the per-execute
+    # budget; a provider constructed with limits=None would drop them.
+    provider = build_code_mode_transform().sandbox_provider
+    assert isinstance(provider, MontySandboxProvider)
+    assert provider.limits == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
+
+
+def test_code_mode_max_tool_calls_from_env(caplog):
+    with patch.dict("os.environ", {"ROOTLY_CODE_MODE_MAX_TOOL_CALLS": "7"}, clear=True):
+        assert code_mode_max_tool_calls_from_env() == 7
+        assert build_code_mode_transform().max_tool_calls == 7
+        # An explicit argument wins over the environment.
+        assert build_code_mode_transform(max_tool_calls=3).max_tool_calls == 3
+
+    # Unset means the default, silently.
+    with patch.dict("os.environ", {}, clear=True), caplog.at_level("WARNING"):
+        caplog.clear()
+        assert code_mode_max_tool_calls_from_env() == DEFAULT_CODE_MODE_MAX_TOOL_CALLS
+        assert not caplog.records
+
+    # A bad value, blank included, can never lift the limit and always warns.
+    for invalid in ("", "  ", "abc", "0", "-5", "1.5", "none"):
+        with (
+            patch.dict("os.environ", {"ROOTLY_CODE_MODE_MAX_TOOL_CALLS": invalid}, clear=True),
+            caplog.at_level("WARNING"),
+        ):
+            caplog.clear()
+            assert code_mode_max_tool_calls_from_env() == DEFAULT_CODE_MODE_MAX_TOOL_CALLS
+            assert any(
+                "ROOTLY_CODE_MODE_MAX_TOOL_CALLS" in record.getMessage()
+                for record in caplog.records
+            ), invalid
+
+
+@pytest.mark.asyncio
+@_LIMITED_CALLS
+async def test_execute_allows_exactly_max_tool_calls(call: str):
+    execute_tool, fake_fastmcp = _limited_execute(3, "list_alerts")
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+
+    assert await execute_tool.fn(_loop(call, 3), ctx=ctx) == 3
+    assert fake_fastmcp.call_tool.await_count == 3
+
+
+@pytest.mark.asyncio
+@_LIMITED_CALLS
+async def test_execute_rejects_the_call_past_max_tool_calls(call: str):
+    execute_tool, fake_fastmcp = _limited_execute(3, "list_alerts")
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+
+    with pytest.raises(ValueError) as excinfo:
+        await execute_tool.fn(_loop(call, 4), ctx=ctx)
+
+    message = str(excinfo.value)
+    assert "Tool call limit exceeded: at most 3 call_tool() invocations" in message
+    assert "per execute()" in message
+    assert "fewer calls" in message
+    # The fourth call never reaches the backend.
+    assert fake_fastmcp.call_tool.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_execute_counts_bare_functions_and_call_tool_together():
+    execute_tool, fake_fastmcp = _limited_execute(2, "list_alerts")
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+
+    with pytest.raises(ValueError, match="Tool call limit exceeded: at most 2"):
+        await execute_tool.fn(
+            "await list_alerts()\nawait call_tool('list_alerts', {})\nawait list_alerts()",
+            ctx=ctx,
+        )
+
+    assert fake_fastmcp.call_tool.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_execute_counts_unknown_tool_names_against_the_limit():
+    # fastmcp counts before resolving the name, so a script cannot probe
+    # names in an unbounded loop either.
+    execute_tool, fake_fastmcp = _limited_execute(2, "list_alerts")
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+    code = (
+        "for i in range(2):\n"
+        "    try:\n"
+        "        await call_tool('nope', {})\n"
+        "    except Exception:\n"
+        "        pass\n"
+        "return await call_tool('list_alerts', {})"
+    )
+
+    with pytest.raises(ValueError, match="Tool call limit exceeded: at most 2"):
+        await execute_tool.fn(code, ctx=ctx)
+
+    fake_fastmcp.call_tool.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_call_budget_resets_between_executes():
+    execute_tool, fake_fastmcp = _limited_execute(2, "list_alerts")
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+    code = _loop("call_tool('list_alerts', {})", 2)
+
+    assert await execute_tool.fn(code, ctx=ctx) == 2
+    assert await execute_tool.fn(code, ctx=ctx) == 2
+    assert fake_fastmcp.call_tool.await_count == 4
+
+
+@pytest.mark.asyncio
+async def test_execute_honors_a_configured_limit_above_the_default():
+    execute_tool, fake_fastmcp = _limited_execute(60, "list_alerts")
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+
+    assert await execute_tool.fn(_loop("list_alerts()", 60), ctx=ctx) == 60
+    with pytest.raises(ValueError, match=r"at most 60 call_tool\(\)"):
+        await execute_tool.fn(_loop("list_alerts()", 61), ctx=ctx)
+
+
+@pytest.mark.asyncio
+async def test_execute_has_no_limit_when_max_tool_calls_is_none():
+    # fastmcp's own opt-out, honored the same way.
+    transform = RootlyCodeMode(max_tool_calls=None)
+    execute_tool = cast(FunctionTool, transform._get_execute_tool())  # noqa: SLF001
+    fake_fastmcp = SimpleNamespace(
+        list_tools=AsyncMock(return_value=_tools("list_alerts")),
+        call_tool=AsyncMock(
+            return_value=SimpleNamespace(structured_content={"ok": True}, content=[])
+        ),
+    )
+    ctx = SimpleNamespace(fastmcp=fake_fastmcp)
+
+    assert await execute_tool.fn(_loop("list_alerts()", 75), ctx=ctx) == 75
+
+
+def test_format_execute_exception_explains_the_tool_call_limit():
+    message = _format_execute_exception(
+        Exception(
+            "Tool call limit exceeded: at most 50 call_tool() invocations are allowed "
+            "per execute()."
+        )
+    )
+    assert message is not None
+    assert message.startswith("Tool call limit exceeded: at most 50")
+    assert "split the workflow across several execute calls" in message
