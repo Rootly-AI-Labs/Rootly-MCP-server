@@ -199,5 +199,6 @@ test_output/
 !CONTRIBUTING.md
 !CHANGELOG.md
 !SECURITY.md
+!docs/databricks-marketplace.md
 .beads/
 .claude/
