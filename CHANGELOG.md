@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- **The SSE transport is deprecated and will be removed after 2026-11-20**: use Streamable HTTP (`https://mcp.rootly.com/mcp`) or Code Mode (`https://mcp.rootly.com/mcp-codemode`). Nothing stops working yet. Over the last 7 days SSE carried 3 of roughly 1,027,000 hosted tool calls, and in hosted mode it is already unreliable: an SSE session lives in one task's memory, and the load balancer routes its follow-up `POST /messages/` to any task, which answers "Could not find session". Until removal:
+  - Hosted `/sse` and `/messages/` responses, including the 401 sent to unauthenticated requests, carry `Deprecation: @1792540800` (RFC 9745), `Sunset: Fri, 20 Nov 2026 00:00:00 GMT` (RFC 8594) and `Link: <https://mcp.rootly.com/mcp>; rel="successor-version"`. Headers are added when the response starts; the event stream itself is passed through unbuffered. `/mcp` and `/mcp-codemode` are unchanged.
+  - Each new SSE stream logs one structured `sse_deprecated_connection` warning (user agent, client IP, request ID, token fingerprint, tool profile), so remaining SSE users can be found and contacted.
+  - SSE sessions, and only SSE sessions, get a deprecation note in the MCP `initialize` `instructions`.
+  - `--transport sse` (and `ROOTLY_TRANSPORT=sse`) logs a deprecation warning at startup pointing to `--transport streamable-http`, and still works.
+  - The SSE remote is no longer listed in `server.json`, since the MCP registry schema has no way to mark a remote deprecated.
+
 ### Fixed
 
 - **`check_oncall_health_risk` ignored the date range it was given**: it bounded its shift query with `filter[starts_at_lte]`/`filter[ends_at_gte]`, but `/v1/shifts` takes `from`/`to` and has no `filter[...]` parameters at all. An unsupported query parameter is ignored rather than rejected, so no date bound was ever applied: shifts from any period were correlated against the at-risk users and reported as scheduled for the week asked about, raising `action_required` for work that had nothing to do with it. It now sends `from`/`to`. The same tool resolved each shift's schedule through a `schedule` relationship that `/v1/shifts` does not have, so every shift was reported against schedule "Unknown"; it now reads `schedule_id` from the shift's attributes, as the sibling tools already did.
