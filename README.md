@@ -383,6 +383,17 @@ A **Global API Key** is recommended for organization-wide queries and for action
 }
 ```
 
+### Optional: TF-IDF incident similarity
+
+`find_related_incidents` and `suggest_solutions` rank past incidents with TF-IDF similarity when [scikit-learn](https://scikit-learn.org) is installed, and with keyword matching otherwise. scikit-learn (with numpy and scipy) adds about 130 MB, so it is an optional extra. Both modes put the closest match first, but keyword matching lets far more unrelated incidents past the score threshold, so install the extra if you use these tools:
+
+```bash
+pip install "rootly-mcp-server[similarity]"
+uvx --from "rootly-mcp-server[similarity]" rootly-mcp-server
+```
+
+In an MCP client config, use `"--from", "rootly-mcp-server[similarity]"` in the `args` above. The hosted server and the Docker image always include it.
+
 ## Self-Hosted Transport Options
 
 Choose one transport per server process:
@@ -593,7 +604,7 @@ You can run multiple MCP instances with different tool subsets:
 - **Smart Pagination**: Uses bounded pagination and compact incident responses to prevent context window overflow
 - **API Filtering**: Limits exposed API endpoints for security and performance
 - **Intelligent Incident Analysis**: Smart tools that analyze historical incident data
-  - **`find_related_incidents`**: Uses TF-IDF similarity analysis to find historically similar incidents
+  - **`find_related_incidents`**: Uses TF-IDF similarity analysis to find historically similar incidents (needs the [`similarity` extra](#optional-tf-idf-incident-similarity) when self-hosting; keyword matching otherwise)
   - **`suggest_solutions`**: Mines past incident resolutions to recommend actionable solutions
 - **MCP Resources**: Exposes incidents, teams, on-call status, and workflow guides as structured resources for AI context
 - **Intelligent Pattern Recognition**: Automatically identifies services, error types, and resolution patterns

@@ -32,10 +32,17 @@ WORKDIR /app
 # Dependencies first: this layer is reused until pyproject.toml or uv.lock
 # change. --locked installs only what uv.lock says and fails the build if the
 # lock no longer matches pyproject.toml, instead of re-resolving.
+#
+# The image always installs the `similarity` extra (scikit-learn, for TF-IDF
+# incident similarity). It is optional on PyPI to keep `uvx rootly-mcp-server`
+# small, but the keyword fallback lets far more unrelated incidents through
+# find_related_incidents and suggest_solutions, so hosted users keep TF-IDF.
+# Every `uv sync` / `uv export` below must pass it: a sync without it removes
+# scikit-learn again.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-dev --no-install-project
+    uv sync --locked --no-dev --extra similarity --no-install-project
 
 # Then the project itself, as a regular (non-editable) wheel install so the
 # venv does not depend on /app. The wheel bundles data/swagger.json via
@@ -43,7 +50,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-editable
+    uv sync --locked --no-dev --extra similarity --no-editable
 
 # AgentCat (formerly MCPcat) provides hosted telemetry and is deliberately kept
 # out of the project's dependency graph. The [community] extra provides FastMCP
@@ -60,7 +67,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv export --quiet --locked --no-dev --no-emit-project --no-hashes -o /tmp/constraints.txt \
+    uv export --quiet --locked --no-dev --extra similarity --no-emit-project --no-hashes -o /tmp/constraints.txt \
     && uv pip install --python /opt/venv/bin/python \
         --constraint /tmp/constraints.txt \
         "agentcat[community]==2.1.0" \

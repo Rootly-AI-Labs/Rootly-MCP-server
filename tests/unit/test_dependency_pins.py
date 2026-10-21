@@ -172,3 +172,33 @@ class TestPinHelpersReadWhatTheyClaim:
         # the guard would quietly compare nothing.
         with pytest.raises(AssertionError):
             _pyproject_pin("cryptography")
+
+
+@pytest.mark.unit
+class TestImageKeepsTfidfSimilarity:
+    """scikit-learn is an optional extra, but the image must keep installing it.
+
+    Without it find_related_incidents and suggest_solutions fall back to keyword
+    matching, which passes far more unrelated incidents through their score
+    thresholds. A `uv sync` without the extra also *removes* it, so every sync
+    and the AgentCat constraint export must name it.
+    """
+
+    def test_scikit_learn_is_an_optional_extra(self):
+        data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+        base = [re.split(r"[<>=!~\[ ;]", d, maxsplit=1)[0] for d in data["project"]["dependencies"]]
+        assert "scikit-learn" not in base
+        assert "numpy" not in base
+        extra = data["project"]["optional-dependencies"]["similarity"]
+        assert any(d.startswith("scikit-learn") for d in extra)
+
+    def test_every_uv_sync_and_export_installs_the_similarity_extra(self):
+        commands = [
+            cmd for cmd in _dockerfile_run_commands() if "uv sync" in cmd or "uv export" in cmd
+        ]
+        assert commands
+        for cmd in commands:
+            for step in re.findall(r"uv (?:sync|export)\b[^&;]*", cmd):
+                assert re.search(r"--extra[ =]similarity\b|--all-extras\b", step), (
+                    f"Dockerfile step drops scikit-learn from the image: {step}"
+                )

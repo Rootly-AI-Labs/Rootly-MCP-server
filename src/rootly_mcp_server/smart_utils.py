@@ -5,7 +5,6 @@ This module provides text similarity, pattern matching, and intelligent analysis
 functions for implementing smart incident management features.
 """
 
-# Check ML library availability
 import importlib.util
 import logging
 import re
@@ -13,15 +12,22 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+# scikit-learn is optional (the `similarity` extra). Only the top-level package
+# is looked up here: `find_spec` on a submodule imports its parents, which would
+# load sklearn, scipy and numpy (~0.5 s) on every server start. sklearn itself is
+# imported on first use, in `_calculate_tfidf_similarity`.
 try:
-    ML_AVAILABLE = (
-        importlib.util.find_spec("sklearn.feature_extraction.text") is not None
-        and importlib.util.find_spec("sklearn.metrics.pairwise") is not None
-    )
-except (ImportError, ModuleNotFoundError):
+    ML_AVAILABLE = importlib.util.find_spec("sklearn") is not None
+except (ImportError, ValueError):
     ML_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
+KEYWORD_FALLBACK_MESSAGE = (
+    "scikit-learn is not installed; incident similarity uses keyword matching, "
+    "which returns more loosely related incidents. "
+    "Install rootly-mcp-server[similarity] for TF-IDF similarity."
+)
 
 
 @dataclass
@@ -42,9 +48,7 @@ class TextSimilarityAnalyzer:
 
     def __init__(self):
         if not ML_AVAILABLE:
-            logger.warning(
-                "scikit-learn not available. Text similarity will use basic keyword matching."
-            )
+            logger.debug(KEYWORD_FALLBACK_MESSAGE)
         self.vectorizer = None
         self.incident_vectors = None
         self.incident_metadata = {}
@@ -166,13 +170,13 @@ class TextSimilarityAnalyzer:
         target_services = self.extract_services(target_text)
         target_errors = self.extract_error_patterns(target_text)
 
-        similarities = []
+        similarities: list[IncidentSimilarity] | None = None
 
         if ML_AVAILABLE and len(incidents) > 1:
             similarities = self._calculate_tfidf_similarity(
                 incidents, target_incident, target_text, target_services, target_errors
             )
-        else:
+        if similarities is None:
             similarities = self._calculate_keyword_similarity(
                 incidents, target_incident, target_text, target_services, target_errors
             )
@@ -213,14 +217,27 @@ class TextSimilarityAnalyzer:
         target_text: str,
         target_services: list[str],
         target_errors: list[str],
-    ) -> list[IncidentSimilarity]:
-        """Use TF-IDF and cosine similarity for advanced text matching."""
-        if not ML_AVAILABLE:
-            return []
+    ) -> list[IncidentSimilarity] | None:
+        """Use TF-IDF and cosine similarity for advanced text matching.
 
-        # Import here to avoid issues with conditional imports
-        from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore[import-untyped]
-        from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-untyped]
+        Returns None when scikit-learn cannot be imported, so the caller falls
+        back to keyword matching.
+        """
+        if not ML_AVAILABLE:
+            return None
+
+        # Imported on first use so a missing or broken sklearn costs nothing at
+        # import time and degrades to keyword matching instead of failing the tool.
+        try:
+            from sklearn.feature_extraction.text import (  # type: ignore[import-untyped]
+                TfidfVectorizer,
+            )
+            from sklearn.metrics.pairwise import (  # type: ignore[import-untyped]
+                cosine_similarity,
+            )
+        except ImportError:
+            logger.debug(KEYWORD_FALLBACK_MESSAGE, exc_info=True)
+            return None
 
         # Prepare texts
         incident_texts = [self._combine_incident_text(inc) for inc in incidents]
