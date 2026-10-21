@@ -118,7 +118,7 @@ def code_mode_max_tool_calls_from_env(default: int = DEFAULT_CODE_MODE_MAX_TOOL_
     keeps ``default``, so a bad value can never lift the limit.
     """
     raw = os.getenv(CODE_MODE_MAX_TOOL_CALLS_ENV)
-    if raw is None or not raw.strip():
+    if raw is None:
         return default
     try:
         value = int(raw.strip())

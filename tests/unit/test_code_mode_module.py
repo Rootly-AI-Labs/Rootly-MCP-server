@@ -562,17 +562,30 @@ def test_build_code_mode_transform_keeps_monty_resource_limits():
     assert provider.limits == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
 
 
-def test_code_mode_max_tool_calls_from_env():
+def test_code_mode_max_tool_calls_from_env(caplog):
     with patch.dict("os.environ", {"ROOTLY_CODE_MODE_MAX_TOOL_CALLS": "7"}, clear=True):
         assert code_mode_max_tool_calls_from_env() == 7
         assert build_code_mode_transform().max_tool_calls == 7
         # An explicit argument wins over the environment.
         assert build_code_mode_transform(max_tool_calls=3).max_tool_calls == 3
 
-    # A bad value can never lift the limit.
-    for invalid in ("", "abc", "0", "-5", "1.5", "none"):
-        with patch.dict("os.environ", {"ROOTLY_CODE_MODE_MAX_TOOL_CALLS": invalid}, clear=True):
+    # Unset means the default, silently.
+    with patch.dict("os.environ", {}, clear=True), caplog.at_level("WARNING"):
+        caplog.clear()
+        assert code_mode_max_tool_calls_from_env() == DEFAULT_CODE_MODE_MAX_TOOL_CALLS
+        assert not caplog.records
+
+    # A bad value, blank included, can never lift the limit and always warns.
+    for invalid in ("", "  ", "abc", "0", "-5", "1.5", "none"):
+        with (
+            patch.dict("os.environ", {"ROOTLY_CODE_MODE_MAX_TOOL_CALLS": invalid}, clear=True),
+            caplog.at_level("WARNING"),
+        ):
+            caplog.clear()
             assert code_mode_max_tool_calls_from_env() == DEFAULT_CODE_MODE_MAX_TOOL_CALLS
+            assert any(
+                "ROOTLY_CODE_MODE_MAX_TOOL_CALLS" in record.getMessage() for record in caplog.records
+            ), invalid
 
 
 @pytest.mark.asyncio
