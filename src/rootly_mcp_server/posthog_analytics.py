@@ -59,9 +59,13 @@ def identify(_request: Any, _extra: Any) -> UserIdentity | None:
 class CallableMiddlewareAdapter(MCPMiddleware):
     """Presents a plain-callable middleware, such as AgentCat's, as a fastmcp Middleware.
 
-    posthog.mcp (<= 7.60.1) reads dispatch hooks off each middleware's class and
-    raises for anything that is not a Middleware subclass, breaking tools/list.
-    FastMCP itself only calls `await middleware(context, call_next)`, so
+    posthog.mcp (7.60.1 through at least 7.73.3) reads dispatch hooks off each
+    middleware's class and raises for anything that is not a Middleware
+    subclass, which broke tools/list on fastmcp 3 / mcp SDK 1.x. On fastmcp 4 /
+    mcp SDK 2.x, instrument() takes its v2 handler-registry path, which skips
+    that lookup, so this adapter is a guard rather than a fix there; it is kept
+    because the lookup is still in posthog.mcp. FastMCP (both phases of its
+    fastmcp 4 dispatch) only calls `await middleware(context, call_next)`, so
     forwarding __call__ keeps behavior identical. PostHog uses the hook lookup
     only to decide whether to inject `llm_model`, which capture_model=False
     turns off. Delete once posthog.mcp tolerates such middleware.
@@ -117,7 +121,14 @@ def posthog_session_middleware(posthog_client: Posthog | None) -> list[ASGIMiddl
     initialize, which clients replay on every request. instrument() attaches it
     only to FastMCP's own app factories; the dual and profiled servers build
     their Starlette apps directly, so main() adds it after hosted auth. The
-    stateless SDK ignores the header, so requests are otherwise unchanged.
+    stateless SDK ignores the header (and 2026-07-28 requests never initialize,
+    so they get no token), so requests are otherwise unchanged.
+
+    The token is unsigned and client-replayed: it is an analytics grouping key
+    only, never an auth or tenancy signal. AgentCat's session resolver also keys
+    on `Mcp-Session-Id` (always prefixed by the authenticated caller), so with
+    this middleware on, AgentCat sessions become per-connection instead of
+    hourly buckets for clients that replay the header.
     """
     if posthog_client is None:
         return []

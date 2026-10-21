@@ -57,7 +57,7 @@ async def test_agentcat_and_posthog_both_capture_without_breaking_tools(
         async with Client(server) as client:
             tools = await client.list_tools()
             for tool in tools:
-                properties = tool.inputSchema.get("properties", {})
+                properties = tool.input_schema.get("properties", {})
                 assert not {"context", "conversation_id", "llm_model"} & set(properties), tool.name
             result = await client.call_tool("get_server_version", {"session_id": "start"})
         await asyncio.sleep(0.2)
