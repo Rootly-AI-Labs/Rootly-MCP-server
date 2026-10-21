@@ -465,8 +465,11 @@ def setup_logging(log_level, debug=False):
     # method, URL and a body excerpt. Successful calls belong in traces, not
     # in a line per request. Left alone when debugging is explicitly on, where
     # seeing every request is the point.
+    # Both loggers: the Rootly API client is httpx2 (logger "httpx2"), while the
+    # OAuth/token probes and On-Call Health client still use legacy httpx.
     if numeric_level > logging.DEBUG:
         logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpx2").setLevel(logging.WARNING)
 
     # Log the configuration
     logger = logging.getLogger(__name__)

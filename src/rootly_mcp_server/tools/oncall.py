@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Protocol, cast
 
 import httpx
+import httpx2
 from mcp.types import ToolAnnotations
 from pydantic import AliasChoices, Field
 
@@ -1755,7 +1756,7 @@ def register_oncall_tools(
                         response = await make_authenticated_request(
                             "GET", path, params=_params_for(page_number)
                         )
-                except httpx.TransportError as exc:
+                except httpx2.TransportError as exc:
                     # A timeout or dropped connection arrives as a raised error,
                     # not as a response, so it used to leave this loop before the
                     # second attempt -- retrying only what came back meant not
