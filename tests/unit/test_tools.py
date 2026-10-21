@@ -2971,15 +2971,27 @@ class TestHeadingScanStaysLinear:
     def test_malformed_markup_stays_fast(self, label, unit):
         import time
 
-        doc = unit * 8000
+        def best_of_three(repeats: int) -> float:
+            doc = unit * repeats
+            timings = []
+            for _ in range(3):
+                start = time.perf_counter()
+                _drop_timeline_sections(doc)
+                timings.append(time.perf_counter() - start)
+            return min(timings)
 
-        start = time.perf_counter()
-        _drop_timeline_sections(doc)
-        elapsed = time.perf_counter() - start
+        small, large = best_of_three(2000), best_of_three(8000)
 
-        # Each of these has measured in the hundreds of ms or seconds at some
-        # point; generous here so a slow CI box still passes.
-        assert elapsed < 0.5, f"{label} took {elapsed:.2f}s"
+        # Compare growth, not wall time: a 4x longer document costs ~4x when
+        # the scan is linear and ~16x when it is quadratic, regardless of how
+        # fast the box is. An absolute ceiling was flaky on Python 3.12 under
+        # coverage (sys.settrace), which slows every line several-fold.
+        ratio = large / max(small, 1e-6)
+        assert ratio < 8, (
+            f"{label}: 4x input took {ratio:.1f}x as long ({small:.3f}s -> {large:.3f}s)"
+        )
+        # Backstop for a scan that is linear but pathologically slow.
+        assert large < 5, f"{label} took {large:.2f}s"
 
 
 class TestCommentedHeadingsAreNotBoundaries:
