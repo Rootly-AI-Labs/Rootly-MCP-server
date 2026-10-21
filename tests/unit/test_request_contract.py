@@ -98,30 +98,25 @@ SPEC_GAPS: dict[tuple[str, str, str, str], str] = {
     ("GET", "/v1/shifts", "include", "schedule_rotation"): (
         "Shift relationship sideloaded upstream but missing from the include enum"
     ),
+    # /v1/schedules/{id}/shifts declares only from/to, but the action renders
+    # with `include: params[:include]` (rootlyhq/rootly
+    # app/controllers/api/v1/schedules_controller.rb:101, Api::V1::ShiftSerializer)
+    # and preloads user details when the include names `user` (:117-120). The
+    # serializer's relationships are shift_override, user and assignee
+    # (app/serializers/api/v1/shift_serializer.rb:7-10; assignee only with
+    # schedule nesting enabled). `on_call_role` is not one of them -- it is a
+    # user relationship (app/serializers/api/v1/user_serializer.rb:63) -- so
+    # _fetch_schedule_shift_window asks for it as `user.on_call_role`. The
+    # whole parameter is missing from the spec, so there is no enum to check.
+    ("GET", "/v1/schedules/{id}/shifts", "param", "include"): (
+        "Honoured upstream (SchedulesController#shifts renders include: params[:include]) "
+        "but undeclared in swagger"
+    ),
 }
 
 # Requests that are wrong, or that nothing confirms upstream honours. Keys are
 # (METHOD, path template, kind, name). Each becomes a strict xfail test.
-KNOWN_VIOLATIONS: dict[tuple[str, str, str, str], str] = {
-    # get_shift_incidents(tags=...) sends `filter[tags][]`, which /v1/incidents
-    # does not declare (its closest filter is `filter[labels]`, a key:value
-    # label match, not a tag slug). Upstream ignores it, so the `tags` argument
-    # has never narrowed anything: callers get every incident in the window.
-    ("GET", "/v1/incidents", "param", "filter[tags][]"): (
-        "get_shift_incidents: filter[tags][] is not a /v1/incidents filter; the tags "
-        "argument is silently ignored upstream"
-    ),
-    # _fetch_schedule_shift_window (handoff summary, responder availability)
-    # sends include=user,assignee,on_call_role; the operation declares only
-    # from/to. The handoff reads user names and role names from `included`, so
-    # if upstream ignores this the summary shows "Unknown" for both. Unverified
-    # either way: confirm against the live API, then move this to SPEC_GAPS (and
-    # fix the spec upstream) or stop relying on `included`.
-    ("GET", "/v1/schedules/{id}/shifts", "param", "include"): (
-        "Unverified: /v1/schedules/{id}/shifts declares no include parameter, yet the "
-        "handoff summary reads user and role names from `included`"
-    ),
-}
+KNOWN_VIOLATIONS: dict[tuple[str, str, str, str], str] = {}
 
 
 # --------------------------------------------------------------------------- #

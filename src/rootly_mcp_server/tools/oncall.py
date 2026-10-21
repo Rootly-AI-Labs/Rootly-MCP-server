@@ -26,6 +26,11 @@ SHIFT_INCIDENT_QUERY_FIELDS = (
     "customer_impact_summary,mitigation,severity,url"
 )
 DEFAULT_MAX_SHIFT_INCIDENT_RESULTS = 100
+UNSUPPORTED_TAGS_WARNING = (
+    "The tags argument was ignored: Rootly incidents have no tags, so results are "
+    "not filtered by it. Incidents carry key:value labels instead, which the "
+    "incidents API filters with filter[labels] (e.g. 'env:prod')."
+)
 
 # Ceiling on a shift query's total span. Long ranges are split into windows the
 # upstream will accept, but each window is its own request, so an unbounded
@@ -752,6 +757,8 @@ def register_oncall_tools(
         """
         Get current on-call handoff summary. Shows who's currently on-call and who's next.
         Optionally fetch incidents (set include_incidents=True, but slower).
+        Each responder's `role` is their On-Call role (e.g. Responder, Admin);
+        shifts themselves carry no role.
 
         Use filter_by_region=True with a timezone to see only people on-call
         during business hours in that region (e.g., timezone='Asia/Tokyo', filter_by_region=True
@@ -925,14 +932,38 @@ def register_oncall_tools(
                 shifts = shifts_data.get("data", [])
                 included = shifts_data.get("included", [])
 
-                # Build user and role maps
-                users_map = {}
-                roles_map = {}
+                # Build user and role maps. Shifts carry no role of their own
+                # (Api::V1::ShiftSerializer has only shift_override/user/assignee);
+                # the on-call role belongs to the user and is sideloaded through
+                # the nested `user.on_call_role` include.
+                users_map: dict[str, dict[str, Any]] = {}
+                roles_map: dict[str, dict[str, Any]] = {}
                 for resource in included:
                     if resource.get("type") == "users":
-                        users_map[resource.get("id")] = resource
+                        users_map[str(resource.get("id"))] = resource
                     elif resource.get("type") == "on_call_roles":
-                        roles_map[resource.get("id")] = resource
+                        roles_map[str(resource.get("id"))] = resource
+
+                def _responder_labels(
+                    user_id: str | None,
+                    users_map: dict[str, dict[str, Any]] = users_map,
+                    roles_map: dict[str, dict[str, Any]] = roles_map,
+                ) -> tuple[str, str]:
+                    user = users_map.get(user_id) if user_id else None
+                    if user is None:
+                        return "Unknown", "Unknown Role"
+                    user_attrs = user.get("attributes", {})
+                    user_name = user_attrs.get("full_name") or user_attrs.get("email", "Unknown")
+                    role_ref = (
+                        user.get("relationships", {}).get("on_call_role", {}).get("data") or {}
+                    )
+                    role = roles_map.get(str(role_ref.get("id"))) if role_ref.get("id") else None
+                    role_name = (
+                        role.get("attributes", {}).get("name", "Unknown Role")
+                        if role
+                        else "Unknown Role"
+                    )
+                    return user_name, role_name
 
                 # Find current and next shifts
                 current_shift = None
@@ -975,22 +1006,9 @@ def register_oncall_tools(
 
                 if current_shift:
                     current_attrs = current_shift.get("attributes", {})
-                    current_rels = current_shift.get("relationships", {})
                     user_id = _shift_user_id(current_shift)
-                    role_data = current_rels.get("on_call_role", {}).get("data") or {}
-                    role_id = role_data.get("id")
 
-                    user_name = "Unknown"
-                    if user_id and user_id in users_map:
-                        user_attrs = users_map[user_id].get("attributes", {})
-                        user_name = user_attrs.get("full_name") or user_attrs.get(
-                            "email", "Unknown"
-                        )
-
-                    role_name = "Unknown Role"
-                    if role_id and role_id in roles_map:
-                        role_attrs = roles_map[role_id].get("attributes", {})
-                        role_name = role_attrs.get("name", "Unknown Role")
+                    user_name, role_name = _responder_labels(user_id)
 
                     schedule_info["current_oncall"] = {
                         "user_name": user_name,
@@ -1003,22 +1021,9 @@ def register_oncall_tools(
 
                 if next_shift:
                     next_attrs = next_shift.get("attributes", {})
-                    next_rels = next_shift.get("relationships", {})
                     user_id = _shift_user_id(next_shift)
-                    role_data = next_rels.get("on_call_role", {}).get("data") or {}
-                    role_id = role_data.get("id")
 
-                    user_name = "Unknown"
-                    if user_id and user_id in users_map:
-                        user_attrs = users_map[user_id].get("attributes", {})
-                        user_name = user_attrs.get("full_name") or user_attrs.get(
-                            "email", "Unknown"
-                        )
-
-                    role_name = "Unknown Role"
-                    if role_id and role_id in roles_map:
-                        role_attrs = roles_map[role_id].get("attributes", {})
-                        role_name = role_attrs.get("name", "Unknown Role")
+                    user_name, role_name = _responder_labels(user_id)
 
                     schedule_info["next_oncall"] = {
                         "user_name": user_name,
@@ -1221,11 +1226,14 @@ def register_oncall_tools(
             if status:
                 params["filter[status]"] = status.lower()
 
-            # Add tags filter if provided
-            if tags:
-                tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-                if tag_list:
-                    params["filter[tags][]"] = tag_list
+            # `tags` is accepted for compatibility only. Rootly incidents have no
+            # tags: the closest concept is key:value labels, and GET /v1/incidents
+            # permits no tags filter (Api::V1::IncidentsController#filter_params),
+            # so strong params silently dropped the `filter[tags][]` this used to
+            # send and the argument never narrowed anything. Say so instead.
+            warnings: list[str] = []
+            if any(t.strip() for t in tags.split(",")):
+                warnings.append(UNSUPPORTED_TAGS_WARNING)
 
             # Query incidents with pagination
             all_incidents = []
@@ -1422,7 +1430,7 @@ def register_oncall_tools(
                 returned_incidents = incidents_summary[:max_incidents]
                 truncated_count = total_incidents - max_incidents
 
-            return {
+            result: dict[str, Any] = {
                 "success": True,
                 "period": {"start_time": start_time, "end_time": end_time},
                 "summary": {
@@ -1437,6 +1445,9 @@ def register_oncall_tools(
                 "truncated_incidents": truncated_count,
                 "results_truncated": truncated_count > 0,
             }
+            if warnings:
+                result["warnings"] = warnings
+            return result
 
         except Exception as e:
             import traceback
@@ -1493,7 +1504,14 @@ def register_oncall_tools(
         ] = "",
         tags: Annotated[
             str,
-            Field(description="Comma-separated list of tag slugs to filter incidents (optional)"),
+            Field(
+                description=(
+                    "Deprecated and ignored: Rootly incidents have no tags, so this does "
+                    "not filter anything (a `warnings` entry is returned when it is set). "
+                    "Incidents carry key:value labels instead (filter[labels] on the "
+                    "incidents API)."
+                )
+            ),
         ] = "",
     ) -> dict:
         """
@@ -1539,7 +1557,10 @@ def register_oncall_tools(
         semaphore: asyncio.Semaphore,
         *,
         clip_to_window: bool = False,
-        include: str | None = "user,assignee,on_call_role",
+        # Honoured upstream (see SPEC_GAPS in tests/unit/test_request_contract.py).
+        # `on_call_role` is a user relationship, not a shift one, so it is
+        # reached through `user.` -- a bare `on_call_role` is ignored.
+        include: str | None = "user,assignee,user.on_call_role",
     ) -> dict[str, Any]:
         """Derive overlapping shifts, including ones that began before the window.
 

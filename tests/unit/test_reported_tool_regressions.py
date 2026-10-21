@@ -305,7 +305,6 @@ def schedule():
 async def test_handoff_recognizes_long_running_active_shift():
     now = datetime.now(UTC)
     active = shift((now - timedelta(days=9)).isoformat(), (now + timedelta(days=40)).isoformat())
-    active["relationships"]["on_call_role"] = {"data": {"type": "on_call_roles", "id": "primary"}}
 
     async def responder(method, path, params=None):
         if path == "/v1/schedules":
@@ -314,12 +313,21 @@ async def test_handoff_recognizes_long_running_active_shift():
         assert params is not None
         assert "from" in params and "to" in params
         assert not any(k.startswith("filter[") for k in params)
-        assert "on_call_role" in params["include"]
+        # Shifts have no on_call_role relationship (Api::V1::ShiftSerializer);
+        # the role is the user's, sideloaded through the nested include.
+        assert params["include"].split(",") == ["user", "assignee", "user.on_call_role"]
         return response(
             {
                 "data": [active],
                 "included": [
-                    {"type": "users", "id": "1001", "attributes": {"full_name": "Test Responder"}},
+                    {
+                        "type": "users",
+                        "id": "1001",
+                        "attributes": {"full_name": "Test Responder"},
+                        "relationships": {
+                            "on_call_role": {"data": {"type": "on_call_roles", "id": "primary"}}
+                        },
+                    },
                     {"type": "on_call_roles", "id": "primary", "attributes": {"name": "Primary"}},
                 ],
             }
@@ -331,6 +339,84 @@ async def test_handoff_recognizes_long_running_active_shift():
     assert result["schedules"][0]["current_oncall"]["user_id"] == "1001"
     assert result["schedules"][0]["current_oncall"]["user_name"] == "Test Responder"
     assert result["schedules"][0]["current_oncall"]["role"] == "Primary"
+
+
+async def test_handoff_role_without_sideloaded_role_is_unknown_not_an_error():
+    """A user whose on-call role was not sideloaded still gets a name."""
+    now = datetime.now(UTC)
+    active = shift((now - timedelta(hours=1)).isoformat(), (now + timedelta(hours=1)).isoformat())
+
+    async def responder(method, path, params=None):
+        if path == "/v1/schedules":
+            return response({"data": [schedule()]})
+        return response(
+            {
+                "data": [active],
+                "included": [
+                    {"type": "users", "id": "1001", "attributes": {"email": "r@example.com"}}
+                ],
+            }
+        )
+
+    tools, _ = oncall_tools(responder)
+    result = await tools["get_oncall_handoff_summary"]()
+    current = result["schedules"][0]["current_oncall"]
+    assert current["user_name"] == "r@example.com"
+    assert current["role"] == "Unknown Role"
+
+
+def _incident(incident_id, started_at):
+    return {
+        "id": incident_id,
+        "type": "incidents",
+        "attributes": {
+            "title": f"Incident {incident_id}",
+            "status": "resolved",
+            "created_at": started_at,
+            "started_at": started_at,
+            "resolved_at": started_at,
+        },
+    }
+
+
+@pytest.mark.parametrize("tags", ["db,network", " db "])
+async def test_shift_incidents_tags_are_not_sent_and_warn(tags):
+    """/v1/incidents permits no tags filter; the argument must not pretend to filter."""
+    seen_params = []
+
+    async def responder(method, path, params=None):
+        assert path == "/v1/incidents"
+        seen_params.append(dict(params or {}))
+        return response(
+            {
+                "data": [_incident("inc-1", "2026-10-01T02:00:00Z")],
+                "meta": {"total_pages": 1},
+            }
+        )
+
+    tools, _ = oncall_tools(responder)
+    result = await tools["get_shift_incidents"](
+        start_time="2026-10-01T00:00:00Z", end_time="2026-10-01T23:59:59Z", tags=tags
+    )
+    assert result["success"] is True
+    assert not any("tag" in key for params in seen_params for key in params)
+    assert result["summary"]["total_incidents"] == 1
+    assert len(result["warnings"]) == 1
+    assert "tags argument was ignored" in result["warnings"][0]
+    assert "filter[labels]" in result["warnings"][0]
+
+
+@pytest.mark.parametrize("tags", ["", " , "])
+async def test_shift_incidents_without_tags_have_no_warning(tags):
+    async def responder(method, path, params=None):
+        return response({"data": [], "meta": {"total_pages": 1}})
+
+    tools, _ = oncall_tools(responder)
+    result = await tools["get_shift_incidents"](
+        start_time="2026-10-01T00:00:00Z", end_time="2026-10-01T23:59:59Z", tags=tags
+    )
+    assert result["success"] is True
+    assert "warnings" not in result
 
 
 async def test_availability_includes_shift_starting_before_window_and_clips_hours():
