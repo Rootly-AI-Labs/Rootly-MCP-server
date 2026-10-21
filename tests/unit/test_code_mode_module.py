@@ -584,7 +584,8 @@ def test_code_mode_max_tool_calls_from_env(caplog):
             caplog.clear()
             assert code_mode_max_tool_calls_from_env() == DEFAULT_CODE_MODE_MAX_TOOL_CALLS
             assert any(
-                "ROOTLY_CODE_MODE_MAX_TOOL_CALLS" in record.getMessage() for record in caplog.records
+                "ROOTLY_CODE_MODE_MAX_TOOL_CALLS" in record.getMessage()
+                for record in caplog.records
             ), invalid
 
 
