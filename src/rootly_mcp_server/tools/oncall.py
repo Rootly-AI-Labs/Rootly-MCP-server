@@ -9,7 +9,6 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Protocol, cast
 
-import httpx
 import httpx2
 from mcp.types import ToolAnnotations
 from pydantic import AliasChoices, Field
@@ -3320,7 +3319,7 @@ def register_oncall_tools(
                 else:
                     analysis = await och_client.get_latest_analysis()
                     och_analysis_id = analysis.get("id")
-            except httpx.HTTPStatusError as e:
+            except httpx2.HTTPStatusError as e:
                 raise ConnectionError(f"Failed to fetch On-Call Health data: {e}")
             except ValueError as e:
                 raise ValueError(str(e))

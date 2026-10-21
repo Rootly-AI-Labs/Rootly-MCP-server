@@ -1171,25 +1171,27 @@ async def test_run_profiled_streamable_http_server_routes_requests_by_profile():
 
 @pytest.mark.unit
 class TestHttpxRequestLoggingIsQuiet:
-    """httpx logs one INFO line per outbound request.
+    """httpx2 logs one INFO line per outbound request.
 
     In production that was a quarter of everything this service shipped to
     Datadog, duplicating upstream failures the transport already logs with more
-    context. These tests restore the level afterwards, since setup_logging
-    mutates global logging state.
+    context. Every outbound client is httpx2, which logs under its own name.
+    These tests restore the level afterwards, since setup_logging mutates
+    global logging state.
     """
 
     @staticmethod
     def _run(level):
         from rootly_mcp_server.__main__ import setup_logging
 
-        httpx_logger = logging.getLogger("httpx")
-        previous = httpx_logger.level
+        touched = [logging.getLogger(n) for n in ("httpx2", "rootly_mcp_server", "mcp")]
+        previous = [lg.level for lg in touched]
         try:
             setup_logging(level)
-            return httpx_logger.level
+            return logging.getLogger("httpx2").level
         finally:
-            httpx_logger.setLevel(previous)
+            for lg, prev in zip(touched, previous, strict=True):
+                lg.setLevel(prev)
 
     def test_info_logging_silences_per_request_lines(self):
         assert self._run("INFO") == logging.WARNING
@@ -1201,32 +1203,18 @@ class TestHttpxRequestLoggingIsQuiet:
         # Someone who asked for DEBUG wants to see every request.
         assert self._run("DEBUG") != logging.WARNING
 
-    def test_httpx2_per_request_lines_are_silenced_too(self):
-        # The Rootly API client is httpx2, which logs under its own name.
-        from rootly_mcp_server.__main__ import setup_logging
-
-        touched = [logging.getLogger(n) for n in ("httpx2", "httpx", "rootly_mcp_server", "mcp")]
-        previous = [lg.level for lg in touched]
-        try:
-            setup_logging("INFO")
-            assert logging.getLogger("httpx2").level == logging.WARNING
-        finally:
-            for lg, level in zip(touched, previous, strict=True):
-                lg.setLevel(level)
-
     def test_our_own_loggers_are_untouched(self):
         # The reduction must not come at the cost of our own diagnostics.
         from rootly_mcp_server.__main__ import setup_logging
 
-        ours = logging.getLogger("rootly_mcp_server")
-        previous_ours = ours.level
-        previous_httpx = logging.getLogger("httpx").level
+        touched = [logging.getLogger(n) for n in ("httpx2", "rootly_mcp_server", "mcp")]
+        previous = [lg.level for lg in touched]
         try:
             setup_logging("INFO")
-            assert ours.level == logging.INFO
+            assert logging.getLogger("rootly_mcp_server").level == logging.INFO
         finally:
-            ours.setLevel(previous_ours)
-            logging.getLogger("httpx").setLevel(previous_httpx)
+            for lg, prev in zip(touched, previous, strict=True):
+                lg.setLevel(prev)
 
 
 class TestUvicornAccessLogIsQuiet:

@@ -457,7 +457,7 @@ def setup_logging(log_level, debug=False):
     logging.getLogger("rootly_mcp_server").setLevel(numeric_level)
     logging.getLogger("mcp").setLevel(numeric_level)
 
-    # httpx logs one INFO line per outbound request. At production request
+    # httpx2 logs one INFO line per outbound request. At production request
     # volume that is an eighth of this service's log events and, because the
     # lines carry full URLs, a larger share of the bytes ingested. It is also
     # strictly less informative than what we already record: every
@@ -465,10 +465,9 @@ def setup_logging(log_level, debug=False):
     # method, URL and a body excerpt. Successful calls belong in traces, not
     # in a line per request. Left alone when debugging is explicitly on, where
     # seeing every request is the point.
-    # Both loggers: the Rootly API client is httpx2 (logger "httpx2"), while the
-    # OAuth/token probes and On-Call Health client still use legacy httpx.
+    # Every outbound client (Rootly API, OAuth/token probes, On-Call Health) is
+    # httpx2, which logs under "httpx2"; legacy httpx is no longer a dependency.
     if numeric_level > logging.DEBUG:
-        logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpx2").setLevel(logging.WARNING)
 
     # Log the configuration
