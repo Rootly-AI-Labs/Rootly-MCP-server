@@ -162,6 +162,41 @@ class TestDiffSpecs:
         new["components"]["schemas"]["schedule"]["properties"]["kind"]["enum"] = ["b", "a"]
         assert swagger_diff.diff_specs(old_spec, new).changed_enums == []
 
+    def test_enum_added_to_existing_field(self, old_spec):
+        new = copy.deepcopy(old_spec)
+        new["components"]["schemas"]["schedule"]["properties"]["status"] = {"type": "string"}
+        old = copy.deepcopy(new)
+        new["components"]["schemas"]["schedule"]["properties"]["status"]["enum"] = ["on", "off"]
+
+        diff = swagger_diff.diff_specs(old, new)
+        assert [(e.location, e.kind, e.added, e.removed) for e in diff.changed_enums] == [
+            ("schedule.status", "added", ["on", "off"], [])
+        ]
+        text = swagger_diff.render_markdown(diff)
+        assert "| Changed enums | | | 1 |" in text
+        assert "- `schedule.status`: enum added (previously unconstrained): `on`, `off`" in text
+
+    def test_enum_removed_from_existing_field(self, old_spec):
+        new = copy.deepcopy(old_spec)
+        del new["components"]["schemas"]["schedule"]["properties"]["kind"]["enum"]
+
+        diff = swagger_diff.diff_specs(old_spec, new)
+        assert [(e.location, e.kind, e.added, e.removed) for e in diff.changed_enums] == [
+            ("schedule.kind", "removed", [], ["a", "b"])
+        ]
+        text = swagger_diff.render_markdown(diff)
+        assert "| Changed enums | | | 1 |" in text
+        assert "- `schedule.kind`: enum removed (now unconstrained; was `a`, `b`)" in text
+
+    def test_enums_of_new_fields_are_not_enum_changes(self, old_spec):
+        new = copy.deepcopy(old_spec)
+        new["components"]["schemas"]["schedule"]["properties"]["mode"] = {
+            "type": "string",
+            "enum": ["x"],
+        }
+        new["components"]["schemas"]["brand_new"] = {"type": "string", "enum": ["y"]}
+        assert swagger_diff.diff_specs(old_spec, new).changed_enums == []
+
     def test_component_schemas(self, old_spec, new_spec):
         diff = swagger_diff.diff_specs(old_spec, new_spec)
         assert diff.added_schemas == ["observability_log"]
@@ -229,6 +264,40 @@ class TestCli:
             == 0
         )
         assert out.read_text().startswith("## Swagger diff summary\n")
+
+    def test_server_build_failure_still_yields_summary(self, tmp_path):
+        """A refreshed spec that breaks the server gets a summary with a note, exit 0.
+
+        The workflow relies on this to still open the (draft) PR for a broken spec.
+        """
+        bundled = json.loads(swagger_diff.BUNDLED_SPEC.read_text(encoding="utf-8"))
+        broken = copy.deepcopy(bundled)
+        del broken["info"]  # fastmcp rejects the document: `info` is required
+        broken["paths"]["/v1/observability/logs"] = {"get": {"summary": "List logs"}}
+        old_path, new_path, out = tmp_path / "old.json", tmp_path / "new.json", tmp_path / "s.md"
+        old_path.write_text(json.dumps(bundled))
+        new_path.write_text(json.dumps(broken))
+
+        argv = ["--old", str(old_path), "--new", str(new_path), "--tools", "--output", str(out)]
+        assert swagger_diff.main(argv) == 0
+
+        text = out.read_text()
+        assert "**Tool diff unavailable: server failed to build.**" in text
+        assert "[refreshed spec] ValueError: Invalid OpenAPI schema" in text
+        assert "| MCP tools (local defaults) | | | unavailable |" in text
+        # The rest of the summary is still there.
+        assert "- `GET /v1/observability/logs` — List logs" in text
+
+    def test_server_build_error_is_truncated(self, monkeypatch, old_spec):
+        def boom(spec):
+            raise RuntimeError("x" * 10_000)
+
+        monkeypatch.setattr(swagger_diff, "tool_surface_for_spec", boom)
+        tools, error = swagger_diff.build_tool_diff(old_spec, old_spec)
+        assert tools is None
+        assert error is not None
+        assert error.startswith("[bundled spec] RuntimeError: xxx")
+        assert len(error) < 2_100
 
 
 class TestToolSurface:

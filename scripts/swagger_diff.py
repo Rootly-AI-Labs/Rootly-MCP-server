@@ -31,6 +31,7 @@ HTTP_METHODS = ("get", "post", "put", "patch", "delete")
 # GitHub rejects pull request bodies over 65,536 characters.
 DEFAULT_MAX_CHARS = 60_000
 DEFAULT_MAX_ITEMS = 100
+_MAX_ERROR_CHARS = 2_000
 
 # Environment variables that change which tools the server lists. They are
 # cleared while counting tools so the count reflects the shipped defaults.
@@ -61,9 +62,16 @@ class OperationChange:
 
 @dataclass
 class EnumChange:
+    """An enum change on a schema field present in both specs.
+
+    ``kind`` is ``"changed"`` (values added/removed), ``"added"`` (the field was
+    unconstrained and now has an enum) or ``"removed"`` (the constraint was dropped).
+    """
+
     location: str
     added: list[str]
     removed: list[str]
+    kind: str = "changed"
 
 
 @dataclass
@@ -205,11 +213,10 @@ def _param_changes(old: dict[str, Any], new: dict[str, Any]) -> list[str]:
     return sorted(changes)
 
 
-def _walk_enums(node: Any, location: str) -> Iterator[tuple[str, list[str]]]:
+def _walk_enums(node: Any, location: str) -> Iterator[tuple[str, list[str] | None]]:
+    """Yield every schema location with its enum values, or None when it has no enum."""
     if isinstance(node, dict):
-        values = _enum_values(node)
-        if values is not None:
-            yield location, values
+        yield location, _enum_values(node)
         for key, child in node.items():
             if key == "enum":
                 continue
@@ -225,9 +232,13 @@ def _walk_enums(node: Any, location: str) -> Iterator[tuple[str, list[str]]]:
             yield from _walk_enums(child, f"{location}[{index}]")
 
 
-def _schema_enums(spec: dict[str, Any]) -> dict[str, list[str]]:
-    """Enums declared in component schemas and inline request bodies (not parameters)."""
-    enums: dict[str, list[str]] = {}
+def _schema_enums(spec: dict[str, Any]) -> dict[str, list[str] | None]:
+    """Schema locations in component schemas and inline request bodies (not parameters).
+
+    Every location is listed, with ``None`` when it declares no enum, so an enum
+    added to or dropped from an existing field can be told apart from a new field.
+    """
+    enums: dict[str, list[str] | None] = {}
     schemas = (spec.get("components") or {}).get("schemas") or {}
     for name, schema in schemas.items():
         enums.update(_walk_enums(schema, name))
@@ -269,8 +280,17 @@ def diff_specs(old: dict[str, Any], new: dict[str, Any]) -> SpecDiff:
 
     old_enums, new_enums = _schema_enums(old), _schema_enums(new)
     changed_enums = []
+    # Only fields present in both specs: a new or deleted schema is reported as such.
     for location in sorted(old_enums.keys() & new_enums.keys()):
         before, after = old_enums[location], new_enums[location]
+        if before is None and after is None:
+            continue
+        if before is None:
+            changed_enums.append(EnumChange(location, list(after or []), [], kind="added"))
+            continue
+        if after is None:
+            changed_enums.append(EnumChange(location, [], before, kind="removed"))
+            continue
         added = [value for value in after if value not in before]
         removed = [value for value in before if value not in after]
         if added or removed:
@@ -340,6 +360,24 @@ def tool_surface_for_spec(spec: dict[str, Any]) -> ToolSurface:
         os.environ.update(saved)
 
 
+def build_tool_diff(old: dict[str, Any], new: dict[str, Any]) -> tuple[ToolDiff | None, str | None]:
+    """Diff the tool surfaces, or say why they could not be built.
+
+    A spec that makes the server raise must still get a summary, so the refresh
+    PR opens (as a draft) instead of the workflow stopping before it.
+    """
+    surfaces: list[ToolSurface] = []
+    for label, spec in (("bundled", old), ("refreshed", new)):
+        try:
+            surfaces.append(tool_surface_for_spec(spec))
+        except Exception as exc:
+            message = f"{type(exc).__name__}: {exc}".strip()
+            if len(message) > _MAX_ERROR_CHARS:
+                message = message[:_MAX_ERROR_CHARS] + " ..."
+            return None, f"[{label} spec] {message}"
+    return diff_tools(surfaces[0], surfaces[1]), None
+
+
 # --- rendering --------------------------------------------------------------
 
 
@@ -371,6 +409,7 @@ def render_markdown(
     diff: SpecDiff,
     tools: ToolDiff | None = None,
     *,
+    tool_error: str | None = None,
     max_items: int = DEFAULT_MAX_ITEMS,
     max_chars: int = DEFAULT_MAX_CHARS,
 ) -> str:
@@ -388,6 +427,8 @@ def render_markdown(
         f"| Changed enums | | | {len(diff.changed_enums)} |",
         f"| Component schemas | | | +{len(diff.added_schemas)} / -{len(diff.removed_schemas)} |",
     ]
+    if tool_error is not None:
+        out.append("| MCP tools (local defaults) | | | unavailable |")
     if tools is not None:
         out.append(
             f"| MCP tools (local defaults) | {tools.old_count} | {tools.new_count} | "
@@ -396,6 +437,20 @@ def render_markdown(
         out.append(f"| MCP tools with changed arguments | | | {len(tools.changed)} |")
     out.append("")
 
+    if tool_error is not None:
+        out += [
+            "### MCP tools",
+            "",
+            "> [!WARNING]",
+            "> **Tool diff unavailable: server failed to build.** "
+            "`create_rootly_mcp_server(hosted=False)` raised while building from "
+            "the specs, so this refresh would likely break the server:",
+            "",
+            "```",
+            tool_error,
+            "```",
+            "",
+        ]
     if tools is not None:
         out += [
             "### MCP tools",
@@ -459,6 +514,18 @@ def render_markdown(
 
     enum_lines = []
     for enum in diff.changed_enums:
+        if enum.kind == "added":
+            enum_lines.append(
+                f"- `{enum.location}`: enum added (previously unconstrained): "
+                f"{_inline_values(enum.added)}"
+            )
+            continue
+        if enum.kind == "removed":
+            enum_lines.append(
+                f"- `{enum.location}`: enum removed (now unconstrained; was "
+                f"{_inline_values(enum.removed)})"
+            )
+            continue
         parts = []
         if enum.added:
             parts.append(f"+{_inline_values(enum.added)}")
@@ -524,11 +591,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     old, new = _load(args.old), _load(args.new)
-    tools = (
-        diff_tools(tool_surface_for_spec(old), tool_surface_for_spec(new)) if args.tools else None
-    )
+    tools, tool_error = build_tool_diff(old, new) if args.tools else (None, None)
     text = render_markdown(
-        diff_specs(old, new), tools, max_items=args.max_items, max_chars=args.max_chars
+        diff_specs(old, new),
+        tools,
+        tool_error=tool_error,
+        max_items=args.max_items,
+        max_chars=args.max_chars,
     )
     if args.output:
         args.output.write_text(text, encoding="utf-8")

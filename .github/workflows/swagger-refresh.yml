@@ -85,20 +85,30 @@ jobs:
         continue-on-error: true
         run: uv run pytest tests/unit -q --no-cov
 
+      # Exits 0 even when the server fails to build from the refreshed spec: the
+      # summary then carries a "Tool diff unavailable" note instead of tool
+      # counts, and `tools=failure` makes the PR a draft and fails the job.
       - name: Summarize diff
+        id: diff
         if: ${{ steps.change.outputs.changed == 'true' }}
-        run: >
-          uv run python scripts/swagger_diff.py
-          --old "$RUNNER_TEMP/swagger.bundled.json"
-          --new "$SPEC_PATH"
-          --tools
-          --output "$RUNNER_TEMP/swagger-diff.md"
+        run: |
+          uv run python scripts/swagger_diff.py \
+            --old "$RUNNER_TEMP/swagger.bundled.json" \
+            --new "$SPEC_PATH" \
+            --tools \
+            --output "$RUNNER_TEMP/swagger-diff.md"
+          if grep -qF "Tool diff unavailable: server failed to build" "$RUNNER_TEMP/swagger-diff.md"; then
+            echo "tools=failure" >> "$GITHUB_OUTPUT"
+          else
+            echo "tools=success" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Compose PR body
         if: ${{ steps.change.outputs.changed == 'true' }}
         env:
           AUDIT_OUTCOME: ${{ steps.audit.outcome }}
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          TOOLS_OUTCOME: ${{ steps.diff.outputs.tools }}
           LAST_MODIFIED: ${{ steps.fetch.outputs.last_modified }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -110,6 +120,7 @@ jobs:
             echo "| --- | --- |"
             echo "| \`scripts/audit_openapi.py --filtered-defaults --instantiate-server\` | $(mark "$AUDIT_OUTCOME") |"
             echo "| \`pytest tests/unit\` | $(mark "$TESTS_OUTCOME") |"
+            echo "| MCP server builds from both specs (tool diff) | $(mark "$TOOLS_OUTCOME") |"
             echo
             echo "> [!NOTE]"
             echo "> Opened by the weekly Swagger Refresh workflow and never merged automatically: review the summary below and merge by hand."
@@ -133,9 +144,11 @@ jobs:
           body-path: ${{ runner.temp }}/pr-body.md
           labels: swagger-refresh
           delete-branch: true
-          # A refresh that fails the audit or the tests still gets a PR, so the
-          # change is visible, but as a draft.
-          draft: ${{ steps.audit.outcome != 'success' || steps.tests.outcome != 'success' }}
+          # A refresh that fails a check still gets a PR, so the change is
+          # visible, but as a draft.
+          draft: >-
+            ${{ steps.audit.outcome != 'success' || steps.tests.outcome != 'success'
+            || steps.diff.outputs.tools != 'success' }}
 
       - name: Report
         if: ${{ steps.change.outputs.changed == 'true' }}
@@ -144,9 +157,10 @@ jobs:
           PR_OPERATION: ${{ steps.pr.outputs.pull-request-operation }}
           AUDIT_OUTCOME: ${{ steps.audit.outcome }}
           TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          TOOLS_OUTCOME: ${{ steps.diff.outputs.tools }}
         run: |
           echo "Pull request ${PR_OPERATION:-unchanged}: ${PR_URL:-n/a}" | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "$AUDIT_OUTCOME" != success ] || [ "$TESTS_OUTCOME" != success ]; then
-            echo "::error::The refreshed swagger fails the audit or the unit tests; see the draft PR."
+          if [ "$AUDIT_OUTCOME" != success ] || [ "$TESTS_OUTCOME" != success ] || [ "$TOOLS_OUTCOME" != success ]; then
+            echo "::error::The refreshed swagger fails the audit, the unit tests or the server build; see the draft PR."
             exit 1
           fi
