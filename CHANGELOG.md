@@ -5,6 +5,22 @@ All notable changes to the Rootly MCP Server will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.22] - Released 2026-10-21
+
+### Security
+
+- **Security: patch CVE-2026-111943 (compromised eMudhra CA)**: `certifi` 2025.1.31 → 2026.10.19, which drops the emSign roots (GHSA-6q48-6c7w-9gw2). The private keys of eight eMudhra (emSign) intermediate CAs can be recovered, so anyone could forge a certificate that this server would trust for any host. Legitimate certificates issued under those CAs stop validating, which matches browser behavior. (#242)
+- **Heartbeat credentials are no longer exposed**: heartbeat `secret` and `email_address` let anyone who holds them send pings. They're now omitted from every MCP response, including nested heartbeat resources and `get_heartbeat`, except explicit creation (`POST /v1/heartbeats`), which still returns them for setup. Attach-alert responses are compacted with the existing alert allowlist, which drops the embedded internal incident records and meeting credentials. (#235)
+
+### Added
+
+- **Incident retrospectives are readable**: new read-only tools `get_incident_retrospective` (follows the incident's `incident_post_mortem` relationship, since `/post_mortems` can't be filtered by incident) and `list_incident_post_mortems` (filters by status, severity, team, service and date ranges, with a page-size cap because each result carries its full document). Four allowlist entries named paths that don't exist (`/post_incident_reviews`, `/postmortem_templates`), so no retrospective tools were generated before. Write operations stay unexposed. (#231)
+
+### Fixed
+
+- **Incident writes validate severity IDs** before sending, and unsupported retrospective status changes are rejected before any field is updated. (#235)
+- **On-call results are accurate**: overlapping shifts are calculated per schedule with responder identity preserved, availability hours are clipped to the requested window, severity filters resolve against the tenant's configured severities, and incomplete schedule reads fail instead of reporting an empty result. (#235)
+
 ## [2.3.21] - Released 2026-10-05
 
 ### Changed
