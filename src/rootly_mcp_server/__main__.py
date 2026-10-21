@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from . import __version__, server_defaults
 from .code_mode import (
@@ -40,6 +40,10 @@ from .telemetry_scrubber import (
     scrub_event_arguments,
 )
 from .transport import _session_auth_token, get_hosted_authenticated_user
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import Response
 
 TransportName = Literal["stdio", "sse", "streamable-http", "both"]
 TRANSPORT_ALIASES: dict[str, TransportName] = {
@@ -545,6 +549,33 @@ async def _get_sorted_tool_names(server) -> list[str]:
 mcp = get_server() if __name__ != "__main__" else None
 
 
+async def _forward_streamable_http_request(selected_app: Any, request: "Request") -> "Response":
+    """Hand a streamable-HTTP request to the MCP ASGI app.
+
+    A client that hangs up before its POST body arrives makes
+    ``Request.body()`` raise ``ClientDisconnect``. mcp 2.x's handler for
+    2026-07-28-era requests (``handle_modern_request``) does not catch it,
+    so without this it reaches uvicorn as "Exception in ASGI application"
+    with a full traceback for what is ordinary client behaviour.
+
+    Only ``ClientDisconnect`` is caught. Nothing is written for it: the
+    returned empty ``Response`` is the same trailer every request already
+    gets, and uvicorn drops sends once the connection is gone.
+    """
+    from starlette.requests import ClientDisconnect
+    from starlette.responses import Response
+
+    try:
+        await selected_app(request.scope, request.receive, request._send)  # noqa: SLF001
+    except ClientDisconnect:
+        logging.getLogger(__name__).debug(
+            "Client disconnected before the %s %s request was read",
+            request.method,
+            request.url.path,
+        )
+    return Response()
+
+
 def run_dual_http_server(
     server,
     log_level: str,
@@ -636,8 +667,7 @@ def run_dual_http_server(
             default_profile=default_tool_profile,
         )
         selected_app = streamable_http_apps[selected_profile]
-        await selected_app(request.scope, request.receive, request._send)  # noqa: SLF001
-        return Response()
+        return await _forward_streamable_http_request(selected_app, request)
 
     # Always allow POST for streamable HTTP - stateless mode only affects session persistence
     streamable_methods = ["POST", "DELETE"]
@@ -674,8 +704,7 @@ def run_dual_http_server(
                 default_profile=default_tool_profile,
             )
             selected_app = code_mode_http_apps[selected_profile]
-            await selected_app(request.scope, request.receive, request._send)  # noqa: SLF001
-            return Response()
+            return await _forward_streamable_http_request(selected_app, request)
 
         routes.append(
             Route(code_mode_path, endpoint=code_mode_endpoint, methods=streamable_methods)
@@ -808,8 +837,7 @@ def run_profiled_streamable_http_server(
         )
         selected_profile = profile if profile in streamable_http_apps else default_tool_profile
         selected_app = streamable_http_apps[selected_profile]
-        await selected_app(request.scope, request.receive, request._send)  # noqa: SLF001
-        return Response()
+        return await _forward_streamable_http_request(selected_app, request)
 
     routes: list[BaseRoute] = [
         Route(streamable_path, endpoint=streamable_http_endpoint, methods=["POST", "DELETE"])
