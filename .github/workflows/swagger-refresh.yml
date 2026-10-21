@@ -1,0 +1,152 @@
+name: Swagger Refresh
+
+# Weekly: pull the live Rootly OpenAPI spec into the bundled swagger.json and,
+# when it changed, open (or update) one pull request describing the change.
+# The audit and the unit tests run here before the PR is written, because a PR
+# opened with GITHUB_TOKEN does not trigger the pull_request workflows (see the
+# note in the PR body). Nothing here merges or approves the PR.
+
+on:
+  schedule:
+    - cron: "41 13 * * 1" # Mondays 13:41 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: swagger-refresh
+  cancel-in-progress: false
+
+env:
+  SPEC_PATH: src/rootly_mcp_server/data/swagger.json
+  PR_BRANCH: chore/refresh-swagger
+
+jobs:
+  refresh:
+    name: Refresh bundled swagger
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'rootlyhq/rootly-mcp-server' }}
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # create-pull-request configures its own token for the push, so the
+          # audit and test steps run without a credential in .git/config.
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@7eb50e6e20e1e2009087999ba91242e80253875f # v7
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Snapshot bundled swagger
+        run: cp "$SPEC_PATH" "$RUNNER_TEMP/swagger.bundled.json"
+
+      # Same command as `make fetch-spec`: the bundled file is the served bytes,
+      # unmodified, so the PR diff is exactly what changed upstream.
+      - name: Fetch live swagger
+        id: fetch
+        run: |
+          make fetch-spec
+          python -m json.tool "$SPEC_PATH" > /dev/null
+          spec_url="$(sed -n 's/^SPEC_URL *:= *//p' Makefile)"
+          last_modified="$(curl -fsSI "$spec_url" | tr -d '\r' | sed -n 's/^[Ll]ast-[Mm]odified: //p')"
+          echo "last_modified=${last_modified}" >> "$GITHUB_OUTPUT"
+
+      - name: Detect change
+        id: change
+        run: |
+          if git diff --quiet -- "$SPEC_PATH"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Bundled swagger already matches the live spec." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Audit refreshed swagger
+        id: audit
+        if: ${{ steps.change.outputs.changed == 'true' }}
+        continue-on-error: true
+        run: uv run python scripts/audit_openapi.py --filtered-defaults --instantiate-server
+
+      - name: Run unit tests against refreshed swagger
+        id: tests
+        if: ${{ steps.change.outputs.changed == 'true' }}
+        continue-on-error: true
+        run: uv run pytest tests/unit -q --no-cov
+
+      - name: Summarize diff
+        if: ${{ steps.change.outputs.changed == 'true' }}
+        run: >
+          uv run python scripts/swagger_diff.py
+          --old "$RUNNER_TEMP/swagger.bundled.json"
+          --new "$SPEC_PATH"
+          --tools
+          --output "$RUNNER_TEMP/swagger-diff.md"
+
+      - name: Compose PR body
+        if: ${{ steps.change.outputs.changed == 'true' }}
+        env:
+          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          LAST_MODIFIED: ${{ steps.fetch.outputs.last_modified }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          mark() { [ "$1" = success ] && echo "passed" || echo "**FAILED**"; }
+          {
+            echo "Automated refresh of \`$SPEC_PATH\` from the live Rootly spec (\`make fetch-spec\`, served bytes unmodified; Last-Modified: ${LAST_MODIFIED:-unknown})."
+            echo
+            echo "| Check (run in [the workflow]($RUN_URL)) | Result |"
+            echo "| --- | --- |"
+            echo "| \`scripts/audit_openapi.py --filtered-defaults --instantiate-server\` | $(mark "$AUDIT_OUTCOME") |"
+            echo "| \`pytest tests/unit\` | $(mark "$TESTS_OUTCOME") |"
+            echo
+            echo "> [!NOTE]"
+            echo "> Opened by the weekly Swagger Refresh workflow and never merged automatically: review the summary below and merge by hand."
+            echo "> PRs opened with \`GITHUB_TOKEN\` do not start the \`pull_request\` workflows; close and reopen this PR (or push to it) to run CI."
+            echo "> The branch is rewritten on every run while the PR is open, so do not push changes you want to keep to it."
+            echo
+            cat "$RUNNER_TEMP/swagger-diff.md"
+          } > "$RUNNER_TEMP/pr-body.md"
+          cat "$RUNNER_TEMP/pr-body.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open or update pull request
+        id: pr
+        if: ${{ steps.change.outputs.changed == 'true' }}
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          branch: ${{ env.PR_BRANCH }}
+          base: main
+          add-paths: ${{ env.SPEC_PATH }}
+          commit-message: "chore: refresh bundled swagger.json from live spec"
+          title: "chore: refresh bundled swagger.json from live spec"
+          body-path: ${{ runner.temp }}/pr-body.md
+          labels: swagger-refresh
+          delete-branch: true
+          # A refresh that fails the audit or the tests still gets a PR, so the
+          # change is visible, but as a draft.
+          draft: ${{ steps.audit.outcome != 'success' || steps.tests.outcome != 'success' }}
+
+      - name: Report
+        if: ${{ steps.change.outputs.changed == 'true' }}
+        env:
+          PR_URL: ${{ steps.pr.outputs.pull-request-url }}
+          PR_OPERATION: ${{ steps.pr.outputs.pull-request-operation }}
+          AUDIT_OUTCOME: ${{ steps.audit.outcome }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+        run: |
+          echo "Pull request ${PR_OPERATION:-unchanged}: ${PR_URL:-n/a}" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$AUDIT_OUTCOME" != success ] || [ "$TESTS_OUTCOME" != success ]; then
+            echo "::error::The refreshed swagger fails the audit or the unit tests; see the draft PR."
+            exit 1
+          fi
