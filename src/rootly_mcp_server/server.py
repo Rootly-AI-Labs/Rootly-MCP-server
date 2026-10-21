@@ -17,6 +17,7 @@ from typing import Any
 import fastmcp.server.middleware as fastmcp_middleware
 import mcp.types as mt
 from fastmcp import FastMCP
+from fastmcp.exceptions import ToolError
 
 from . import audit, legacy_server, payload_stripping, server_defaults, spec_transform, transport
 from .exceptions import RootlyAuthenticationError
@@ -628,6 +629,96 @@ class InjectedToolAnnotationMiddleware(fastmcp_middleware.Middleware):
         return tools
 
 
+def _openapi_path_arguments(tool: Any) -> tuple[str, str, list[str]] | None:
+    """Return (method, path template, path argument names) for an autogen OpenAPI tool.
+
+    Curated tools have no HTTP route and return None. Argument names come from
+    FastMCP's parameter map so a collision-suffixed name (`id__path`) is
+    reported exactly as the tool schema advertises it.
+    """
+    route = getattr(tool, "_route", None)
+    path = getattr(route, "path", None)
+    if route is None or not isinstance(path, str) or "{" not in path:
+        return None
+    parameter_map = getattr(route, "parameter_map", None) or {}
+    names = [
+        arg_name
+        for arg_name, mapping in parameter_map.items()
+        if isinstance(mapping, dict) and mapping.get("location") == "path"
+    ]
+    if not names:
+        names = [
+            param.name
+            for param in getattr(route, "parameters", None) or []
+            if getattr(param, "location", None) == "path"
+        ]
+    if not names:
+        return None
+    return str(getattr(route, "method", "GET")).upper(), path, names
+
+
+def _is_blank_argument(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+class PathArgumentValidationMiddleware(fastmcp_middleware.Middleware):
+    """Rejects autogen OpenAPI tool calls that omit a required URL path argument.
+
+    FastMCP's OpenAPI tools do not validate arguments against the advertised
+    schema: an unknown argument is silently dropped and a missing path
+    argument leaves the `{param}` template in the URL. The transport guard then
+    fails with a message that names neither the tool nor the argument to pass,
+    so the model retries with the same wrong name. Production telemetry for
+    ROOTLY-MCP-7S shows `get_alert(alert_id=...)`, `get_team(team_id=...)`,
+    `get_cause(cause_id=...)` etc. against `/v1/<resource>/{id}` templates.
+
+    This check runs before the request is built and tells the model exactly
+    which argument is missing and which of its arguments the tool does not
+    accept. It never renames arguments itself: guessing that `alert_id` means
+    `id` would be right here but wrong for e.g. `get_incident_action_items`
+    called with `incident_id`, where the model has confused two resources.
+    """
+
+    async def on_call_tool(
+        self,
+        context: fastmcp_middleware.MiddlewareContext[mt.CallToolRequestParams],
+        call_next: fastmcp_middleware.CallNext[mt.CallToolRequestParams, Any],
+    ) -> Any:
+        if context.fastmcp_context is None:
+            return await call_next(context)
+        tool_name = context.message.name
+        try:
+            tool = await context.fastmcp_context.fastmcp.get_tool(tool_name)
+        except Exception:
+            tool = None
+        route_info = _openapi_path_arguments(tool) if tool is not None else None
+        if route_info is None:
+            return await call_next(context)
+
+        method, path, path_args = route_info
+        args = context.message.arguments or {}
+        missing = [name for name in path_args if _is_blank_argument(args.get(name))]
+        if not missing:
+            return await call_next(context)
+
+        declared = set((getattr(tool, "parameters", None) or {}).get("properties", {}))
+        unrecognized = sorted(name for name in args if name not in declared)
+        missing_list = ", ".join(f"'{name}'" for name in missing)
+        plural = len(missing) > 1
+        message = (
+            f"{tool_name} requires the path argument{'s' if plural else ''} {missing_list} "
+            f"for {method} {path}, but {'they were' if plural else 'it was'} not provided."
+        )
+        if unrecognized:
+            message += (
+                f" This tool does not accept {', '.join(repr(name) for name in unrecognized)}"
+                f" -- {'those arguments were' if len(unrecognized) > 1 else 'it was'} ignored."
+            )
+        example = ", ".join(f'"{name}": "<value>"' for name in missing)
+        message += f" Retry with {{{example}}}."
+        raise ToolError(message)
+
+
 class ToolUsageLoggingMiddleware(fastmcp_middleware.Middleware):
     """FastMCP middleware that logs per-tool usage with caller identity context."""
 
@@ -842,6 +933,8 @@ def create_rootly_mcp_server(
     mcp.add_middleware(LegacyContextArgumentMiddleware())
     mcp.add_middleware(InjectedToolAnnotationMiddleware())
     mcp.add_middleware(ToolUsageLoggingMiddleware())
+    # Innermost, so usage logging still records the rejected call and its arg keys.
+    mcp.add_middleware(PathArgumentValidationMiddleware())
 
     @mcp.custom_route("/healthz", methods=["GET"])
     @mcp.custom_route("/health", methods=["GET"])
