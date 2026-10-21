@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import builtins
 import difflib
+import json
 import keyword
 import logging
+import math
 import os
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
-from fastmcp.exceptions import NotFoundError, ToolError
+import fastmcp.server.middleware as fastmcp_middleware
+import mcp.types as mt
+from fastmcp.exceptions import NotFoundError, ToolError, ValidationError
 from fastmcp.experimental.transforms.code_mode import (
     CodeMode,
     GetSchemas,
@@ -26,6 +30,7 @@ from fastmcp.server.context import Context
 from fastmcp.tools import Tool
 from mcp.types import ToolAnnotations
 from pydantic import Field
+from pydantic import ValidationError as PydanticValidationError
 
 from .server import create_rootly_mcp_server
 from .spec_transform import to_snake_case
@@ -75,8 +80,64 @@ _TOOL_NAME_PREFIXES = (
 _GENERIC_MCP_PREFIX = re.compile(r"^mcp__.+?__(?=.)")
 _MAX_TOOL_SUGGESTIONS = 3
 _UNDEFINED_NAME = re.compile(r"name '([^']+)' is not defined")
+_CALL_TOOL_FAILURE = re.compile(r"call_tool\('[^']*'\) failed: ")
+_INTROSPECTION_BUILTINS = frozenset({"dir", "globals", "locals", "vars"})
+# Monty reports a clock read as "RuntimeError: 'datetime.now' is not supported
+# in this environment"; older releases said "OS function 'datetime.now' not
+# implemented".
+_NO_CLOCK = re.compile(
+    r"OS function|'(?:datetime|date)\.\w+' (?:is )?not (?:supported|implemented)"
+)
+# Scripts that guessed the shape of a call_tool result. Monty raises these as
+# MontyRuntimeError, so they are recognized by message, not exception type.
+_RESULT_SHAPE_ERROR = re.compile(
+    r"^KeyError: "
+    r"|'(?:str|dict|list)' object has no attribute "
+    r"|(?:str|list) indices must be integers"
+    r"|'NoneType' object is not subscriptable"
+)
+_RESULT_SHAPE_HINT = (
+    "call_tool returns the tool's result directly, with no 'result' wrapper: a dict "
+    "such as the JSON:API body {'data': [...], 'meta': {...}} for API tools, or the "
+    "tool's own keys for custom tools (list_incidents returns 'incidents' and "
+    "'pagination'). Return the value once to inspect its keys, and use .get() for "
+    "keys that may be missing."
+)
 _TOOL_NAME_ALIASES = {
     "search": "tool_search",
+}
+# Same markers fastmcp's own Code Mode uses to recognize a validation failure
+# that reached call_tool as plain text rather than a ValidationError.
+_VALIDATION_ERROR_MARKERS = (
+    "validation error for",
+    "unexpected keyword argument",
+    "missing required argument",
+)
+# Parameter names models send that a Rootly tool spells differently, mapped
+# to the real names to suggest, in preference order (the first one the tool
+# declares wins). Observed in production Code Mode failures. An empty tuple
+# means "no equivalent": it also stops the fuzzy fallback, which would
+# otherwise suggest started_after for updated_after -- a different filter.
+_START_SYNONYMS = ("started_after", "start_date", "from_date")
+_END_SYNONYMS = ("started_before", "end_date", "to_date")
+_LIMIT_SYNONYMS = ("page_size", "max_results")
+_PARAMETER_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "start_time": _START_SYNONYMS,
+    "start_date": _START_SYNONYMS,
+    "start": _START_SYNONYMS,
+    "from": _START_SYNONYMS,
+    "since": _START_SYNONYMS,
+    "end_time": _END_SYNONYMS,
+    "end_date": _END_SYNONYMS,
+    "end": _END_SYNONYMS,
+    "to": _END_SYNONYMS,
+    "until": _END_SYNONYMS,
+    "max_results": ("page_size",),
+    "limit": _LIMIT_SYNONYMS,
+    "per_page": _LIMIT_SYNONYMS,
+    "count": _LIMIT_SYNONYMS,
+    "updated_after": (),
+    "updated_before": (),
 }
 
 
@@ -214,6 +275,58 @@ def resolve_tool_name(requested: str, tools: Sequence[Tool]) -> ToolNameResoluti
     return ToolNameResolution(name, suggestions=tuple(suggestions[:_MAX_TOOL_SUGGESTIONS]))
 
 
+def _suggest_parameter(name: str, properties: Sequence[str]) -> str | None:
+    """Return the real parameter a mistyped ``name`` most likely meant."""
+    synonyms = _PARAMETER_SYNONYMS.get(name)
+    if synonyms is not None:
+        for candidate in synonyms:
+            if candidate in properties:
+                return candidate
+        if not synonyms:
+            return None
+    matches = difflib.get_close_matches(name, list(properties), n=1)
+    return matches[0] if matches else None
+
+
+def _legible_call_error(tool_name: str, tool: Tool, error: Exception) -> str:
+    """Rewrite a failed call's error for the model that wrote the script.
+
+    Ported from fastmcp's Code Mode: validation failures list each problem as
+    ``<param>: <message>`` and append the tool's parameter list, always in the
+    name the caller used. On top of that, every unexpected argument gets a
+    "did you mean" pointing at the real parameter. Pydantic's own messages
+    already enumerate the allowed values of a literal (e.g. ``sort``), so
+    those are kept verbatim.
+    """
+    raw_parameters = getattr(tool, "parameters", None)
+    parameters = raw_parameters if isinstance(raw_parameters, dict) else {}
+    properties = parameters.get("properties")
+    names = list(properties) if isinstance(properties, dict) else []
+
+    validation = isinstance(error, ValidationError)
+    cause = error.__cause__
+    if validation and isinstance(cause, PydanticValidationError):
+        problems: list[str] = []
+        for item in cause.errors(include_url=False):
+            loc = ".".join(str(part) for part in item["loc"]) or "arguments"
+            problem = f"{loc}: {item['msg']}"
+            if item["type"] == "unexpected_keyword_argument":
+                suggestion = _suggest_parameter(loc, names)
+                if suggestion is not None:
+                    problem += f" (did you mean {suggestion!r}?)"
+            problems.append(problem)
+        text = "; ".join(problems)
+    else:
+        text = str(error)
+
+    message = f"call_tool({tool_name!r}) failed: {text}"
+    if names and (validation or any(m in text.lower() for m in _VALIDATION_ERROR_MARKERS)):
+        required = set(parameters.get("required") or [])
+        listed = ", ".join(name + ("*" if name in required else "") for name in names)
+        message += f"\nValid parameters for {tool_name} (* = required): {listed}"
+    return message
+
+
 # Names a bare tool callable must never shadow inside the sandbox.
 _RESERVED_SANDBOX_NAMES = frozenset(dir(builtins)) | {"call_tool"}
 
@@ -278,9 +391,56 @@ def _format_execute_exception(exc: Exception, tools: Sequence[Tool] = ()) -> str
     if not message:
         return None
 
+    # A failed call_tool already names the tool, the problem and the valid
+    # parameters (see _legible_call_error); nothing below would add to it.
+    if _CALL_TOOL_FAILURE.search(message):
+        return None
+
     undefined = _UNDEFINED_NAME.search(message)
     if undefined and (isinstance(exc, NameError) or "NameError" in message):
-        return _undefined_name_message(undefined.group(1), tools)
+        missing = undefined.group(1)
+        if missing in _INTROSPECTION_BUILTINS:
+            return (
+                f"{message}. Introspection builtins (dir, globals, locals, vars) are not "
+                "available in the Code Mode sandbox. Use tool_search / get_schema to "
+                "discover tools and their parameters, and `return` a value to inspect it."
+            )
+        if missing == "datetime":
+            return (
+                f"{message}. Add `import datetime` first. The sandbox has no clock, so "
+                "datetime.now() is unavailable: pass explicit ISO 8601 timestamps."
+            )
+        return _undefined_name_message(missing, tools)
+
+    if "unsupported operand type(s) for |: 'dict' and 'dict'" in message:
+        return (
+            f"{message}. The Code Mode sandbox does not support `|` on dicts; merge "
+            "them with `{**a, **b}` instead."
+        )
+
+    if _NO_CLOCK.search(message):
+        return (
+            f"{message}. The Code Mode sandbox has no clock or OS access, so "
+            "datetime.now() / date.today() are unavailable. Pass explicit ISO 8601 "
+            "timestamps (e.g. '2026-01-01T00:00:00Z'), or derive dates from one you "
+            "already have: `datetime.datetime.fromisoformat(s) - datetime.timedelta(days=7)`."
+        )
+
+    if "object is not an iterator" in message:
+        return (
+            f"{message}. next() needs an iterator: use `next(iter(items), None)`, or "
+            "index the list directly (`items[0] if items else None`)."
+        )
+
+    if "not supported between instances of" in message:
+        return (
+            f"{message}. Sort or compare by a plain value, e.g. "
+            "`sorted(items, key=lambda item: item.get('id') or '')`, and give "
+            "missing values a default so None never meets a str or int."
+        )
+
+    if _RESULT_SHAPE_ERROR.search(message):
+        return f"{message}. {_RESULT_SHAPE_HINT}"
 
     if _TOOL_CALL_LIMIT_MARKER in message:
         return (
@@ -316,13 +476,6 @@ def _format_execute_exception(exc: Exception, tools: Sequence[Tool] = ()) -> str
             f"{message}. Code Mode supports a restricted Python subset. Keep the block "
             "simple: assign intermediate values to variables, call `await call_tool(...)`, "
             "and `return` the final value."
-        )
-
-    if isinstance(exc, TypeError) and "NoneType" in message and "subscriptable" in message:
-        return (
-            f"{message}. Code Mode tried to read a field from a missing result. Check "
-            "that each `call_tool(...)` response contains the keys you expect before "
-            "indexing into it."
         )
 
     return None
@@ -385,7 +538,10 @@ class RootlyCodeMode(CodeMode):
                 if resolution.tool is None:
                     raise NotFoundError(resolution.error_message())
 
-                result = await ctx.fastmcp.call_tool(resolution.tool.name, params or {})
+                try:
+                    result = await ctx.fastmcp.call_tool(resolution.tool.name, params or {})
+                except (ToolError, ValidationError) as exc:
+                    raise ToolError(_legible_call_error(tool_name, resolution.tool, exc)) from exc
                 return _unwrap_tool_result(result)
 
             def bare_tool_function(tool: Tool) -> Callable[..., Any]:
@@ -435,6 +591,134 @@ class RootlyCodeMode(CodeMode):
         )
 
 
+# Every tool parameter named here must exist in that tool's schema;
+# tests/unit/test_code_mode_module.py checks it against the built server.
+EXECUTE_DESCRIPTION = (
+    "Write a short async Python block that chains `await call_tool(name, params)` calls to "
+    "complete a Rootly workflow, and `return` the final value. Use tool_search or get_schema "
+    "to discover tools, then pass only the parameter names that tool's schema lists. "
+    "call_tool returns the tool's result directly, with no 'result' wrapper: a dict such as "
+    "the JSON:API body {'data': [...], 'meta': {...}} for API tools, or the tool's own keys "
+    "for custom tools (list_incidents returns 'incidents' and 'pagination'); return it once "
+    "to inspect its keys. Prefer Rootly's higher-level custom tools when they fit the task, "
+    "then fall back to lower-level API tools. Use list_incidents for structured incident "
+    "queries with filters like teams, team_ids, service_ids, severity, status, started_after, "
+    "and started_before (ISO 8601 timestamps), paged with page_size and page_number; use "
+    "collect_incidents with the same filters and max_results to gather incidents across "
+    "pages; use search_incidents for free-text lookups with query, page_size, and "
+    "max_results. Do not use client prefixes like mcp__rootly-codemode__tool_search or "
+    "rootly:get_current_user inside execute; call tool_search or the raw Rootly tool name "
+    "directly. Avoid imports such as json or asyncio and return native Python values; the "
+    "sandbox has no clock, so pass explicit dates instead of calling datetime.now(). "
+    "Example: await call_tool('list_incidents', {'status': 'resolved', "
+    "'started_after': '2026-01-01T00:00:00Z', 'page_size': 10})."
+)
+
+_EXECUTE_TOOL_KEYS = ("tool", "tool_name", "name")
+_EXECUTE_ARGUMENT_KEYS = ("arguments", "params", "args", "parameters")
+_EXECUTE_EXAMPLE = "{\"code\": \"return await call_tool('list_incidents', {'page_size': 5})\"}"
+
+
+def _is_literal_value(value: Any) -> bool:
+    """True when ``repr(value)`` is a Python literal that evaluates back to it.
+
+    Holds for decoded JSON: None, bool, int, finite float, str, and lists and
+    str-keyed dicts of those.
+    """
+    if value is None or isinstance(value, bool | int | str):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, list):
+        return all(_is_literal_value(item) for item in value)
+    if isinstance(value, dict):
+        return all(isinstance(k, str) and _is_literal_value(v) for k, v in value.items())
+    return False
+
+
+def _first_present(arguments: dict[str, Any], keys: Sequence[str]) -> str | None:
+    return next((key for key in keys if key in arguments), None)
+
+
+def execute_code_for_call_shape(arguments: dict[str, Any]) -> str:
+    """Translate a call_tool-shaped execute request into the equivalent code.
+
+    Models call ``execute`` the way they call ``call_tool`` --
+    ``{"tool": "list_incidents", "arguments": {...}}`` -- with no ``code``.
+    Rather than fail, run ``return await call_tool(<tool>, <arguments>)``:
+    the call takes the same path as any script (name resolution, tool call
+    limit, session catalog), so it can reach nothing a script could not.
+
+    Raises ToolError, with an example of the right shape, when the request
+    cannot be translated.
+    """
+    tool_key = _first_present(arguments, _EXECUTE_TOOL_KEYS)
+    tool = arguments.get(tool_key) if tool_key else None
+    if not isinstance(tool, str) or not tool.strip():
+        keys = ", ".join(sorted(arguments)) or "none"
+        raise ToolError(
+            "execute takes one argument, `code`: an async Python block that calls "
+            f"Rootly tools with `await call_tool(name, params)`, e.g. {_EXECUTE_EXAMPLE}. "
+            f"Got arguments: {keys}."
+        )
+
+    rest = {key: value for key, value in arguments.items() if key != tool_key}
+    params_key = _first_present(rest, _EXECUTE_ARGUMENT_KEYS)
+    if params_key is None:
+        # {"tool": "list_incidents", "page_size": 5}: the rest are the params.
+        params: Any = rest
+    else:
+        params = rest.pop(params_key)
+        if params is None:
+            params = {}
+        elif isinstance(params, str):
+            try:
+                params = json.loads(params) if params.strip() else {}
+            except ValueError:
+                params = None  # rejected below with the shape to use
+
+    example = f"return await call_tool({tool!r}, {{...}})"
+    if params_key is not None and rest:
+        raise ToolError(
+            f"execute got both {params_key!r} and other arguments "
+            f"({', '.join(sorted(rest))}); pass a single `code` argument instead, "
+            f"e.g. {{'code': {example!r}}}."
+        )
+    if not isinstance(params, dict) or not _is_literal_value(params):
+        raise ToolError(
+            f"execute could not read the arguments for {tool!r}: pass them as a JSON "
+            f"object, or pass a single `code` argument, e.g. {{'code': {example!r}}}."
+        )
+    return f"return await call_tool({tool!r}, {params!r})"
+
+
+class ExecuteCallShapeMiddleware(fastmcp_middleware.Middleware):
+    """Accepts ``execute(tool=..., arguments=...)`` by rewriting it to ``code``.
+
+    Runs before argument validation, so the advertised execute schema stays a
+    single required ``code`` string. A request that already has ``code`` is
+    never touched. Registered only on the Code Mode server.
+    """
+
+    def __init__(self, execute_tool_name: str = "execute") -> None:
+        self._execute_tool_name = execute_tool_name
+
+    async def on_call_tool(
+        self,
+        context: fastmcp_middleware.MiddlewareContext[mt.CallToolRequestParams],
+        call_next: fastmcp_middleware.CallNext[mt.CallToolRequestParams, Any],
+    ) -> Any:
+        arguments = context.message.arguments
+        if context.message.name == self._execute_tool_name and "code" not in (arguments or {}):
+            code = execute_code_for_call_shape(dict(arguments or {}))
+            logger.info(
+                "Rewrote a call_tool-shaped execute request (keys: %s) into code",
+                ", ".join(sorted(arguments or {})),
+            )
+            context.message.arguments = {"code": code}
+        return await call_next(context)
+
+
 def build_code_mode_transform(max_tool_calls: int | None = None) -> CodeMode:
     """Build the shared Code Mode transform used by hosted deployments.
 
@@ -452,22 +736,7 @@ def build_code_mode_transform(max_tool_calls: int | None = None) -> CodeMode:
             GetSchemas(default_detail="detailed"),
             GetTags(default_detail="brief"),
         ],
-        execute_description=(
-            "Write a short async Python block and chain await call_tool(name, params) calls "
-            "to complete a Rootly workflow. Use tool_search only to discover tools and their "
-            "schemas, then call the actual Rootly tool with the exact parameter names shown in "
-            "the schema. For paginated data tools, pass pagination arguments like page_size, "
-            "page_number, and max_results exactly as documented by that tool instead of inventing "
-            "alternatives like per_page. Prefer Rootly's higher-level custom tools when they fit "
-            "the task, then fall back to lower-level API tools as needed. Use list_incidents for "
-            "structured incident queries with filters like teams, team_ids, start_time, end_time, "
-            "severity, or status; use search_incidents for lightweight free-text lookups. Do not use client "
-            "prefixes like mcp__rootly-codemode__tool_search or rootly:get_current_user inside "
-            "execute; call tool_search or the raw Rootly tool name directly. Avoid imports "
-            "such as json or asyncio inside the sandbox and return native Python values instead. Example: "
-            "await call_tool('search_incidents', {'query': '', 'page_size': 1, 'page_number': 1, "
-            "'max_results': 1}). Use return to emit the final result."
-        ),
+        execute_description=EXECUTE_DESCRIPTION,
     )
 
 
@@ -491,5 +760,7 @@ def create_rootly_codemode_server(
         enable_write_tools=enable_write_tools,
         enabled_tools=enabled_tools,
     )
-    mcp.add_transform(build_code_mode_transform())
+    transform = build_code_mode_transform()
+    mcp.add_transform(transform)
+    mcp.add_middleware(ExecuteCallShapeMiddleware(transform.execute_tool_name))
     return mcp

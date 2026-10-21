@@ -11,6 +11,8 @@ from fastmcp.tools.function_tool import FunctionTool
 from rootly_mcp_server.code_mode import (
     DEFAULT_CODE_MODE_MAX_TOOL_CALLS,
     DEFAULT_CODE_MODE_PATH,
+    EXECUTE_DESCRIPTION,
+    ExecuteCallShapeMiddleware,
     RootlyCodeMode,
     _format_execute_exception,
     build_code_mode_transform,
@@ -54,17 +56,23 @@ def test_build_code_mode_transform_uses_expected_discovery_tools():
     assert discovery_names == ["list_tools", "tool_search", "get_schema", "tags"]
 
 
-def test_build_code_mode_transform_includes_pagination_guidance():
+def test_build_code_mode_transform_includes_call_guidance():
     transform = build_code_mode_transform()
-    assert transform.execute_description is not None
+    description = transform.execute_description
+    assert description == EXECUTE_DESCRIPTION
 
-    assert "tool_search only to discover tools" in transform.execute_description
-    assert "page_size, page_number, and max_results" in transform.execute_description
-    assert "per_page" in transform.execute_description
-    assert "mcp__rootly-codemode__tool_search" in transform.execute_description
-    assert "rootly:get_current_user" in transform.execute_description
-    assert "Avoid imports such as json or asyncio" in transform.execute_description
-    assert "await call_tool('search_incidents'" in transform.execute_description
+    assert "tool_search or get_schema" in description
+    assert "started_after" in description
+    assert "page_size and page_number" in description
+    assert "no 'result' wrapper" in description
+    assert "mcp__rootly-codemode__tool_search" in description
+    assert "rootly:get_current_user" in description
+    assert "Avoid imports such as json or asyncio" in description
+    assert "await call_tool('list_incidents'" in description
+    # Never names a parameter the tools do not take (Sentry: list_incidents
+    # start_time/end_time, max_results on list_incidents).
+    for invented in ("start_time", "end_time", "per_page"):
+        assert invented not in description
 
 
 def test_create_rootly_codemode_server_adds_code_mode_transform():
@@ -73,6 +81,7 @@ def test_create_rootly_codemode_server_adds_code_mode_transform():
         (),
         {
             "add_transform": lambda self, transform: setattr(self, "_transform", transform),
+            "add_middleware": lambda self, middleware: setattr(self, "_middleware", middleware),
         },
     )()
 
@@ -91,6 +100,7 @@ def test_create_rootly_codemode_server_adds_code_mode_transform():
 
     assert server is mock_transform_server
     assert isinstance(server._transform, CodeMode)  # type: ignore[attr-defined]  # noqa: SLF001
+    assert isinstance(server._middleware, ExecuteCallShapeMiddleware)  # type: ignore[attr-defined]  # noqa: SLF001
     mock_create.assert_called_once_with(
         swagger_path="swagger.json",
         name="Rootly Code Mode",
