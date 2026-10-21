@@ -27,7 +27,7 @@ RUN uv pip install --system --no-cache-dir -e .
 # after installation. This version must match the pydantic pin in pyproject.toml;
 # test_dependency_pins.py fails if the two drift apart.
 RUN uv pip install --system --no-cache-dir "agentcat[community]==2.1.0" \
-    && uv pip install --system --no-cache-dir pydantic==2.13.5
+    && uv pip install --system --no-cache-dir pydantic==2.14.1
 
 # Create non-root user
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
