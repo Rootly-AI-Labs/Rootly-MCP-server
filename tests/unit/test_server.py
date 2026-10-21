@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, mock_open, patch
 
-import httpx
+import httpx2
 import mcp.types as mt
 import pytest
 
@@ -602,9 +602,9 @@ class TestListAlertsParamSerialization:
         async def fake_send(request, **kwargs):
             captured["url"] = str(request.url)
             captured["params"] = dict(request.url.params)
-            return httpx.Response(200, request=request, content=b'{"data":[]}')
+            return httpx2.Response(200, request=request, content=b'{"data":[]}')
 
-        # Patch the inner httpx client so we capture the final, fully-serialized
+        # Patch the inner httpx2 client so we capture the final, fully-serialized
         # request after the wrapper's parameter transformation runs.
         tool._client.client.send = fake_send
 

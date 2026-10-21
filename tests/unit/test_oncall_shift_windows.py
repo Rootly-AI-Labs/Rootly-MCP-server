@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
-import httpx
+import httpx2
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -1043,7 +1043,7 @@ class TestTransportErrorsAreRetried:
             if path == "/v1/shifts":
                 attempts["n"] += 1
                 if attempts["n"] == 1:
-                    raise httpx.ConnectError("connection reset")
+                    raise httpx2.ConnectError("connection reset")
                 return _ok({"data": [_shift("S1")], "meta": {"total_pages": 1}})
             return _ok({"data": [], "meta": {"total_pages": 1}})
 
@@ -1064,7 +1064,7 @@ class TestTransportErrorsAreRetried:
             if path == "/v1/shifts":
                 attempts["n"] += 1
                 if attempts["n"] == 1:
-                    raise httpx.ReadTimeout("timed out")
+                    raise httpx2.ReadTimeout("timed out")
                 return _ok({"data": [_shift("S1")], "meta": {"total_pages": 1}})
             return _ok({"data": [], "meta": {"total_pages": 1}})
 
@@ -1084,7 +1084,7 @@ class TestTransportErrorsAreRetried:
         async def responder(method, path, params=None, **kwargs):
             if path == "/v1/shifts":
                 attempts["n"] += 1
-                raise httpx.ConnectError("down")
+                raise httpx2.ConnectError("down")
             return _ok({"data": [], "meta": {"total_pages": 1}})
 
         tools = _build_tools(responder)

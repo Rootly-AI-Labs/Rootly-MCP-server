@@ -1201,6 +1201,19 @@ class TestHttpxRequestLoggingIsQuiet:
         # Someone who asked for DEBUG wants to see every request.
         assert self._run("DEBUG") != logging.WARNING
 
+    def test_httpx2_per_request_lines_are_silenced_too(self):
+        # The Rootly API client is httpx2, which logs under its own name.
+        from rootly_mcp_server.__main__ import setup_logging
+
+        touched = [logging.getLogger(n) for n in ("httpx2", "httpx", "rootly_mcp_server", "mcp")]
+        previous = [lg.level for lg in touched]
+        try:
+            setup_logging("INFO")
+            assert logging.getLogger("httpx2").level == logging.WARNING
+        finally:
+            for lg, level in zip(touched, previous, strict=True):
+                lg.setLevel(level)
+
     def test_our_own_loggers_are_untouched(self):
         # The reduction must not come at the cost of our own diagnostics.
         from rootly_mcp_server.__main__ import setup_logging

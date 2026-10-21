@@ -9,11 +9,14 @@ import json
 import logging
 import os
 import re
+import ssl
 import time
 from datetime import UTC, datetime
 from typing import Any
 
+import certifi
 import httpx
+import httpx2
 
 from .exceptions import RootlyValidationError
 from .security import mask_sensitive_data
@@ -170,7 +173,7 @@ def _extract_rootly_user_identity(payload: Any) -> dict[str, str] | None:
 
 def _extract_upstream_url_fields(url: Any) -> tuple[str, str]:
     """Return a queryless URL and path for structured upstream logging."""
-    if isinstance(url, httpx.URL):
+    if isinstance(url, httpx2.URL):
         sanitized_url = str(url.copy_with(query=None, fragment="")).rstrip("#")
         return sanitized_url, url.path or "/"
 
@@ -179,7 +182,7 @@ def _extract_upstream_url_fields(url: Any) -> tuple[str, str]:
         return "", ""
 
     try:
-        parsed = httpx.URL(url_text)
+        parsed = httpx2.URL(url_text)
         sanitized_url = str(parsed.copy_with(query=None, fragment="")).rstrip("#")
         return sanitized_url, parsed.path or "/"
     except Exception:
@@ -187,7 +190,7 @@ def _extract_upstream_url_fields(url: Any) -> tuple[str, str]:
         return path, path
 
 
-def _record_upstream_response_context(method: str, response: httpx.Response) -> None:
+def _record_upstream_response_context(method: str, response: httpx2.Response) -> None:
     """Capture structured context for upstream HTTP responses with error status."""
     request_url = response.request.url if response.request else response.url
     upstream_url, upstream_path = _extract_upstream_url_fields(request_url)
@@ -775,6 +778,28 @@ def strip_heavy_alert_data(data: dict[str, Any]) -> dict[str, Any]:
 LIST_SHIFTS_LIMIT_DAYS = 60
 SCHEDULE_SHIFTS_LIMIT_DAYS = 30
 
+# What the Rootly API client advertised under legacy httpx. httpx2 derives its
+# default from the decoders it can load, and on Python 3.14 (our Docker image)
+# that includes stdlib zstd, which legacy httpx never offered. Pinned so the
+# move to httpx2 does not change what the upstream is asked to send. brotli is
+# a declared dependency, so "br" is always decodable.
+_UPSTREAM_ACCEPT_ENCODING = "gzip, deflate, br"
+
+
+def _upstream_ssl_context() -> ssl.SSLContext:
+    """Trust the same CA roots the legacy httpx client did.
+
+    httpx2 verifies against the OS trust store (truststore) by default, where
+    legacy httpx used certifi's bundle. Both honor SSL_CERT_FILE / SSL_CERT_DIR
+    first; this keeps the certifi fallback so the client swap does not also
+    swap which roots the Rootly API certificate is checked against.
+    """
+    if os.environ.get("SSL_CERT_FILE"):
+        return ssl.create_default_context(cafile=os.environ["SSL_CERT_FILE"])
+    if os.environ.get("SSL_CERT_DIR"):
+        return ssl.create_default_context(capath=os.environ["SSL_CERT_DIR"])
+    return ssl.create_default_context(cafile=certifi.where())
+
 
 class AuthenticatedHTTPXClient:
     """An HTTPX client wrapper that handles Rootly API authentication and parameter transformation."""
@@ -810,17 +835,25 @@ class AuthenticatedHTTPXClient:
             f"AuthenticatedHTTPXClient init: hosted={hosted}, has_api_token={bool(self._api_token)}"
         )
 
-        self.client = httpx.AsyncClient(
+        # httpx2, not httpx: this client is handed to FastMCP.from_openapi, which
+        # builds every auto-generated tool's request on it, and FastMCP 4 types
+        # that client as httpx2.AsyncClient (legacy httpx is deprecated there
+        # and slated for removal). Curated tools share it via request().
+        self.client = httpx2.AsyncClient(
             base_url=base_url,
             headers=headers,
             timeout=30.0,
             follow_redirects=True,
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            limits=httpx2.Limits(max_keepalive_connections=5, max_connections=10),
             event_hooks={"request": [self._enforce_jsonapi_headers]},
+            verify=_upstream_ssl_context(),
         )
+        # Assigned in place so the header keeps its slot in the default header
+        # order; see _UPSTREAM_ACCEPT_ENCODING.
+        self.client.headers["Accept-Encoding"] = _UPSTREAM_ACCEPT_ENCODING
 
     @staticmethod
-    async def _enforce_jsonapi_headers(request: httpx.Request):
+    async def _enforce_jsonapi_headers(request: httpx2.Request):
         """Event hook to enforce JSON-API Content-Type and Accept on every outgoing request.
 
         This runs on ALL requests regardless of how they are initiated (request(), send(), etc.),
@@ -897,7 +930,7 @@ class AuthenticatedHTTPXClient:
             to_raw = params.get("to")
         if from_raw is None or to_raw is None:
             try:
-                query_params = httpx.URL(url_str).params
+                query_params = httpx2.URL(url_str).params
                 if from_raw is None:
                     from_raw = query_params.get("from")
                 if to_raw is None:
@@ -1064,7 +1097,7 @@ class AuthenticatedHTTPXClient:
                 logger.warning(log_message)
 
         # Post-process alert GET responses to reduce payload size.
-        # Modifies response._content (private httpx attr) because FastMCP's
+        # Modifies response._content (private httpx2 attr) because FastMCP's
         # OpenAPITool.run() calls response.json() after this returns, and
         # there is no other interception point for auto-generated tools.
         response = self._redact_heartbeat_response(method, url, response)
@@ -1082,8 +1115,8 @@ class AuthenticatedHTTPXClient:
 
     @classmethod
     def _redact_heartbeat_response(
-        cls, method: str, url: str, response: httpx.Response
-    ) -> httpx.Response:
+        cls, method: str, url: str, response: httpx2.Response
+    ) -> httpx2.Response:
         """Omit heartbeat ping credentials from tool responses outside create.
 
         This mirrors Rootly's list, update, and destroy responses, and also
@@ -1127,8 +1160,8 @@ class AuthenticatedHTTPXClient:
 
     @classmethod
     def _maybe_strip_attach_alert_response(
-        cls, method: str, url: str, response: httpx.Response
-    ) -> httpx.Response:
+        cls, method: str, url: str, response: httpx2.Response
+    ) -> httpx2.Response:
         """Compact the alert collection returned by attaching alerts to an incident."""
         path = cls._path_for_url(url).rstrip("/")
         if (
@@ -1217,8 +1250,8 @@ class AuthenticatedHTTPXClient:
 
     @staticmethod
     def _maybe_annotate_404_response(
-        method: str, url: str, response: httpx.Response
-    ) -> httpx.Response:
+        method: str, url: str, response: httpx2.Response
+    ) -> httpx2.Response:
         """Append a plan-gating hint to 404 responses.
 
         Rootly returns 404 for endpoints that are locked to a specific subscription
@@ -1264,8 +1297,8 @@ class AuthenticatedHTTPXClient:
 
     @staticmethod
     def _maybe_annotate_offset_pagination_limit(
-        method: str, url: str, response: httpx.Response
-    ) -> httpx.Response:
+        method: str, url: str, response: httpx2.Response
+    ) -> httpx2.Response:
         """Translate the 400 offset-pagination cap into a model-actionable hint.
 
         Rootly rejects offset pagination past 50,000 records. The tools expose
@@ -1323,8 +1356,8 @@ class AuthenticatedHTTPXClient:
 
     @staticmethod
     def _maybe_annotate_alert_routing_deprecation(
-        method: str, url: str, response: httpx.Response
-    ) -> httpx.Response:
+        method: str, url: str, response: httpx2.Response
+    ) -> httpx2.Response:
         """Translate the 403 from `/alert_routing_rules` into a model-actionable hint.
 
         Tenants with the Advanced Alert Routing feature enabled get a 403 on the
@@ -1383,7 +1416,7 @@ class AuthenticatedHTTPXClient:
     def _path_for_url(url: str) -> str:
         """Return the path portion of a URL or path-like string."""
         try:
-            return httpx.URL(str(url)).path
+            return httpx2.URL(str(url)).path
         except Exception:
             return str(url).split("?", 1)[0]
 
@@ -1396,8 +1429,8 @@ class AuthenticatedHTTPXClient:
 
     @staticmethod
     def _maybe_strip_alert_response(
-        method: str, url: str, response: httpx.Response
-    ) -> httpx.Response:
+        method: str, url: str, response: httpx2.Response
+    ) -> httpx2.Response:
         """Strip heavy data from alert GET responses."""
         if method.upper() != "GET":
             return response
@@ -1415,8 +1448,8 @@ class AuthenticatedHTTPXClient:
 
     @classmethod
     def _maybe_strip_collection_response(
-        cls, method: str, url: str, response: httpx.Response
-    ) -> httpx.Response:
+        cls, method: str, url: str, response: httpx2.Response
+    ) -> httpx2.Response:
         """Trim known high-volume collection endpoints while keeping essential fields."""
         if method.upper() != "GET" or not response.is_success:
             return response
@@ -1496,8 +1529,8 @@ class AuthenticatedHTTPXClient:
 
     @classmethod
     def _maybe_normalize_incident_form_field_selection_response(
-        cls, method: str, url: str, response: httpx.Response
-    ) -> httpx.Response:
+        cls, method: str, url: str, response: httpx2.Response
+    ) -> httpx2.Response:
         """Normalize noisy incident form field selection responses."""
         if method.upper() not in {"GET", "POST", "PUT", "PATCH"} or not response.is_success:
             return response
@@ -1537,7 +1570,7 @@ class AuthenticatedHTTPXClient:
         """Proxy to request with DELETE method."""
         return await self.request("DELETE", url, **kwargs)
 
-    async def send(self, request: httpx.Request, **kwargs):
+    async def send(self, request: httpx2.Request, **kwargs):
         """Proxy send() for newer fastmcp versions that build requests and call send() directly.
 
         Headers are enforced by the event hook, so we just delegate to the inner client.
@@ -1578,9 +1611,9 @@ class AuthenticatedHTTPXClient:
 
                 new_url += "?" + urlencode(original_params, doseq=True)
             # Create new request with transformed URL
-            new_request = httpx.Request(
+            new_request = httpx2.Request(
                 method=request.method,
-                url=httpx.URL(new_url),
+                url=httpx2.URL(new_url),
                 headers=request.headers,
                 content=request.content,
             )

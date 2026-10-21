@@ -825,9 +825,10 @@ def create_rootly_mcp_server(
 
     # Create the MCP server using OpenAPI integration
     # By default, all routes become tools which is what we want
-    # NOTE: We pass http_client (the wrapper) instead of http_client.client (the inner httpx client)
+    # NOTE: We pass http_client (the wrapper) instead of http_client.client (the inner httpx2 client)
     # so that parameter transformation (e.g., filter_status -> filter[status]) is applied.
-    # The wrapper implements the same interface as httpx.AsyncClient (duck typing).
+    # The wrapper implements the httpx2.AsyncClient surface FastMCP uses (base_url,
+    # build_request, send) by duck typing, hence the ignore below.
     mcp = FastMCP.from_openapi(
         openapi_spec=filtered_spec,
         client=http_client,  # type: ignore[arg-type]

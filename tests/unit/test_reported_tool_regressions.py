@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
-import httpx
+import httpx2
 import pytest
 
 from rootly_mcp_server.mcp_error import MCPError as mcp_error
@@ -27,8 +27,8 @@ class Registry:
 
 
 def response(data, status=200):
-    return httpx.Response(
-        status, json=data, request=httpx.Request("GET", "https://api.rootly.com/v1/test")
+    return httpx2.Response(
+        status, json=data, request=httpx2.Request("GET", "https://api.rootly.com/v1/test")
     )
 
 
@@ -39,7 +39,7 @@ async def transport_response(monkeypatch, method, path, payload, *, via_send=Fal
     client.client.send = AsyncMock(return_value=response(payload))
     try:
         if via_send:
-            return await client.send(httpx.Request(method, "https://api.rootly.com" + path))
+            return await client.send(httpx2.Request(method, "https://api.rootly.com" + path))
         return await client.request(method, path)
     finally:
         await client.client.aclose()
@@ -131,7 +131,7 @@ async def test_generated_list_heartbeats_omits_credentials_from_text_and_structu
     monkeypatch.setenv("ROOTLY_API_TOKEN", "test-token")
     monkeypatch.setattr(AuthenticatedHTTPXClient, "_get_api_token", lambda _: "test-token")
     monkeypatch.setattr(
-        httpx.AsyncClient,
+        httpx2.AsyncClient,
         "send",
         AsyncMock(
             return_value=response(
@@ -230,10 +230,10 @@ async def test_attach_alert_compacts_real_nested_incident_shape(
 async def test_heartbeat_delete_empty_success_stays_successful(monkeypatch):
     monkeypatch.setattr(AuthenticatedHTTPXClient, "_get_api_token", lambda _: "test-token")
     client = AuthenticatedHTTPXClient()
-    client.client.send = AsyncMock(return_value=httpx.Response(204))
+    client.client.send = AsyncMock(return_value=httpx2.Response(204))
     try:
         result = await client.send(
-            httpx.Request("DELETE", "https://api.rootly.com/v1/heartbeats/hb-1")
+            httpx2.Request("DELETE", "https://api.rootly.com/v1/heartbeats/hb-1")
         )
         assert result.status_code == 204
     finally:
