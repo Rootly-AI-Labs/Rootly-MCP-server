@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **`httpx` is no longer a dependency**: the hosted token check, the OAuth authorization-server metadata proxy and the On-Call Health client now use `httpx2`, like the Rootly API client already did, so `httpx` (and `httpcore`) are no longer installed. Outbound requests are unchanged byte for byte: the same headers in the same order (including the `python-httpx/0.28.1` User-Agent these clients sent before), the same trust roots and the same timeouts. Anything that imported `httpx` only because this package pulled it in needs to depend on it directly. The unused `respx` dev dependency is dropped with it.
 - **The on-call aggregating tools now filter shifts upstream**: the three tools above fetched the whole workspace's shifts and discarded the rows they could not use, spending a bounded page budget on shifts that were never eligible for the answer. `schedule_ids[]` and `user_ids[]` are now sent to `/v1/shifts`, so the budget is spent on shifts that can appear in the result — a candidate whose shifts previously fell past the last page fetched could be scored as free. (`check_responder_availability` already reads per-schedule shifts and rejects non-numeric IDs since #235, so it is unchanged here.)
 
 ## [2.3.22] - Released 2026-10-21

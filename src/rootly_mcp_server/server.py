@@ -15,7 +15,6 @@ from collections.abc import Sequence
 from typing import Any
 
 import fastmcp.server.middleware as fastmcp_middleware
-import httpx
 import mcp.types as mt
 from fastmcp import FastMCP
 
@@ -29,6 +28,7 @@ from .tools.audits import register_audit_tools
 from .tools.incidents import register_incident_tools
 from .tools.oncall import register_oncall_tools
 from .tools.resources import register_resource_handlers
+from .transport import upstream_client
 from .utils import (
     OAUTH_AUTHORIZATION_SERVER_PATH,
     OAUTH_PROTECTED_RESOURCE_PATH,
@@ -919,7 +919,7 @@ def create_rootly_mcp_server(
 
             upstream_url = f"{oauth_server_url}/.well-known/oauth-authorization-server"
             try:
-                async with httpx.AsyncClient(timeout=10) as client:
+                async with upstream_client(timeout=10) as client:
                     resp = await client.get(upstream_url)
                     resp.raise_for_status()
                     metadata = resp.json()

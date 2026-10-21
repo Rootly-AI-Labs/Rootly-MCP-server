@@ -3,7 +3,7 @@
 import os
 from typing import Any, cast
 
-import httpx
+from .transport import upstream_client
 
 # External API field mapping (On-Call Health API response field)
 _OCH_RISK_SCORE_FIELD = "burnout_score"
@@ -18,7 +18,7 @@ class OnCallHealthClient:
 
     async def get_analysis(self, analysis_id: int) -> dict[str, Any]:
         """Fetch analysis by ID."""
-        async with httpx.AsyncClient() as client:
+        async with upstream_client() as client:
             response = await client.get(
                 f"{self.base_url}/analyses/{analysis_id}",
                 headers={"X-API-Key": self.api_key},
@@ -29,7 +29,7 @@ class OnCallHealthClient:
 
     async def get_latest_analysis(self) -> dict[str, Any]:
         """Fetch most recent analysis."""
-        async with httpx.AsyncClient() as client:
+        async with upstream_client() as client:
             response = await client.get(
                 f"{self.base_url}/analyses",
                 headers={"X-API-Key": self.api_key},

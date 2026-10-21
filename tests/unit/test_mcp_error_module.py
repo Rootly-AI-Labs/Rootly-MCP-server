@@ -75,13 +75,13 @@ class TestHttpStatusCategorization:
 
     @staticmethod
     def _http_error(status: int) -> Exception:
-        import httpx
+        import httpx2
 
-        request = httpx.Request("GET", "https://api.rootly.com/v1/incidents")
-        return httpx.HTTPStatusError(
+        request = httpx2.Request("GET", "https://api.rootly.com/v1/incidents")
+        return httpx2.HTTPStatusError(
             f"Client error '{status}' for url 'x'",
             request=request,
-            response=httpx.Response(status, request=request),
+            response=httpx2.Response(status, request=request),
         )
 
     def test_a_response_status_wins_over_the_message(self):

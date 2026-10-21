@@ -17,7 +17,7 @@ class TestAuthenticatedHTTPXClientHeaders:
 
     @pytest.fixture
     def mock_httpx_client(self):
-        """Create a mock httpx.AsyncClient."""
+        """Create a mock httpx2.AsyncClient."""
         mock_client = AsyncMock()
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -126,7 +126,7 @@ class TestHTTPMethodsWithHeaders:
 
     @pytest.fixture
     def mock_httpx_client(self):
-        """Create a mock httpx.AsyncClient."""
+        """Create a mock httpx2.AsyncClient."""
         mock_client = AsyncMock()
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -204,7 +204,7 @@ class TestFastMCPIntegrationScenario:
 
     @pytest.fixture
     def mock_httpx_client(self):
-        """Create a mock httpx.AsyncClient."""
+        """Create a mock httpx2.AsyncClient."""
         mock_client = AsyncMock()
         mock_response = MagicMock()
         mock_response.status_code = 200

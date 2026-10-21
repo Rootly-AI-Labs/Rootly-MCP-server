@@ -122,14 +122,14 @@ def mock_httpx_client():
     """
     Provide a mock HTTP client for testing HTTP interactions.
 
-    Patches both clients: the Rootly API client (AuthenticatedHTTPXClient) is
-    httpx2, while the OAuth metadata proxy and token probe still use httpx.
+    Every outbound client is httpx2: the Rootly API client
+    (AuthenticatedHTTPXClient) and transport.upstream_client (OAuth metadata
+    proxy, token probe, On-Call Health).
     """
-    with patch("httpx.AsyncClient") as mock_client, patch("httpx2.AsyncClient") as mock_client2:
+    with patch("httpx2.AsyncClient") as mock_client:
         mock_instance = Mock()
         mock_client.return_value = mock_instance
-        mock_client2.return_value = mock_instance
-        # AuthenticatedHTTPXClient sets a default header on the client after construction.
+        # Both clients set default headers on the client after construction.
         mock_instance.headers = {}
 
         # Configure default responses
