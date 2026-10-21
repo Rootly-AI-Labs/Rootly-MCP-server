@@ -61,14 +61,14 @@ async def test_agentcat_keeps_call_telemetry_without_requesting_intent(
         assert tools
         assert "get_more_tools" not in names
         for tool in tools:
-            properties = tool.inputSchema.get("properties", {})
-            required = tool.inputSchema.get("required", [])
+            properties = tool.input_schema.get("properties", {})
+            required = tool.input_schema.get("required", [])
             # No telemetry handle is a parameter of any tool: the SDK runs in
             # session hook mode and intent capture is off.
             for injected in ("context", "session_id", "agent_id"):
                 assert injected not in properties, (tool.name, injected)
                 assert injected not in required, (tool.name, injected)
-            schema_text = json.dumps(tool.inputSchema)
+            schema_text = json.dumps(tool.input_schema)
             assert "analytics and user intent tracking" not in schema_text, tool.name
             assert "YOU MUST provide 15-25 words" not in schema_text, tool.name
             assert "Session continuity handle" not in schema_text, tool.name
