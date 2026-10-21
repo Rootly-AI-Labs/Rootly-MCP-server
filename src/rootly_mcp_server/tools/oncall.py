@@ -1534,37 +1534,76 @@ def register_oncall_tools(
 
     async def _fetch_schedule_shift_window(
         schedule_id: str,
-        start: str,
-        end: str,
+        start: str | None,
+        end: str | None,
         semaphore: asyncio.Semaphore,
         *,
         clip_to_window: bool = False,
+        include: str | None = "user,assignee,on_call_role",
     ) -> dict[str, Any]:
         """Derive overlapping shifts, including ones that began before the window.
 
         The global /shifts endpoint on older API versions selects shifts by
         start time. Per-schedule calculation covers overlaps and future shifts.
-        This endpoint is unpaginated; split only by its 30-day range limit.
+        This endpoint is unpaginated -- it declares only ``from``/``to`` and
+        returns the whole window in one response -- so each window is exactly
+        one request with no ``page[...]`` keys. A range beyond the endpoint's
+        30-day cap is split into consecutive windows.
+
+        A missing or empty bound is omitted rather than sent as ``from=``.
+        ``include`` is the sideload list; ``None`` sends none. The result's
+        ``windows`` is how many upstream ranges were queried.
+
+        A transient failure (no response, 5xx, transport error) is retried
+        once; a 4xx is not. Any request still failing raises, so a partial or
+        failed fetch is never returned as "no shifts".
         """
-        windows = _split_date_windows(start, end, 30)
-        bounds = [(a.isoformat(), b.isoformat()) for a, b in windows] or [(start, end)]
+        path = f"/v1/schedules/{schedule_id}/shifts"
+        # Every */shifts path has a cap; read it from the transport constants
+        # so the split cannot drift from the validation that enforces it.
+        limit_days = cast(int, _shift_window_limit_days(path))
+        windows = _split_date_windows(start, end, limit_days)
+        bounds: list[tuple[str | None, str | None]] = [
+            (a.isoformat(), b.isoformat()) for a, b in windows
+        ] or [(start, end)]
         data: list[dict[str, Any]] = []
         included: list[dict[str, Any]] = []
         seen: set[tuple[Any, ...]] = set()
-        for window_start, window_end in bounds:
-            async with semaphore:
-                response = await make_authenticated_request(
-                    "GET",
-                    f"/v1/schedules/{schedule_id}/shifts",
-                    params={
-                        "from": window_start,
-                        "to": window_end,
-                        "include": "user,assignee,on_call_role",
-                    },
+
+        async def _fetch_bound(window_start: str | None, window_end: str | None) -> Any:
+            params: dict[str, Any] = {}
+            if window_start:
+                params["from"] = window_start
+            if window_end:
+                params["to"] = window_end
+            if include:
+                params["include"] = include
+            response = None
+            for attempt in (1, 2):
+                try:
+                    async with semaphore:
+                        response = await make_authenticated_request("GET", path, params=params)
+                except httpx2.TransportError:
+                    if attempt == 2:
+                        raise
+                    continue
+                status = getattr(response, "status_code", None)
+                if status is not None and status < 500:
+                    break
+            status = getattr(response, "status_code", None)
+            if response is None or status != 200:
+                raise RootlyAPIError(
+                    f"Could not load shifts for schedule {schedule_id}"
+                    + (f" (status {status})" if status else " (no response)")
                 )
-            if response is None or response.status_code != 200:
-                raise RootlyAPIError(f"Could not load shifts for schedule {schedule_id}")
-            payload = response.json()
+            return response.json()
+
+        # Windows are independent, so fetch them concurrently; the caller's
+        # semaphore bounds how many are in flight. gather() keeps results in
+        # window order, so merging and de-duplication below are unaffected,
+        # and any window failing fails the whole fetch.
+        payloads = await asyncio.gather(*(_fetch_bound(a, b) for a, b in bounds))
+        for (window_start, window_end), payload in zip(bounds, payloads, strict=True):
             for shift in payload.get("data", []):
                 attrs = shift.get("attributes", {})
                 if clip_to_window:
@@ -1624,7 +1663,7 @@ def register_oncall_tools(
                     merged.append(shift)
                     previous_by_identity[identity] = shift
             data = merged
-        return {"data": data, "included": included}
+        return {"data": data, "included": included, "windows": len(bounds)}
 
     async def _fetch_all_pages(
         path: str,
@@ -2044,14 +2083,15 @@ def register_oncall_tools(
             )
 
         try:
-            fetch_report: dict[str, Any] = {}
-            shifts = await _fetch_all_pages(
-                f"/v1/schedules/{id}/shifts",
-                asyncio.Semaphore(10),
-                extra_params=params,
-                required=True,
-                report=fetch_report,
+            # The endpoint is unpaginated, so this must not go through the
+            # generic paginator: it would add page[size]/page[number], and at
+            # 100+ shifts in a window re-request "pages 2..10", each answered
+            # with the same full list -- every shift returned up to ten times.
+            # Not truncatable either, so there is no truncation note to report.
+            fetched = await _fetch_schedule_shift_window(
+                id, start_date, end_date, asyncio.Semaphore(10), include=None
             )
+            shifts = fetched["data"]
 
             result: dict[str, Any] = {
                 "schedule_id": id,
@@ -2059,14 +2099,8 @@ def register_oncall_tools(
                 "total_shifts": len(shifts),
                 "shifts": shifts,
             }
-            if fetch_report.get("windows"):
-                result["upstream_windows"] = fetch_report["windows"]
-            if fetch_report.get("truncated"):
-                result["truncated"] = True
-                result["truncation_note"] = (
-                    "More shifts exist upstream than this query fetched "
-                    f"({_pages_fetched_phrase(fetch_report)}). Narrow the date range."
-                )
+            if fetched["windows"] > 1:
+                result["upstream_windows"] = fetched["windows"]
             return result
         except Exception as e:
             error_type, error_message = mcp_error.categorize_error(e)
