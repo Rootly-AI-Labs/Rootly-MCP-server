@@ -194,6 +194,23 @@ def _is_injectable_tool_name(name: str) -> bool:
     )
 
 
+def _example_arguments(tool: Tool) -> str:
+    """Render a call_tool params example from the tool's own input schema.
+
+    Required parameters become `<name>` placeholders so following the hint
+    can't fail on a missing argument; `page_size` is shown only when the tool
+    takes it.
+    """
+    parameters = getattr(tool, "parameters", None)
+    schema = parameters if isinstance(parameters, dict) else {}
+    properties = schema.get("properties") or {}
+    required = [name for name in schema.get("required") or [] if name in properties]
+    example: dict[str, Any] = {name: f"<{name}>" for name in required}
+    if not example and "page_size" in properties:
+        example["page_size"] = 10
+    return repr(example)
+
+
 def _undefined_name_message(missing: str, tools: Sequence[Tool]) -> str | None:
     """Teach the call convention when a script used a tool name as a bare name."""
     resolution = resolve_tool_name(missing, tools)
@@ -201,7 +218,8 @@ def _undefined_name_message(missing: str, tools: Sequence[Tool]) -> str | None:
         canonical = resolution.tool.name
         return (
             f"NameError: name '{missing}' is not defined. It refers to the Rootly tool "
-            f"'{canonical}'; call it as `await call_tool('{canonical}', {{'page_size': 10}})`"
+            f"'{canonical}'; call it as "
+            f"`await call_tool('{canonical}', {_example_arguments(resolution.tool)})`"
             " with the parameters from its schema (get_schema / tool_search)."
         )
     candidates = resolution.ambiguous or resolution.suggestions
@@ -316,13 +334,16 @@ class RootlyCodeMode(CodeMode):
                 result = await ctx.fastmcp.call_tool(resolution.tool.name, params or {})
                 return _unwrap_tool_result(result)
 
-            def bare_tool_function(name: str) -> Callable[..., Any]:
+            def bare_tool_function(tool: Tool) -> Callable[..., Any]:
+                name = tool.name
+
                 async def tool_function(*args: Any, **kwargs: Any) -> Any:
                     if len(args) > 1 or (args and not isinstance(args[0], dict)):
+                        example = _example_arguments(tool)
                         raise TypeError(
                             f"{name}() takes one params dict or keyword arguments, e.g. "
-                            f"`await {name}(page_size=10)` or "
-                            f"`await call_tool('{name}', {{'page_size': 10}})`."
+                            f"`await {name}({example})` or "
+                            f"`await call_tool('{name}', {example})`."
                         )
                     return await call_tool(name, {**(args[0] if args else {}), **kwargs})
 
@@ -334,7 +355,7 @@ class RootlyCodeMode(CodeMode):
             # one routes through call_tool, so it reaches nothing call_tool
             # could not.
             external_functions: dict[str, Callable[..., Any]] = {
-                tool.name: bare_tool_function(tool.name)
+                tool.name: bare_tool_function(tool)
                 for tool in tools
                 if _is_injectable_tool_name(tool.name)
             }

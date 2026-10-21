@@ -467,7 +467,7 @@ def test_format_execute_exception_maps_undefined_tool_names():
     )
     assert canonical is not None
     assert "Rootly tool 'get_incident_events'" in canonical
-    assert "await call_tool('get_incident_events', {'page_size': 10})" in canonical
+    assert "await call_tool('get_incident_events', {})" in canonical
 
     close = _format_execute_exception(
         Exception("NameError: name 'list_shift' is not defined"), tools
@@ -479,3 +479,36 @@ def test_format_execute_exception_maps_undefined_tool_names():
     assert (
         _format_execute_exception(Exception("NameError: name 'qqq' is not defined"), tools) is None
     )
+
+
+def test_undefined_name_hint_builds_the_example_from_the_tool_schema():
+    get_incident = SimpleNamespace(
+        name="get_incident",
+        version=None,
+        meta=None,
+        parameters={
+            "type": "object",
+            "properties": {"incident_id": {"type": "string"}, "include": {"type": "string"}},
+            "required": ["incident_id"],
+        },
+    )
+    list_alerts = SimpleNamespace(
+        name="list_alerts",
+        version=None,
+        meta=None,
+        parameters={"type": "object", "properties": {"page_size": {"type": "integer"}}},
+    )
+    tools: list[Any] = [get_incident, list_alerts]
+
+    required = _format_execute_exception(
+        Exception("NameError: name 'getIncident' is not defined"), tools
+    )
+    assert required is not None
+    assert "await call_tool('get_incident', {'incident_id': '<incident_id>'})" in required
+    assert "page_size" not in required
+
+    paged = _format_execute_exception(
+        Exception("NameError: name 'listAlerts' is not defined"), tools
+    )
+    assert paged is not None
+    assert "await call_tool('list_alerts', {'page_size': 10})" in paged
