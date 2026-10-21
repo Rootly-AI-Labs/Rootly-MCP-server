@@ -2018,7 +2018,7 @@ requires-dist = [
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=26.3.1" },
     { name = "brotli", specifier = ">=1.2.0" },
-    { name = "certifi", specifier = ">=2024.7.4" },
+    { name = "certifi", specifier = ">=2026.10.19" },
     { name = "click", specifier = ">=8.3.3" },
     { name = "cryptography", specifier = ">=50.0.0" },
     { name = "fastmcp", extras = ["code-mode"], specifier = "==4.0.11" },
