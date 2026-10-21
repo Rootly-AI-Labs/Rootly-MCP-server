@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import builtins
+import difflib
+import keyword
 import os
+import re
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastmcp.exceptions import NotFoundError
@@ -21,6 +27,7 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from .server import create_rootly_mcp_server
+from .spec_transform import to_snake_case
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -55,7 +62,13 @@ _TOOL_NAME_PREFIXES = (
     "mcp__rootly__",
     "rootly-codemode:",
     "rootly:",
+    "rootly.",
+    "rootly_",
 )
+# Any other MCP client namespace, e.g. `mcp__claude_ai_Rootly__list_teams`.
+_GENERIC_MCP_PREFIX = re.compile(r"^mcp__.+?__(?=.)")
+_MAX_TOOL_SUGGESTIONS = 3
+_UNDEFINED_NAME = re.compile(r"name '([^']+)' is not defined")
 _TOOL_NAME_ALIASES = {
     "search": "tool_search",
 }
@@ -92,21 +105,152 @@ def code_mode_path_from_env() -> str:
     return normalize_code_mode_path(os.getenv("ROOTLY_CODE_MODE_PATH", DEFAULT_CODE_MODE_PATH))
 
 
-def _normalize_execute_tool_name(tool_name: str) -> str:
-    """Normalize common client-specific Code Mode tool name variants."""
-    normalized = (tool_name or "").strip()
+def _strip_tool_name_prefixes(tool_name: str) -> list[str]:
+    """Return every form of ``tool_name`` with one known client prefix removed."""
+    stripped: list[str] = []
     for prefix in _TOOL_NAME_PREFIXES:
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix) :]
-            break
-    return _TOOL_NAME_ALIASES.get(normalized, normalized)
+        if tool_name.startswith(prefix) and len(tool_name) > len(prefix):
+            stripped.append(tool_name[len(prefix) :])
+    generic = _GENERIC_MCP_PREFIX.match(tool_name)
+    if generic:
+        stripped.append(tool_name[generic.end() :])
+    return [_TOOL_NAME_ALIASES.get(name, name) for name in dict.fromkeys(stripped)]
 
 
-def _format_execute_exception(exc: Exception) -> str | None:
-    """Return a friendlier execute error message for known sandbox failures."""
+@dataclass(frozen=True)
+class ToolNameResolution:
+    """Outcome of resolving a requested name against the session's tool catalog."""
+
+    requested: str
+    tool: Tool | None = None
+    ambiguous: tuple[str, ...] = ()
+    suggestions: tuple[str, ...] = ()
+
+    def error_message(self) -> str:
+        """Describe why the name did not resolve, naming candidates when known."""
+        if self.ambiguous:
+            options = ", ".join(repr(name) for name in self.ambiguous)
+            return (
+                f"Unknown tool: {self.requested} (ambiguous: it could mean {options}; "
+                "call one of them by its exact name)"
+            )
+        message = f"Unknown tool: {self.requested}"
+        if self.suggestions:
+            options = ", ".join(repr(name) for name in self.suggestions)
+            message += f" (did you mean {options}?)"
+        return message
+
+
+def resolve_tool_name(requested: str, tools: Sequence[Tool]) -> ToolNameResolution:
+    """Resolve a model-written tool name to exactly one tool in ``tools``.
+
+    ``tools`` must be the catalog the current session is allowed to call, so
+    no normalization can ever reach a tool outside it. Stages run in order and
+    the first stage that matches anything decides:
+
+    1. exact name (plus the ``search`` -> ``tool_search`` alias)
+    2. one known client prefix stripped (``mcp__<server>__``, ``rootly:``, ...)
+    3. camelCase/PascalCase folded to snake_case -- the normalization the
+       server applies to operationIds -- compared against the folded catalog
+
+    A stage that matches more than one distinct tool resolves nothing: the
+    caller gets the candidates back instead of a guess.
+    """
+    name = (requested or "").strip()
+    stripped = _strip_tool_name_prefixes(name)
+    folded = {to_snake_case(candidate) for candidate in (name, *stripped)}
+    exact = {name, _TOOL_NAME_ALIASES.get(name, name)}
+
+    stages: tuple[Callable[[Tool], bool], ...] = (
+        lambda tool: tool.name in exact,
+        lambda tool: tool.name in stripped,
+        lambda tool: to_snake_case(tool.name) in folded,
+    )
+    for matches_stage in stages:
+        # Keyed by name: an exact-name tie (discovery tool listed before a
+        # backend tool) keeps the first entry rather than counting as two.
+        matches = {tool.name: tool for tool in reversed(tools) if matches_stage(tool)}
+        if len(matches) == 1:
+            return ToolNameResolution(name, tool=next(iter(matches.values())))
+        if len(matches) > 1:
+            return ToolNameResolution(name, ambiguous=tuple(sorted(matches)))
+
+    names = [tool.name for tool in tools]
+    suggestions: list[str] = []
+    for candidate in sorted(folded, key=len):
+        for match in difflib.get_close_matches(candidate, names, n=_MAX_TOOL_SUGGESTIONS):
+            if match not in suggestions:
+                suggestions.append(match)
+    return ToolNameResolution(name, suggestions=tuple(suggestions[:_MAX_TOOL_SUGGESTIONS]))
+
+
+# Names a bare tool callable must never shadow inside the sandbox.
+_RESERVED_SANDBOX_NAMES = frozenset(dir(builtins)) | {"call_tool"}
+
+
+def _is_injectable_tool_name(name: str) -> bool:
+    return (
+        name.isidentifier() and not keyword.iskeyword(name) and name not in _RESERVED_SANDBOX_NAMES
+    )
+
+
+def _example_arguments(tool: Tool) -> str:
+    """Render a call_tool params example from the tool's own input schema.
+
+    Required parameters become `<name>` placeholders so following the hint
+    can't fail on a missing argument; `page_size` is shown only when the tool
+    takes it.
+    """
+    parameters = getattr(tool, "parameters", None)
+    schema = parameters if isinstance(parameters, dict) else {}
+    properties = schema.get("properties") or {}
+    required = [name for name in schema.get("required") or [] if name in properties]
+    example: dict[str, Any] = {name: f"<{name}>" for name in required}
+    if not example and "page_size" in properties:
+        example["page_size"] = 10
+    return repr(example)
+
+
+def _undefined_name_message(missing: str, tools: Sequence[Tool]) -> str | None:
+    """Teach the call convention when a script used a tool name as a bare name."""
+    resolution = resolve_tool_name(missing, tools)
+    if resolution.tool is not None:
+        canonical = resolution.tool.name
+        return (
+            f"NameError: name '{missing}' is not defined. It refers to the Rootly tool "
+            f"'{canonical}'; call it as "
+            f"`await call_tool('{canonical}', {_example_arguments(resolution.tool)})`"
+            " with the parameters from its schema (get_schema / tool_search)."
+        )
+    candidates = resolution.ambiguous or resolution.suggestions
+    if not candidates:
+        return None
+    options = ", ".join(repr(name) for name in candidates)
+    lead = (
+        f"It could mean the Rootly tools {options}"
+        if resolution.ambiguous
+        else f"If you meant a Rootly tool, the closest are {options}"
+    )
+    return (
+        f"NameError: name '{missing}' is not defined. {lead}. Pick the right one "
+        "(tool_search / get_schema) and call it by its exact name with "
+        "`await call_tool('<exact_tool_name>', {...})`."
+    )
+
+
+def _format_execute_exception(exc: Exception, tools: Sequence[Tool] = ()) -> str | None:
+    """Return a friendlier execute error message for known sandbox failures.
+
+    ``tools`` is the session's callable catalog; it lets an undefined-name
+    error point at the tool the script most likely meant.
+    """
     message = str(exc).strip()
     if not message:
         return None
+
+    undefined = _UNDEFINED_NAME.search(message)
+    if undefined and (isinstance(exc, NameError) or "NameError" in message):
+        return _undefined_name_message(undefined.group(1), tools)
 
     if isinstance(exc, NotFoundError) or "Unknown tool:" in message:
         return (
@@ -174,33 +318,56 @@ class RootlyCodeMode(CodeMode):
             ctx: Context = None,  # type: ignore[assignment]
         ) -> Any:
             """Execute tool calls using Python code."""
-            cached_tools: list[Tool] | None = None
+            # Discovery tools first so they win an exact-name tie, then the
+            # session-filtered backend catalog (allowlists, hosted profiles,
+            # visibility). Every name resolution runs against this list only.
+            tools: list[Tool] = [
+                *transform._build_discovery_tools(),
+                *await transform.get_tool_catalog(ctx),
+            ]
 
-            async def _get_cached_tools() -> list[Tool]:
-                nonlocal cached_tools
-                if cached_tools is None:
-                    cached_tools = list(await transform.get_tool_catalog(ctx))
-                return cached_tools
+            async def call_tool(tool_name: str, params: dict[str, Any] | None = None) -> Any:
+                resolution = resolve_tool_name(tool_name, tools)
+                if resolution.tool is None:
+                    raise NotFoundError(resolution.error_message())
 
-            async def call_tool(tool_name: str, params: dict[str, Any]) -> Any:
-                resolved_name = _normalize_execute_tool_name(tool_name)
-                backend_tools = await _get_cached_tools()
-                tool = transform._find_tool(
-                    resolved_name, transform._build_discovery_tools()
-                ) or transform._find_tool(resolved_name, backend_tools)
-                if tool is None:
-                    raise NotFoundError(f"Unknown tool: {tool_name}")
-
-                result = await ctx.fastmcp.call_tool(tool.name, params)
+                result = await ctx.fastmcp.call_tool(resolution.tool.name, params or {})
                 return _unwrap_tool_result(result)
+
+            def bare_tool_function(tool: Tool) -> Callable[..., Any]:
+                name = tool.name
+
+                async def tool_function(*args: Any, **kwargs: Any) -> Any:
+                    if len(args) > 1 or (args and not isinstance(args[0], dict)):
+                        example = _example_arguments(tool)
+                        raise TypeError(
+                            f"{name}() takes one params dict or keyword arguments, e.g. "
+                            f"`await {name}({example})` or "
+                            f"`await call_tool('{name}', {example})`."
+                        )
+                    return await call_tool(name, {**(args[0] if args else {}), **kwargs})
+
+                return tool_function
+
+            # Scripts often call tools as plain functions (`await list_shifts()`).
+            # Monty consults these only for names the script leaves undefined,
+            # so builtins and the script's own variables always win, and each
+            # one routes through call_tool, so it reaches nothing call_tool
+            # could not.
+            external_functions: dict[str, Callable[..., Any]] = {
+                tool.name: bare_tool_function(tool)
+                for tool in tools
+                if _is_injectable_tool_name(tool.name)
+            }
+            external_functions["call_tool"] = call_tool
 
             try:
                 return await transform.sandbox_provider.run(
                     code,
-                    external_functions={"call_tool": call_tool},
+                    external_functions=external_functions,
                 )
             except Exception as exc:
-                friendly_message = _format_execute_exception(exc)
+                friendly_message = _format_execute_exception(exc, tools)
                 if friendly_message is None:
                     raise
                 raise ValueError(friendly_message) from exc
