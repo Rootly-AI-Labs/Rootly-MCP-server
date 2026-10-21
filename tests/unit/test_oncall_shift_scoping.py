@@ -14,9 +14,11 @@ them returned an answer scoped differently from the one asked for:
   client-side through a set that was empty both when no filter was given and
   when the filter matched nothing, so a filter matching nothing returned the
   whole workspace under the caller's filter.
-- All four pulled the workspace and discarded most of it, spending a bounded
-  page budget on rows that could never appear in the answer, and reported
-  nothing when that budget cut the fetch short.
+- The other three pulled the workspace and discarded most of it, spending a
+  bounded page budget on rows that could never appear in the answer, and
+  reported nothing when that budget cut the fetch short.
+  (``check_responder_availability`` now reads shifts per schedule, since #235,
+  and fails on a truncated schedule listing instead.)
 
 These drive the registered tools rather than re-deriving their logic, so they
 fail if the query or the scoping regresses.
@@ -121,6 +123,8 @@ class Upstream:
         self.schedule_detail_status = schedule_detail_status
         self.rotation_users_status = rotation_users_status
         self.shift_queries: list[dict[str, Any]] = []
+        # Per-schedule shift reads (`/v1/schedules/{id}/shifts`), keyed by id.
+        self.schedule_shift_queries: list[tuple[str, dict[str, Any]]] = []
 
     async def handle(self, method: str, url: str, params: dict | None = None, **_: Any) -> Mock:
         if url.endswith("/v1/shifts"):
@@ -130,6 +134,17 @@ class Upstream:
                     "data": self.shifts,
                     "included": USERS,
                     "meta": {"total_pages": self.total_pages},
+                }
+            )
+        if url.startswith("/v1/schedules/") and url.endswith("/shifts"):
+            schedule_id = url.split("/")[3]
+            self.schedule_shift_queries.append((schedule_id, dict(params or {})))
+            return _ok(
+                {
+                    "data": [
+                        s for s in self.shifts if s["attributes"]["schedule_id"] == schedule_id
+                    ],
+                    "included": USERS,
                 }
             )
         if "/schedule_rotation_users" in url:
@@ -372,15 +387,25 @@ class TestScheduleSummaryScoping:
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestResponderAvailabilityScoping:
-    """``check_responder_availability`` only ever reports on the users asked for."""
+    """``check_responder_availability`` only ever reports on the users asked for.
 
-    async def test_the_user_filter_is_pushed_upstream(self):
+    Since #235 it reads shifts per schedule (``/v1/schedules/{id}/shifts``,
+    which is unpaginated and includes shifts that began before the window)
+    rather than paging the workspace through ``/v1/shifts``, so there is no
+    page budget to spend and no ``user_ids[]`` to push upstream.
+    """
+
+    async def test_shifts_are_read_per_schedule_not_from_the_workspace(self):
         upstream = Upstream()
-        await _tools(upstream)["check_responder_availability"](
-            start_date=START, end_date=END, user_ids="2381,94178"
+        result = await _tools(upstream)["check_responder_availability"](
+            start_date=START, end_date=END, user_ids="2381"
         )
 
-        assert upstream.last_shift_query["user_ids[]"] == ["2381", "94178"]
+        assert not upstream.shift_queries
+        assert sorted(sid for sid, _ in upstream.schedule_shift_queries) == ["sched-a", "sched-b"]
+        # 94178 shares sched-a with 2381 but was not asked about.
+        assert [u["user_id"] for u in result["scheduled"]] == [2381]
+        assert result["not_scheduled"] == []
 
     async def test_users_are_split_into_scheduled_and_not(self):
         upstream = Upstream()
@@ -400,6 +425,7 @@ class TestResponderAvailabilityScoping:
 
         assert result["error_type"] == "validation_error"
         assert not upstream.shift_queries
+        assert not upstream.schedule_shift_queries
 
 
 @pytest.mark.unit
@@ -695,13 +721,19 @@ class TestTruncationIsReported:
         assert result["meta"]["truncated"] is True
         assert "of 40 pages" in result["meta"]["truncation_note"]
 
-    async def test_responder_availability_reports_truncation(self):
-        upstream = self._truncating()
+    async def test_responder_availability_refuses_a_truncated_schedule_listing(self):
+        # Its shift reads are per schedule and unpaginated, so the only budget
+        # that can run out is the schedules listing. A short listing would leave
+        # schedules unread and report their responders as not scheduled, so it
+        # fails rather than answering.
+        upstream = Upstream(schedules_total_pages=40)
         result = await _tools(upstream)["check_responder_availability"](
             start_date=START, end_date=END, user_ids="2381"
         )
 
-        assert result["meta"]["truncated"] is True
+        assert result["error"] is True
+        assert "truncated" in result["message"]
+        assert not upstream.schedule_shift_queries
 
     async def test_override_recommendation_reports_truncation(self):
         upstream = self._truncating()
