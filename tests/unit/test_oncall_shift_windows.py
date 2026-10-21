@@ -1177,7 +1177,7 @@ class TestDateArgumentAliases:
         responder, _ = _responder()
         mcp = self._server(responder)
         tool = {t.name: t for t in await mcp.list_tools()}["get_schedule_shifts"]
-        schema = getattr(tool, "inputSchema", None) or getattr(tool, "parameters", None) or {}
+        schema = getattr(tool, "input_schema", None) or getattr(tool, "parameters", None) or {}
         assert set(schema.get("properties", {})) == {"id", "start_date", "end_date"}
 
 

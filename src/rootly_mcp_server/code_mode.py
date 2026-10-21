@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
 import os
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastmcp.exceptions import NotFoundError
@@ -15,7 +13,6 @@ from fastmcp.experimental.transforms.code_mode import (
     ListTools,
     MontySandboxProvider,
     Search,
-    _ensure_async,
     _unwrap_tool_result,
 )
 from fastmcp.server.context import Context
@@ -150,69 +147,6 @@ def _format_execute_exception(exc: Exception) -> str | None:
     return None
 
 
-class CompatibleMontySandboxProvider(MontySandboxProvider):
-    """Monty sandbox provider that tolerates older constructor signatures.
-
-    Some deployed environments can end up with a Monty runtime that supports
-    ``run_monty_async(..., external_functions=...)`` but still rejects the
-    newer ``Monty(..., external_functions=[...])`` constructor argument. This
-    provider falls back to the older constructor form so Code Mode execution
-    continues to work during mixed-version rollouts.
-    """
-
-    @staticmethod
-    def _build_monty_runner(
-        pydantic_monty: Any,
-        code: str,
-        *,
-        input_names: list[str],
-        external_function_names: list[str],
-    ) -> Any:
-        try:
-            return pydantic_monty.Monty(
-                code,
-                inputs=input_names,
-                external_functions=external_function_names,
-            )
-        except TypeError as exc:
-            if "external_functions" not in str(exc):
-                raise
-            return pydantic_monty.Monty(code, inputs=input_names)
-
-    async def run(
-        self,
-        code: str,
-        *,
-        inputs: dict[str, Any] | None = None,
-        external_functions: dict[str, Callable[..., Any]] | None = None,
-    ) -> Any:
-        try:
-            pydantic_monty = importlib.import_module("pydantic_monty")
-        except ModuleNotFoundError as exc:
-            raise ImportError(
-                "CodeMode requires pydantic-monty for the Monty sandbox provider. "
-                "Install it with `fastmcp[code-mode]` or pass a custom SandboxProvider."
-            ) from exc
-
-        inputs = inputs or {}
-        async_functions = {
-            key: _ensure_async(value) for key, value in (external_functions or {}).items()
-        }
-
-        monty = self._build_monty_runner(
-            pydantic_monty,
-            code,
-            input_names=list(inputs.keys()),
-            external_function_names=list(async_functions.keys()),
-        )
-        run_kwargs: dict[str, Any] = {"external_functions": async_functions}
-        if inputs:
-            run_kwargs["inputs"] = inputs
-        if self.limits is not None:
-            run_kwargs["limits"] = self.limits
-        return await pydantic_monty.run_monty_async(monty, **run_kwargs)
-
-
 class RootlyCodeMode(CodeMode):
     """Rootly-specific Code Mode transform with friendlier execute ergonomics."""
 
@@ -283,7 +217,7 @@ class RootlyCodeMode(CodeMode):
 def build_code_mode_transform() -> CodeMode:
     """Build the shared Code Mode transform used by hosted deployments."""
     return RootlyCodeMode(
-        sandbox_provider=CompatibleMontySandboxProvider(),
+        sandbox_provider=MontySandboxProvider(),
         discovery_tools=[
             ListTools(default_detail="brief"),
             Search(name="tool_search", default_detail="detailed", default_limit=12),

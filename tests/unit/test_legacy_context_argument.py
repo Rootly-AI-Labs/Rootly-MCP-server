@@ -100,8 +100,8 @@ async def test_context_stays_out_of_advertised_schemas():
     async with Client(_server()) as client:
         tools = {tool.name: tool for tool in await client.list_tools()}
 
-    assert "context" not in tools["list_incidents"].inputSchema["properties"]
-    assert "session_id" not in tools["list_incidents"].inputSchema["properties"]
+    assert "context" not in tools["list_incidents"].input_schema["properties"]
+    assert "session_id" not in tools["list_incidents"].input_schema["properties"]
 
 
 @pytest.mark.asyncio

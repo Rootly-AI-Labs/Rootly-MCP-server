@@ -1153,9 +1153,9 @@ def register_incident_tools(
     @mcp.tool(
         name="get_incident_retrospective",
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_incident_retrospective(
@@ -1238,9 +1238,9 @@ def register_incident_tools(
     @mcp.tool(
         name="list_incident_post_mortems",
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def list_incident_post_mortems(
