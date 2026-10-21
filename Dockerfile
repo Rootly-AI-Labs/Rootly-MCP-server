@@ -1,4 +1,4 @@
-# Use Python 3.13 slim image as base
+# Use Python 3.14 slim image as base
 FROM python:3.14-slim
 
 # Set working directory
@@ -46,5 +46,7 @@ ENV ROOTLY_LOG_LEVEL=INFO
 # Switch to non-root user
 USER appuser
 
-# Run the application
-CMD ["sh", "-c", "rootly-mcp-server --transport \"$ROOTLY_TRANSPORT\" --log-level \"$ROOTLY_LOG_LEVEL\" --hosted"]
+# Run the application. `exec` replaces the shell so the server is PID 1 and
+# receives SIGTERM directly; without it the shell swallows the signal, ECS
+# SIGKILLs the task after stopTimeout, and the graceful shutdown never runs.
+CMD ["sh", "-c", "exec rootly-mcp-server --transport \"$ROOTLY_TRANSPORT\" --log-level \"$ROOTLY_LOG_LEVEL\" --hosted"]
