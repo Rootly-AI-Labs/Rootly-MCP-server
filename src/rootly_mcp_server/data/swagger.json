@@ -38090,7 +38090,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/errors_list"
+                  "$ref": "#/components/schemas/observability_errors"
                 }
               }
             }
@@ -38346,7 +38346,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/errors_list"
+                  "$ref": "#/components/schemas/observability_errors"
                 }
               }
             }
@@ -38656,7 +38656,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/errors_list"
+                  "$ref": "#/components/schemas/observability_errors"
                 }
               }
             }
@@ -98615,7 +98615,7 @@
                 },
                 "code": {
                   "type": "string",
-                  "description": "Stable machine-readable error code, e.g. invalid_range, outside_retention, search_requires_narrower_range, invalid_cursor, invalid_query, too_expensive, invalid_parameter, observability_unavailable, insufficient_scope, unsupported_api_key, unavailable, rate_limited"
+                  "description": "Stable machine-readable error code, e.g. invalid_range, outside_retention, search_requires_narrower_range, invalid_cursor, invalid_query, too_expensive, invalid_parameter, observability_unavailable, insufficient_scope, unsupported_api_key, not_found, unavailable, rate_limited"
                 },
                 "title": {
                   "type": "string"
