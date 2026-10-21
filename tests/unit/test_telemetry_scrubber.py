@@ -629,6 +629,23 @@ class TestScrubPostHogMcpEvent:
         event = {"event": "$mcp_tool_call", "properties": dict(properties)}
         assert scrub_posthog_mcp_event(event)["properties"] == properties
 
+    @pytest.mark.parametrize(
+        "parameters",
+        [
+            # posthog.mcp <= 7.60: the arguments dict itself.
+            {"arguments": {"page_size": 5, "context": "Acme", "session_id": "s"}},
+            # Later versions: a pre-middleware copy of the whole request.
+            {"request": {"params": {"arguments": {"page_size": 5, "context": "Acme"}}}},
+        ],
+        ids=["arguments", "request-params-arguments"],
+    )
+    def test_retired_injected_arguments_are_dropped(self, parameters):
+        event = {"event": "$mcp_tool_call", "properties": {"$mcp_parameters": parameters}}
+        properties = scrub_posthog_mcp_event(event)["properties"]
+        assert "Acme" not in repr(properties)
+        assert "session_id" not in repr(properties)
+        assert "page_size" in repr(properties)
+
     def test_event_without_properties_is_returned_unchanged(self):
         event = {"event": "$mcp_initialize"}
         assert scrub_posthog_mcp_event(event) == {"event": "$mcp_initialize"}
