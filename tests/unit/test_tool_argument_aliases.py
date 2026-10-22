@@ -13,18 +13,19 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Annotated, Any
 
 import httpx2
 import pytest
 from fastmcp import Client, FastMCP
+from pydantic import AliasChoices, Field
 
 from rootly_mcp_server.server import (
     ToolArgumentAliasMiddleware,
     _provider_tool_inventory,
     create_rootly_mcp_server,
 )
-from rootly_mcp_server.tool_arguments import normalize_tool_arguments
+from rootly_mcp_server.tool_arguments import normalize_tool_arguments, validation_aliases
 
 pytestmark = pytest.mark.unit
 
@@ -73,6 +74,8 @@ def _incident_params(sent: list[httpx2.Request]) -> dict[str, str]:
 
 _TS1 = "2026-10-01T00:00:00Z"
 _TS2 = "2026-10-21T00:00:00Z"
+_STRICT_AFTER = "started_after is inclusive (>=); there is no strict-after filter"
+_STRICT_BEFORE = "started_before is inclusive (<=); there is no strict-before filter"
 
 
 @pytest.mark.parametrize(
@@ -199,6 +202,18 @@ async def test_range_dict_does_not_overwrite_an_explicit_bound(server, sent):
         ),
         ({"since": _TS1}, "'since' (did you mean 'started_after'?)"),
         ({"bogus": 1}, "list_incidents does not accept 'bogus'."),
+        # Strict bounds: started_after/started_before are inclusive, so a
+        # gt/lt cannot be rewritten without widening the range.
+        ({"filter[started_at][gt]": _TS1}, f"'filter[started_at][gt]' ({_STRICT_AFTER}"),
+        ({"filter[started_at][lt]": _TS2}, f"'filter[started_at][lt]' ({_STRICT_BEFORE}"),
+        ({"filter_started_at_gt": _TS1}, f"'filter_started_at_gt' ({_STRICT_AFTER}"),
+        ({"started_at_lt": _TS2}, f"'started_at_lt' ({_STRICT_BEFORE}"),
+        ({"filter_started_at": {"gt": _TS1}}, f"'filter_started_at' ({_STRICT_AFTER}"),
+        (
+            {"filter_started_at": {"gte": _TS1, "lt": _TS2}},
+            f"'filter_started_at' ({_STRICT_BEFORE}",
+        ),
+        ({"filters": {"started_at": {"gt": _TS1}}}, f"'filters.started_at' ({_STRICT_AFTER}"),
     ],
 )
 async def test_unmappable_arguments_get_a_legible_error(server, sent, arguments, expected):
@@ -236,6 +251,111 @@ async def test_required_parameters_are_starred(server, sent):
     assert result.is_error
     assert "get_incident does not accept 'bogus'." in text
     assert "Valid parameters for get_incident (* = required): incident_id*" in text
+
+
+# ---------------------------------------------------------------------------
+# Names a tool already accepts through pydantic validation aliases
+# ---------------------------------------------------------------------------
+
+
+def _rejected_by_middleware(text: str) -> bool:
+    return " does not accept " in text or "Unexpected keyword argument" in text
+
+
+def _sample_value(spec: dict[str, Any], name: str) -> Any:
+    if spec.get("type") == "integer":
+        return 2
+    if spec.get("type") == "number":
+        return 0.5
+    if spec.get("type") == "boolean":
+        return False
+    if "date" in name or name.endswith(("_at", "_after", "_before")) or "time" in name:
+        return _TS1
+    return "1"
+
+
+async def _alias_cases(server: FastMCP) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """(tool, alias, parameter, arguments) for every curated tool's every alias."""
+    curated, _, _ = _provider_tool_inventory(server)
+    cases: list[tuple[str, str, str, dict[str, Any]]] = []
+    for name in sorted(curated):
+        tool = await server.get_tool(name)
+        if tool is None:
+            continue
+        schema = tool.parameters or {}
+        properties = schema.get("properties") or {}
+        required = {
+            param: _sample_value(properties.get(param) or {}, param)
+            for param in schema.get("required") or []
+        }
+        for alias, parameter in validation_aliases(getattr(tool, "fn", None)).items():
+            arguments = {k: v for k, v in required.items() if k != parameter}
+            arguments[alias] = _sample_value(properties.get(parameter) or {}, parameter)
+            cases.append((name, alias, parameter, arguments))
+    return cases
+
+
+async def test_every_declared_validation_alias_is_accepted(server, sent):
+    cases = await _alias_cases(server)
+    # The aliases declared in tools/ today; a new one is picked up automatically.
+    declared = {(tool, alias) for tool, alias, _, _ in cases}
+    assert {
+        ("get_schedule_shifts", "from_date"),
+        ("get_schedule_shifts", "to"),
+        ("list_shifts", "start_date"),
+        ("list_shifts", "end_date"),
+        ("get_incident_meeting_transcripts", "id"),
+        ("list_incidents", "max_results"),
+        ("list_incidents", "limit"),
+        ("suggest_solutions", "max_results"),
+    } <= declared
+
+    rejected = []
+    async with Client(server) as client:
+        for tool, alias, parameter, arguments in cases:
+            result = await client.call_tool(tool, arguments, raise_on_error=False)
+            if result.is_error and _rejected_by_middleware(_text(result)):
+                rejected.append((tool, alias, parameter, _text(result)))
+    assert rejected == []
+
+
+@pytest.mark.parametrize(
+    ("tool", "arguments"),
+    [
+        ("get_schedule_shifts", {"id": "s1", "from_date": _TS1, "to_date": _TS2}),
+        ("list_shifts", {"start_date": _TS1, "end_date": _TS2}),
+        ("get_incident_meeting_transcripts", {"id": "inc-1"}),
+    ],
+)
+async def test_reported_alias_calls_are_not_rejected(server, sent, tool, arguments):
+    result = await _call(server, tool, arguments)
+
+    assert not _rejected_by_middleware(_text(result)), _text(result)
+    assert sent, "the call should reach the API"
+
+
+async def test_accepted_alias_is_neither_rewritten_nor_overridden(server, sent):
+    # `limit` is list_incidents' own alias of page_size: kept as sent, and a
+    # page[size] alias for the same parameter cannot overwrite it.
+    result = await _call(server, "list_incidents", {"limit": 3})
+    assert not result.is_error, _text(result)
+    assert _incident_params(sent)["page[size]"] == "3"
+
+    result = await _call(server, "list_incidents", {"limit": 3, "page[size]": 9})
+    assert result.is_error
+    assert "'page[size]' (conflicts with 'page_size', which is also set)" in _text(result)
+
+
+def test_validation_aliases_reads_annotated_field_metadata():
+    def tool(
+        start: Annotated[str, Field(validation_alias=AliasChoices("start", "from"))] = "",
+        size: Annotated[int, Field(alias="limit")] = 1,
+        plain: str = "",
+    ) -> str:
+        return ""
+
+    assert validation_aliases(tool) == {"from": "start", "limit": "size"}
+    assert validation_aliases(None) == {}
 
 
 # ---------------------------------------------------------------------------

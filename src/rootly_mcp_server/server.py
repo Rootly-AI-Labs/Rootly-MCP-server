@@ -818,6 +818,22 @@ class ToolArgumentAliasMiddleware(fastmcp_middleware.Middleware):
 
     def __init__(self, tool_names: Collection[str] | None = None) -> None:
         self.tool_names: Collection[str] | None = tool_names
+        self._alias_cache: dict[int, dict[str, str]] = {}
+
+    def _accepted_aliases(self, tool: Any) -> dict[str, str]:
+        """Names the tool's own signature accepts besides its schema properties.
+
+        pydantic validation aliases (``AliasChoices``) are honored by FastMCP's
+        argument validation but left out of the JSON schema, so they must be
+        treated as known here: never rewritten, never rejected.
+        """
+        fn = getattr(tool, "fn", None)
+        if fn is None:
+            return {}
+        key = id(fn)
+        if key not in self._alias_cache:
+            self._alias_cache[key] = tool_arguments.validation_aliases(fn)
+        return self._alias_cache[key]
 
     async def on_call_tool(
         self,
@@ -843,7 +859,9 @@ class ToolArgumentAliasMiddleware(fastmcp_middleware.Middleware):
         if not isinstance(schema, dict) or schema.get("additionalProperties", True) is not False:
             return await call_next(context)
 
-        normalized = tool_arguments.normalize_tool_arguments(args, schema)
+        normalized = tool_arguments.normalize_tool_arguments(
+            args, schema, self._accepted_aliases(tool)
+        )
         if normalized.rewrites:
             logger.debug("Normalized %s arguments: %s", tool_name, ", ".join(normalized.rewrites))
             bucket = _tool_argument_rewrites.get()

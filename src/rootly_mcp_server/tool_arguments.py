@@ -17,9 +17,13 @@ from __future__ import annotations
 
 import difflib
 import re
-from collections.abc import Mapping, Sequence
+import typing
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
+
+from pydantic import AliasChoices
+from pydantic.fields import FieldInfo
 
 # Parameter names models send that a Rootly tool spells differently, mapped
 # to the real names to suggest, in preference order (the first one the tool
@@ -52,9 +56,12 @@ PARAMETER_SYNONYMS: dict[str, tuple[str, ...]] = {
 # source name and declares the target (first declared target wins). Kept to
 # the shapes production telemetry shows for list_incidents direct calls;
 # ``filter_<x>`` / ``filter[<x>]`` / ``page[<x>]`` are handled generically.
+# ``max_results`` / ``limit`` need no entry: list_incidents accepts them as
+# pydantic validation aliases of ``page_size`` (see validation_aliases).
+# start_time/end_time map to the inclusive started_after/started_before,
+# which is what an unqualified start/end bound means.
 ARGUMENT_ALIASES: dict[str, tuple[str, ...]] = {
     "search": ("query",),
-    "max_results": ("page_size",),
     "start_time": ("started_after",),
     "end_time": ("started_before",),
     "services": ("service_ids",),
@@ -63,9 +70,13 @@ ARGUMENT_ALIASES: dict[str, tuple[str, ...]] = {
 # Keys that carry a dict of filters (``filters={"status": ...}``).
 _FILTER_CONTAINERS = ("filters", "filter")
 # Range operators of the Rootly API's ``filter[<field>_at][gte]`` shape.
-_LOWER_BOUND_OPS = frozenset({"gte", "gt"})
-_UPPER_BOUND_OPS = frozenset({"lte", "lt"})
-_RANGE_OPS = _LOWER_BOUND_OPS | _UPPER_BOUND_OPS
+# Only the inclusive ones are rewritten: <field>_after / <field>_before are
+# inclusive (>= / <=), so mapping a strict gt / lt onto them would silently
+# widen the range by its boundary. Strict ones are rejected with a hint.
+_LOWER_BOUND_OPS = frozenset({"gte"})
+_UPPER_BOUND_OPS = frozenset({"lte"})
+_STRICT_OPS = {"gt": ("lower", "after", "next"), "lt": ("upper", "before", "previous")}
+_RANGE_OPS = _LOWER_BOUND_OPS | _UPPER_BOUND_OPS | frozenset(_STRICT_OPS)
 _BRACKET_KEY = re.compile(r"^(filter|page)\[([^\[\]]+)\](?:\[([^\[\]]+)\])?$")
 _OP_SUFFIX = re.compile(r"^(.+)_(gte|gt|lte|lt)$")
 
@@ -88,6 +99,47 @@ class NormalizedArguments:
     rewrites: list[str] = field(default_factory=list)
     # Keys still not declared by the tool, with a hint for each (may be "").
     unknown: dict[str, str] = field(default_factory=dict)
+
+
+def validation_aliases(fn: Callable[..., Any] | None) -> dict[str, str]:
+    """Map every pydantic validation alias of ``fn``'s parameters to the parameter.
+
+    Curated tools accept extra names through ``Annotated[..., Field(
+    validation_alias=AliasChoices(...))]`` (e.g. ``list_shifts(start_date=)``
+    for ``from_date``). FastMCP validates with them but the advertised JSON
+    schema omits them, so they are read from the function's own annotations.
+    """
+    if fn is None:
+        return {}
+    try:
+        hints = typing.get_type_hints(fn, include_extras=True)
+    except Exception:
+        return {}
+    aliases: dict[str, str] = {}
+    for parameter, hint in hints.items():
+        for metadata in getattr(hint, "__metadata__", ()):
+            if not isinstance(metadata, FieldInfo):
+                continue
+            for alias in (metadata.alias, metadata.validation_alias):
+                choices: list[Any] = (
+                    list(alias.choices) if isinstance(alias, AliasChoices) else [alias]
+                )
+                for choice in choices:
+                    if isinstance(choice, str) and choice != parameter:
+                        aliases.setdefault(choice, parameter)
+    return aliases
+
+
+def _strict_bound_hint(op: str, lower: str | None, upper: str | None) -> str:
+    side, word, instant = _STRICT_OPS[op]
+    target = lower if side == "lower" else upper
+    if target is None:
+        return ""
+    symbol = ">=" if side == "lower" else "<="
+    return (
+        f"{target} is inclusive ({symbol}); there is no strict-{word} filter -- pass the "
+        f"{instant} instant to {target}, or use {op}e"
+    )
 
 
 def _properties(schema: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -157,6 +209,8 @@ def _resolve(
     if op is not None:
         if op not in _RANGE_OPS:
             return None, ""
+        if op in _STRICT_OPS:
+            return None, _strict_bound_hint(op, lower, upper) or _NO_EQUIVALENT_HINTS.get(base, "")
         target = lower if op in _LOWER_BOUND_OPS else upper
         if target is None:
             return None, _NO_EQUIVALENT_HINTS.get(base, "")
@@ -167,6 +221,10 @@ def _resolve(
             return None, _NO_EQUIVALENT_HINTS.get(base, "")
         pairs: list[tuple[str, Any]] = []
         for range_op, bound in value.items():
+            if range_op in _STRICT_OPS:
+                return None, _strict_bound_hint(range_op, lower, upper) or (
+                    f"{range_op!r} has no matching parameter"
+                )
             target = lower if range_op in _LOWER_BOUND_OPS else upper
             if target is None:
                 return None, f"{range_op!r} has no matching parameter"
@@ -197,34 +255,45 @@ def _is_comma_separated_string(spec: Any) -> bool:
 
 
 def normalize_tool_arguments(
-    arguments: Mapping[str, Any], schema: Mapping[str, Any] | None
+    arguments: Mapping[str, Any],
+    schema: Mapping[str, Any] | None,
+    accepted_aliases: Mapping[str, str] | None = None,
 ) -> NormalizedArguments:
     """Rewrite unambiguous argument aliases against ``schema`` (a JSON schema).
+
+    ``accepted_aliases`` maps names the tool already accepts (pydantic
+    validation aliases, see :func:`validation_aliases`) to their parameter;
+    those are passed through untouched, never rewritten or rejected.
 
     Never overwrites a parameter the caller set: an alias whose target is
     already present is dropped when it carries the same value and otherwise
     reported as unknown, with the conflict named.
     """
     properties = _properties(schema)
-    result = NormalizedArguments(arguments={k: v for k, v in arguments.items() if k in properties})
+    accepted = dict(accepted_aliases or {})
+    result = NormalizedArguments(
+        arguments={k: v for k, v in arguments.items() if k in properties or k in accepted}
+    )
+    # Values the caller set per parameter, whichever accepted name they used.
+    provided: dict[str, Any] = {accepted.get(k, k): v for k, v in result.arguments.items()}
 
     def assign(source: str, pairs: list[tuple[str, Any]]) -> bool:
         conflicts = [
-            target
-            for target, value in pairs
-            if target in result.arguments and result.arguments[target] != value
+            target for target, value in pairs if target in provided and provided[target] != value
         ]
         if conflicts:
             names = ", ".join(repr(name) for name in conflicts)
             result.unknown[source] = f"conflicts with {names}, which is also set"
             return False
         for target, value in pairs:
-            result.arguments.setdefault(target, value)
+            if target not in provided:
+                result.arguments[target] = value
+                provided[target] = value
             result.rewrites.append(f"{source}->{target}")
         return True
 
     for key, value in arguments.items():
-        if key in properties:
+        if key in properties or key in accepted:
             continue
         if key in _FILTER_CONTAINERS and isinstance(value, dict):
             for sub_key, sub_value in value.items():
