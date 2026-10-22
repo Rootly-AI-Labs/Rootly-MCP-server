@@ -22,8 +22,7 @@ MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
 logger = logging.getLogger(__name__)
 
 SHIFT_INCIDENT_QUERY_FIELDS = (
-    "title,status,started_at,resolved_at,created_at,summary,"
-    "customer_impact_summary,mitigation_message,severity,url"
+    "title,status,started_at,resolved_at,created_at,summary,mitigation_message,severity,url"
 )
 DEFAULT_MAX_SHIFT_INCIDENT_RESULTS = 100
 UNSUPPORTED_TAGS_WARNING = (
@@ -1377,7 +1376,6 @@ def register_oncall_tools(
                 title = attrs.get("title", "Untitled Incident")
                 severity = _normalize_incident_severity(attrs.get("severity"))
                 summary_text = _truncate_text(attrs.get("summary"))
-                impact_text = _truncate_text(attrs.get("customer_impact_summary"))
                 mitigation_text = _truncate_text(attrs.get("mitigation_message"))
                 narrative_parts.append(f"[{severity.upper()}] {title}")
 
@@ -1395,17 +1393,9 @@ def register_oncall_tools(
                 if summary_text:
                     narrative_parts.append(f"Details: {summary_text}")
 
-                # Impact
-                if impact_text:
-                    narrative_parts.append(f"Impact: {impact_text}")
-
                 # Resolution (if available)
                 if mitigation_text:
                     narrative_parts.append(f"Resolution: {mitigation_text}")
-                elif attrs.get("action_items_count") and attrs.get("action_items_count") > 0:
-                    narrative_parts.append(
-                        f"Action items created: {attrs.get('action_items_count')}"
-                    )
 
                 narrative = _truncate_text(" | ".join(narrative_parts), max_length=400)
 
@@ -1419,7 +1409,6 @@ def register_oncall_tools(
                         "resolved_at": resolved_at,
                         "duration_minutes": duration_minutes,
                         "summary": summary_text,
-                        "impact": impact_text,
                         "mitigation": mitigation_text,
                         "narrative": narrative,
                         "incident_url": attrs.get("url"),

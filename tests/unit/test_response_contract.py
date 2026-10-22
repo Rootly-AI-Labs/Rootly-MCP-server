@@ -267,27 +267,11 @@ KNOWN_RESPONSE_VIOLATIONS: dict[ContractKey, str] = {
         "user shows as 'Unknown User'. Send include=user and resolve the name "
         "from the included user."
     ),
-    ("GET", "/v1/incidents", "data[].attributes.customer_impact_summary"): (
-        "get_shift_incidents / get_oncall_handoff_summary read (and request in "
-        "fields[incidents]) customer_impact_summary, which IncidentSerializer "
-        "does not render; `impact` is always null. Drop it or source impact "
-        "from a real field."
-    ),
-    ("GET", "/v1/incidents", "data[].attributes.action_items_count"): (
-        "get_shift_incidents narrative reads action_items_count, which "
-        "IncidentSerializer does not render (action items are the "
-        "`action_items` relationship, incident_serializer.rb:215)."
-    ),
 }
 
 # Requested sparse-fieldset values that are not attributes of the type, keyed
 # by (resource type, field). Each is a strict xfail test.
-KNOWN_FIELDSET_VIOLATIONS: dict[tuple[str, str], str] = {
-    ("incidents", "customer_impact_summary"): (
-        "SHIFT_INCIDENT_QUERY_FIELDS asks for an attribute IncidentSerializer "
-        "does not have; see the matching KNOWN_RESPONSE_VIOLATIONS entry."
-    ),
-}
+KNOWN_FIELDSET_VIOLATIONS: dict[tuple[str, str], str] = {}
 
 # (mode, scenario) pairs whose tool crashes on a schema-valid sparse response.
 # Each is a strict xfail test.
