@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx2
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -110,6 +111,9 @@ class Upstream:
         schedules_total_pages: int = 1,
         schedule_detail_status: int = 200,
         rotation_users_status: int = 200,
+        rotations_total_pages: int = 1,
+        rotation_users_total_pages: int = 1,
+        rotations_page_failures: dict[int, int | BaseException] | None = None,
     ) -> None:
         self.shifts = SHIFTS if shifts is None else shifts
         self.total_pages = total_pages
@@ -118,11 +122,22 @@ class Upstream:
         # short either by failing or by running past its page budget.
         self.schedules_status = schedules_status
         self.schedules_total_pages = schedules_total_pages
-        # A single schedule and its rotation membership are separate reads, and
-        # either can fail independently of the other.
+        # A schedule's rotations (`/v1/schedules/{id}/schedule_rotations`) and
+        # each rotation's membership are separate reads, and either can fail
+        # independently of the other.
         self.schedule_detail_status = schedule_detail_status
         self.rotation_users_status = rotation_users_status
+        # More pages than the fetcher's budget of 10 makes a roster read
+        # truncate: every page is full (100 rows), so the fetch fans out.
+        self.rotations_total_pages = rotations_total_pages
+        self.rotation_users_total_pages = rotation_users_total_pages
+        # Page number -> status to answer, or exception to raise, for the
+        # rotations listing.
+        self.rotations_page_failures = rotations_page_failures or {}
         self.shift_queries: list[dict[str, Any]] = []
+        self.rotation_queries: list[str] = []
+        self.rotation_user_queries: list[str] = []
+        self.schedule_detail_queries: list[str] = []
         # Per-schedule shift reads (`/v1/schedules/{id}/shifts`), keyed by id.
         self.schedule_shift_queries: list[tuple[str, dict[str, Any]]] = []
 
@@ -148,33 +163,89 @@ class Upstream:
                 }
             )
         if "/schedule_rotation_users" in url:
+            self.rotation_user_queries.append(url)
             if self.rotation_users_status != 200:
                 failed = Mock()
                 failed.status_code = self.rotation_users_status
                 failed.json.return_value = {}
                 return failed
+            page = int((params or {}).get("page[number]", 1))
+            member_ids = [int(uid) for uid in self.rotation_users] if page == 1 else []
+            if self.rotation_users_total_pages > 1:
+                # Full pages of filler members, so the fetch fans out.
+                member_ids += [900000 + page * 1000 + i for i in range(100 - len(member_ids))]
+            # Api::V1::ScheduleRotationUserSerializer: attributes only, with the
+            # member as an integer `user_id` and no relationships.
             return _ok(
                 {
                     "data": [
-                        {"relationships": {"user": {"data": {"id": uid}}}}
-                        for uid in self.rotation_users
+                        {
+                            "id": f"ru-{page}-{position}",
+                            "type": "schedule_rotation_users",
+                            "attributes": {
+                                "schedule_rotation_id": url.split("/")[3],
+                                "user_id": member_id,
+                                "position": position,
+                                "created_at": "2026-01-01T00:00:00Z",
+                                "updated_at": "2026-01-01T00:00:00Z",
+                            },
+                        }
+                        for position, member_id in enumerate(member_ids, start=1)
                     ],
-                    "meta": {"total_pages": 1},
+                    "links": {},
+                    "meta": {"current_page": page, "total_pages": self.rotation_users_total_pages},
                 }
             )
-        if "/v1/schedules/" in url:
+        if url.startswith("/v1/schedules/") and url.endswith("/schedule_rotations"):
+            self.rotation_queries.append(url)
             if self.schedule_detail_status != 200:
                 failed = Mock()
                 failed.status_code = self.schedule_detail_status
                 failed.json.return_value = {}
                 return failed
+            page = int((params or {}).get("page[number]", 1))
+            failure = self.rotations_page_failures.get(page)
+            if isinstance(failure, BaseException):
+                raise failure
+            if failure is not None:
+                failed = Mock()
+                failed.status_code = failure
+                failed.json.return_value = {}
+                return failed
+            if self.rotations_total_pages > 1:
+                rotation_ids = [f"rot-{page}-{i}" for i in range(100)]
+            else:
+                rotation_ids = ["rot-1"]
+            return _ok(
+                {
+                    "data": [
+                        {
+                            "id": rotation_id,
+                            "type": "schedule_rotations",
+                            "attributes": {
+                                "schedule_id": url.split("/")[3],
+                                "name": "Weekly",
+                                "position": 1,
+                                "schedule_rotationable_type": "ScheduleWeeklyRotation",
+                            },
+                        }
+                        for rotation_id in rotation_ids
+                    ],
+                    "links": {},
+                    "meta": {"current_page": page, "total_pages": self.rotations_total_pages},
+                }
+            )
+        if "/v1/schedules/" in url:
+            # GET /v1/schedules/{id}: ScheduleSerializer renders owner_user and
+            # escalation_policies only -- never the schedule's rotations.
+            self.schedule_detail_queries.append(url)
             return _ok(
                 {
                     "data": {
-                        "id": "sched-a",
-                        "relationships": {
-                            "schedule_rotations": {"data": [{"id": "rot-1"}]},
-                        },
+                        "id": url.split("/")[3],
+                        "type": "schedules",
+                        "attributes": {"name": "Infra Primary"},
+                        "relationships": {"owner_user": {"data": None}},
                     }
                 }
             )
@@ -433,6 +504,32 @@ class TestResponderAvailabilityScoping:
 class TestOverrideRecommendationScoping:
     """``create_override_recommendation`` scores only the rotation's own users."""
 
+    async def test_candidates_come_from_the_rotations_endpoint(self):
+        # The schedule resource has no schedule_rotations relationship, so
+        # reading rotations off it found none and nobody was ever recommended.
+        # They are listed from their own endpoint, and each rotation's members
+        # are the `user_id` attributes of its schedule_rotation_users.
+        upstream = Upstream(rotation_users=["94178", "27965"])
+        result = await _tools(upstream)["create_override_recommendation"](
+            schedule_id="sched-a", original_user_id=2381, start_date=START, end_date=END
+        )
+
+        assert upstream.rotation_queries == ["/v1/schedules/sched-a/schedule_rotations"]
+        assert upstream.rotation_user_queries == [
+            "/v1/schedule_rotations/rot-1/schedule_rotation_users"
+        ]
+        assert not upstream.schedule_detail_queries
+        assert result.get("error") is None
+        assert sorted(r["user_id"] for r in result["recommended_replacements"]) == [
+            27965,
+            94178,
+        ]
+        assert {r["user_name"] for r in result["recommended_replacements"]} == {
+            "Gideon Lapshun",
+            "Alexandra Chapin",
+        }
+        assert "warning" not in result
+
     async def test_rotation_users_are_pushed_upstream(self):
         upstream = Upstream(rotation_users=["94178", "27965"])
         await _tools(upstream)["create_override_recommendation"](
@@ -480,6 +577,95 @@ class TestOverrideRecommendationScoping:
         assert result["details"]["upstream_status"] == status
         assert "rotations configured" not in result["message"]
         assert not upstream.shift_queries
+
+    async def test_a_missing_schedule_names_the_404(self):
+        upstream = Upstream(rotation_users=["94178"], rotations_page_failures={1: 404})
+        result = await _tools(upstream)["create_override_recommendation"](
+            schedule_id="sched-a", original_user_id=2381, start_date=START, end_date=END
+        )
+
+        assert result["error"] is True
+        assert "upstream answered 404 for its rotations" in result["message"]
+        assert "confirm the id with list_schedules" in result["message"]
+        assert result["details"]["upstream_status"] == 404
+        assert "404" in result["details"]["upstream_error"]
+        assert not upstream.shift_queries
+
+    async def test_a_later_rotations_page_failure_keeps_its_status(self):
+        # Page 1 is fine and full, so pages 2.. are fetched; page 3 fails. That
+        # used to raise without a status and read as "upstream answered nothing".
+        upstream = Upstream(
+            rotation_users=["94178"], rotations_total_pages=4, rotations_page_failures={3: 500}
+        )
+        result = await _tools(upstream)["create_override_recommendation"](
+            schedule_id="sched-a", original_user_id=2381, start_date=START, end_date=END
+        )
+
+        assert result["error"] is True
+        assert "upstream answered 500 for its rotations" in result["message"]
+        assert "nothing" not in result["message"]
+        assert result["details"]["upstream_status"] == 500
+        assert "1 of 3 additional pages" in result["details"]["upstream_error"]
+        assert "list_schedules" not in result["message"]  # not a 404/403
+        assert not upstream.shift_queries
+
+    @pytest.mark.parametrize("failing_page", [1, 2])
+    async def test_a_transport_error_on_the_rotations_read_is_named(self, failing_page: int):
+        upstream = Upstream(
+            rotation_users=["94178"],
+            rotations_total_pages=2,
+            rotations_page_failures={failing_page: httpx2.ConnectError("connection reset")},
+        )
+        result = await _tools(upstream)["create_override_recommendation"](
+            schedule_id="sched-a", original_user_id=2381, start_date=START, end_date=END
+        )
+
+        assert result["error"] is True
+        assert "Cannot read schedule sched-a" in result["message"]
+        assert "answered nothing" not in result["message"]
+        assert "ConnectError: connection reset" in result["message"]
+        assert result["details"]["upstream_status"] is None
+        assert "ConnectError: connection reset" in result["details"]["upstream_error"]
+        assert not upstream.shift_queries
+
+    async def test_a_truncated_rotations_listing_still_recommends_but_says_so(self):
+        # 40 full pages against a budget of 10: the roster read is short, not
+        # failed. Everyone it returned is a real candidate, so it answers, and
+        # says the best candidate may be past the cut.
+        upstream = Upstream(rotation_users=["94178"], rotations_total_pages=40)
+        result = await _tools(upstream)["create_override_recommendation"](
+            schedule_id="sched-a", original_user_id=2381, start_date=START, end_date=END
+        )
+
+        assert result.get("error") is None
+        assert [r["user_id"] for r in result["recommended_replacements"]] == [94178]
+        assert result["meta"]["truncated"] is True
+        assert result["meta"]["roster_truncated"] is True
+        warning = result["partial_rotation_warning"]
+        assert "the schedule's rotations (10 of 40 pages)" in warning
+        assert "members of rotation" not in warning
+
+    async def test_a_truncated_rotation_membership_still_recommends_but_says_so(self):
+        upstream = Upstream(rotation_users=["94178"], rotation_users_total_pages=40)
+        result = await _tools(upstream)["create_override_recommendation"](
+            schedule_id="sched-a", original_user_id=2381, start_date=START, end_date=END
+        )
+
+        assert result.get("error") is None
+        assert result["recommended_replacements"]
+        assert result["meta"]["truncated"] is True
+        warning = result["partial_rotation_warning"]
+        assert "the members of rotation(s) rot-1 (10 of 40 pages)" in warning
+        assert "schedule's rotations" not in warning
+
+    async def test_a_complete_roster_carries_no_truncation(self):
+        upstream = Upstream(rotation_users=["94178"])
+        result = await _tools(upstream)["create_override_recommendation"](
+            schedule_id="sched-a", original_user_id=2381, start_date=START, end_date=END
+        )
+
+        assert "partial_rotation_warning" not in result
+        assert "truncated" not in result.get("meta", {})
 
     async def test_unreadable_rotation_membership_is_not_an_unstaffed_schedule(self):
         # Same shape one level down: a rotation whose membership failed to load

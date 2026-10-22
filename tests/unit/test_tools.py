@@ -1425,6 +1425,85 @@ class TestIncidentReferenceResolutionAcrossTools:
 
 
 @pytest.mark.unit
+class TestOncallStatusResource:
+    """``rootly://oncall-status`` names who is on call from the included user."""
+
+    @staticmethod
+    def _ok(payload: dict[str, Any]) -> Mock:
+        response = Mock()
+        response.status_code = 200
+        response.raise_for_status.return_value = None
+        response.json.return_value = payload
+        return response
+
+    @staticmethod
+    def _shift(shift_id: str, user_id: str | None) -> dict[str, Any]:
+        # Api::V1::ShiftSerializer: the user is a relationship, never an
+        # attribute; a coverage gap has `user.data: null`.
+        return {
+            "id": shift_id,
+            "type": "shifts",
+            "attributes": {
+                "schedule_id": "sched-1",
+                "rotation_id": "rot-1",
+                "starts_at": "2026-04-01T08:00:00Z",
+                "ends_at": "2026-04-01T16:00:00Z",
+                "is_override": False,
+                "is_shadow": False,
+                "user_id": int(user_id) if user_id else None,
+            },
+            "relationships": {
+                "shift_override": {"data": None},
+                "user": {"data": {"id": user_id, "type": "users"} if user_id else None},
+            },
+        }
+
+    @pytest.mark.asyncio
+    async def test_names_come_from_the_included_user(self):
+        mcp = FakeMCP()
+        request = AsyncMock()
+        register_resource_handlers(
+            mcp=mcp,
+            make_authenticated_request=request,
+            strip_heavy_nested_data=lambda data: data,
+            mcp_error=FakeMCPError(),
+        )
+        schedules = self._ok(
+            {
+                "data": [{"id": "sched-1", "type": "schedules", "attributes": {"name": "Primary"}}],
+                "links": {},
+                "meta": {"current_page": 1, "total_pages": 1},
+            }
+        )
+        shifts = self._ok(
+            {
+                "data": [self._shift("shift-1", "2381"), self._shift("shift-2", None)],
+                "included": [
+                    {
+                        "id": "2381",
+                        "type": "users",
+                        "attributes": {
+                            "email": "quentin@example.com",
+                            "full_name": "Quentin Rousseau",
+                            "time_zone": "UTC",
+                        },
+                    }
+                ],
+            }
+        )
+        request.side_effect = [schedules, shifts]
+
+        result = await mcp.resources["rootly://oncall-status"]()
+
+        _, shifts_call = request.await_args_list
+        assert shifts_call.args == ("GET", "/v1/schedules/sched-1/shifts")
+        assert shifts_call.kwargs["params"]["include"] == "user"
+        assert "👤 Quentin Rousseau" in result["text"]
+        assert "👤 Unassigned" in result["text"]
+        assert "Unknown User" not in result["text"]
+
+
+@pytest.mark.unit
 class TestPureHelpers:
     """Direct tests for module-level incident helpers."""
 

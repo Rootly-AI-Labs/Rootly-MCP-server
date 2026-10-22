@@ -22,8 +22,7 @@ MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
 logger = logging.getLogger(__name__)
 
 SHIFT_INCIDENT_QUERY_FIELDS = (
-    "title,status,started_at,resolved_at,created_at,summary,"
-    "customer_impact_summary,mitigation_message,severity,url"
+    "title,status,started_at,resolved_at,created_at,summary,mitigation_message,severity,url"
 )
 DEFAULT_MAX_SHIFT_INCIDENT_RESULTS = 100
 UNSUPPORTED_TAGS_WARNING = (
@@ -1377,7 +1376,6 @@ def register_oncall_tools(
                 title = attrs.get("title", "Untitled Incident")
                 severity = _normalize_incident_severity(attrs.get("severity"))
                 summary_text = _truncate_text(attrs.get("summary"))
-                impact_text = _truncate_text(attrs.get("customer_impact_summary"))
                 mitigation_text = _truncate_text(attrs.get("mitigation_message"))
                 narrative_parts.append(f"[{severity.upper()}] {title}")
 
@@ -1395,17 +1393,9 @@ def register_oncall_tools(
                 if summary_text:
                     narrative_parts.append(f"Details: {summary_text}")
 
-                # Impact
-                if impact_text:
-                    narrative_parts.append(f"Impact: {impact_text}")
-
                 # Resolution (if available)
                 if mitigation_text:
                     narrative_parts.append(f"Resolution: {mitigation_text}")
-                elif attrs.get("action_items_count") and attrs.get("action_items_count") > 0:
-                    narrative_parts.append(
-                        f"Action items created: {attrs.get('action_items_count')}"
-                    )
 
                 narrative = _truncate_text(" | ".join(narrative_parts), max_length=400)
 
@@ -1419,7 +1409,6 @@ def register_oncall_tools(
                         "resolved_at": resolved_at,
                         "duration_minutes": duration_minutes,
                         "summary": summary_text,
-                        "impact": impact_text,
                         "mitigation": mitigation_text,
                         "narrative": narrative,
                         "incident_url": attrs.get("url"),
@@ -1882,7 +1871,8 @@ def register_oncall_tools(
                     f"Upstream request to {path} failed"
                     + (f" with status {status}" if status else " (no response)")
                     + ". Returning no results would be indistinguishable from an "
-                    "empty result, so the query is failed instead."
+                    "empty result, so the query is failed instead.",
+                    status_code=status,
                 )
             return []
         first_data = first.json()
@@ -1938,10 +1928,11 @@ def register_oncall_tools(
                 report["fetched_pages"] = report.get("fetched_pages", 0) + 1
             return items
 
-        async def _fetch_page(page_number: int) -> dict[str, Any] | None:
+        async def _fetch_page(page_number: int) -> dict[str, Any] | int | None:
+            """The page's payload, else its failing status (``None``: no response)."""
             response = await _request_page(page_number)
             if not response or response.status_code != 200:
-                return None
+                return getattr(response, "status_code", None)
             return cast(dict[str, Any], response.json())
 
         rest = await asyncio.gather(
@@ -1949,22 +1940,38 @@ def register_oncall_tools(
             return_exceptions=True,
         )
         failed_pages = 0
+        # Why the pages failed, so a raise can name it: the first HTTP status
+        # seen, and otherwise the first exception (a transport error).
+        failed_status: int | None = None
+        failed_exception: BaseException | None = None
         for page_payload in rest:
-            if isinstance(page_payload, BaseException) or page_payload is None:
+            if not isinstance(page_payload, dict):
                 # One transient page error shouldn't drop a best-effort
                 # enrichment lookup, but for a fetch whose result is the answer
                 # it means the caller would receive a short list and read it as
                 # complete -- the same failure as the first page returning
                 # empty, just further in.
                 failed_pages += 1
+                if isinstance(page_payload, BaseException):
+                    failed_exception = failed_exception or page_payload
+                elif isinstance(page_payload, int) and failed_status is None:
+                    failed_status = page_payload
                 continue
             items.extend(page_payload.get("data", []))
             if on_included:
                 on_included(list(page_payload.get("included", [])))
         if failed_pages and required:
+            if failed_status is not None:
+                cause = f" (upstream answered {failed_status})"
+            elif failed_exception is not None:
+                cause = f" ({type(failed_exception).__name__}: {failed_exception})"
+            else:
+                cause = " (no response)"
             raise RootlyAPIError(
-                f"{failed_pages} of {total_pages - 1} additional pages from {path} failed. "
-                "The partial result would read as complete, so the query is failed instead."
+                f"{failed_pages} of {total_pages - 1} additional pages from {path} "
+                f"failed{cause}. The partial result would read as complete, so the "
+                "query is failed instead.",
+                status_code=failed_status,
             )
         if report is not None:
             # Counted here rather than from the reported total, so a window
@@ -3071,78 +3078,104 @@ def register_oncall_tools(
                 original_user_attrs.get("full_name") or original_user_attrs.get("name") or "Unknown"
             )
 
-            # Fetch schedule rotations to find rotation users
+            # Candidates are the users rostered in the schedule's rotations.
             rotation_users: set[str] = set()
+            semaphore = asyncio.Semaphore(10)
 
-            # First, get the schedule to find its rotations
-            schedule_response = await make_authenticated_request(
-                "GET", f"/v1/schedules/{schedule_id}"
-            )
-
-            # A schedule that could not be read is not a schedule without
-            # rotations. Continuing past a non-200 left `rotation_users` empty
-            # and the response said the schedule "may not have any rotations
-            # configured" -- pointing the caller at the schedule's setup when
-            # the id was wrong or the token could not see it.
-            schedule_status = getattr(schedule_response, "status_code", None)
-            if schedule_status != 200:
-                return mcp_error.tool_error(
-                    f"Cannot read schedule {schedule_id}: upstream answered "
-                    f"{schedule_status if schedule_status is not None else 'nothing'}. "
-                    "Rootly answers 404 both for a schedule that does not exist and "
+            # Rotations come from their own endpoint: Api::V1::ScheduleSerializer
+            # renders no schedule_rotations relationship (only owner_user and
+            # escalation_policies), so reading them off GET /v1/schedules/{id}
+            # always found none and no candidate was ever recommended.
+            # Each roster read reports whether its page budget cut it short.
+            rotations_report: dict[str, Any] = {}
+            try:
+                rotations = await _fetch_all_pages(
+                    f"/v1/schedules/{schedule_id}/schedule_rotations",
+                    semaphore,
+                    required=True,
+                    report=rotations_report,
+                )
+            except (RootlyAPIError, httpx2.TransportError) as exc:
+                # A schedule that could not be read is not a schedule without
+                # rotations. Treating a failure as an empty list said the
+                # schedule "may not have any rotations configured" -- pointing
+                # the caller at the schedule's setup when the id was wrong or
+                # the token could not see it.
+                schedule_status = exc.status_code if isinstance(exc, RootlyAPIError) else None
+                upstream_error = (
+                    exc.message
+                    if isinstance(exc, RootlyAPIError)
+                    else f"{type(exc).__name__}: {exc}"
+                )
+                if schedule_status is not None:
+                    answered = f"upstream answered {schedule_status} for its rotations"
+                else:
+                    # No status is not "no answer": a transport error or a
+                    # failure past the first page. Say what happened.
+                    answered = f"reading its rotations failed ({upstream_error})"
+                hint = (
+                    " Rootly answers 404 both for a schedule that does not exist and "
                     "for one this token cannot see, so confirm the id with "
-                    "list_schedules and check the token's access before reading "
-                    "this as a configuration problem.",
+                    "list_schedules and check the token's access before reading this "
+                    "as a configuration problem."
+                    if schedule_status in (403, 404)
+                    else " This is an upstream failure, not a schedule without rotations."
+                )
+                return mcp_error.tool_error(
+                    f"Cannot read schedule {schedule_id}: {answered}.{hint}",
                     "execution_error",
-                    details={"schedule_id": schedule_id, "upstream_status": schedule_status},
+                    details={
+                        "schedule_id": schedule_id,
+                        "upstream_status": schedule_status,
+                        "upstream_error": upstream_error,
+                    },
                 )
 
-            schedule_data = schedule_response.json()
-            schedule_obj = schedule_data.get("data", {})
-            relationships = schedule_obj.get("relationships", {})
-
-            # Get schedule rotations
-            rotations = relationships.get("schedule_rotations", {}).get("data", [])
-            rotation_ids = [r.get("id") for r in rotations if r.get("id")]
+            rotation_ids = [
+                str(rotation["id"])
+                for rotation in rotations
+                if isinstance(rotation, dict) and rotation.get("id")
+            ]
 
             # A rotation whose membership could not be read is unknown, not
             # empty. Counted rather than dropped, so a candidate missing because
             # of a failed request is never scored as a schedule with nobody in it.
             rotation_failures = 0
+            member_reports: dict[str, dict[str, Any]] = {rid: {} for rid in rotation_ids}
 
-            # Fetch all rotation users in parallel
             if rotation_ids:
-
-                async def fetch_rotation_users(rotation_id: str) -> list[dict[str, Any]] | None:
-                    response = await make_authenticated_request(
-                        "GET",
-                        f"/v1/schedule_rotations/{rotation_id}/schedule_rotation_users",
-                        params={"page[size]": 100},
-                    )
-                    if response and response.status_code == 200:
-                        return cast(list[dict[str, Any]], response.json().get("data", []))
-                    # `None` rather than `[]`: an empty rotation and an
-                    # unreadable one must not arrive looking the same.
-                    return None
-
-                # Execute all rotation user fetches in parallel
+                # `required=True` raises on a failed read rather than returning
+                # `[]`: an empty rotation and an unreadable one must not arrive
+                # looking the same. `return_exceptions` turns the raise into a
+                # counted failure for that rotation alone.
                 rotation_results = await asyncio.gather(
-                    *[fetch_rotation_users(rid) for rid in rotation_ids], return_exceptions=True
+                    *(
+                        _fetch_all_pages(
+                            f"/v1/schedule_rotations/{rotation_id}/schedule_rotation_users",
+                            semaphore,
+                            required=True,
+                            report=member_reports[rotation_id],
+                        )
+                        for rotation_id in rotation_ids
+                    ),
+                    return_exceptions=True,
                 )
 
-                # Process results
                 for result in rotation_results:
-                    # Either the `None` above or an exception captured by
-                    # `return_exceptions`. Both mean this rotation's membership
-                    # is unknown.
                     if not isinstance(result, list):
                         rotation_failures += 1
                         continue
-                    for ru in result:
-                        user_rel = ru.get("relationships", {}).get("user", {}).get("data", {})
-                        user_id = user_rel.get("id")
-                        if user_id:
-                            rotation_users.add(str(user_id))
+                    for rotation_user in result:
+                        # ScheduleRotationUserSerializer renders the member as
+                        # a plain `user_id` attribute; it has no relationships.
+                        attrs = (
+                            rotation_user.get("attributes")
+                            if isinstance(rotation_user, dict)
+                            else None
+                        ) or {}
+                        member_id = attrs.get("user_id")
+                        if member_id is not None:
+                            rotation_users.add(str(member_id))
 
             # Nothing readable and something failed: recommending from an empty
             # candidate list would be indistinguishable from a schedule whose
@@ -3185,7 +3218,7 @@ def register_oncall_tools(
             if rotation_users:
                 all_shifts = await _fetch_all_pages(
                     "/v1/shifts",
-                    asyncio.Semaphore(10),
+                    semaphore,
                     extra_params=shift_params,
                     on_included=_merge_users,
                     required=True,
@@ -3276,7 +3309,7 @@ def register_oncall_tools(
 
             # Build response with optional warning
             fetch_meta = _shift_fetch_meta(fetch_report, shift_params["to"])
-            response = {
+            response: dict[str, Any] = {
                 "schedule_name": schedule_name,
                 "original_user": {
                     "id": original_user_id,
@@ -3304,14 +3337,50 @@ def register_oncall_tools(
                     "All rotation users are either excluded or the original user. No recommendations available."
                 )
 
+            partial_notes: list[str] = []
             if rotation_failures:
                 # Candidates were found, so the call still answers, but it is
                 # drawn from part of the rotation and says which part.
-                response["partial_rotation_warning"] = (
+                partial_notes.append(
                     f"{rotation_failures} of {len(rotation_ids)} rotation(s) could not be "
                     "read, so anyone rostered only in those is missing from these "
                     "recommendations and from the load figures."
                 )
+
+            # A roster read that hit its page budget is short, not failed. Every
+            # candidate it did return is genuinely in the rotation and scored on
+            # real load, so the ranking is still right for those it lists -- it
+            # may just miss someone better. That is the same trade the shift
+            # fetch makes, so warn and still recommend rather than refuse.
+            truncated_reads: list[str] = []
+            if rotations_report.get("truncated"):
+                truncated_reads.append(
+                    f"the schedule's rotations ({_pages_fetched_phrase(rotations_report)})"
+                )
+            truncated_rotations = [
+                rid for rid, report in member_reports.items() if report.get("truncated")
+            ]
+            if truncated_rotations:
+                truncated_reads.append(
+                    "the members of rotation(s) "
+                    + ", ".join(
+                        f"{rid} ({_pages_fetched_phrase(member_reports[rid])})"
+                        for rid in sorted(truncated_rotations)
+                    )
+                )
+            if truncated_reads:
+                partial_notes.append(
+                    "The page limit cut short the read of "
+                    + " and ".join(truncated_reads)
+                    + ", so anyone rostered past it is missing from these "
+                    "recommendations; a lighter-loaded candidate may exist."
+                )
+                roster_meta = response.setdefault("meta", {})
+                roster_meta["truncated"] = True
+                roster_meta["roster_truncated"] = True
+
+            if partial_notes:
+                response["partial_rotation_warning"] = " ".join(partial_notes)
 
             return response
 

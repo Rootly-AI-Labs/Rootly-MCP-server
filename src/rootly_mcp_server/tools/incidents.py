@@ -2060,7 +2060,6 @@ def register_incident_tools(
                     "attributes": {
                         "title": incident_description,
                         "summary": incident_description,
-                        "description": incident_description,
                     },
                 }
             else:
@@ -2226,7 +2225,6 @@ def register_incident_tools(
                     "attributes": {
                         "title": incident_title,
                         "summary": incident_description,
-                        "description": incident_description,
                     },
                 }
             else:
