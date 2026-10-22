@@ -205,6 +205,57 @@ def test_resource_id_maps_to_id_only_when_the_tool_names_that_resource():
     assert set(unnamed.unknown) == {"incident_id"}
 
 
+async def test_alias_and_parameter_with_the_same_value_are_deduplicated(server, sent):
+    # Sentry ROOTLY-MCP-18: pydantic rejects max_results as unexpected when
+    # page_size is also passed, even with the same value.
+    result = await _call(server, "list_incidents", {"max_results": 5, "page_size": 5})
+
+    assert not result.is_error, _text(result)
+    assert _incident_params(sent).get("page[size]") == "5"
+
+
+async def test_alias_and_parameter_that_disagree_are_reported(server, sent):
+    result = await _call(server, "list_incidents", {"max_results": 5, "page_size": 10})
+
+    assert result.is_error
+    assert "'max_results' (conflicts with 'page_size', which is also set)" in _text(result)
+    assert not [r for r in sent if r.url.path == "/v1/incidents"]
+
+
+async def test_bare_id_reaches_the_tools_own_resource_id(server, sent):
+    incident_id = "0b9c7d2e-1f3a-4c5b-8d6e-7f8a9b0c1d2e"
+    result = await _call(server, "update_incident", {"id": incident_id, "title": "New title"})
+
+    assert not result.is_error, _text(result)
+    paths = [r.url.path for r in sent]
+    assert f"/v1/incidents/{incident_id}" in paths, paths
+
+
+def test_bare_id_is_left_alone_when_the_resource_is_ambiguous():
+    schema = {
+        "type": "object",
+        "properties": {"incident_id": {}, "alert_id": {}},
+        "additionalProperties": False,
+    }
+
+    result = normalize_tool_arguments({"id": "x"}, schema, tool_name="link_incident_alert")
+
+    assert set(result.unknown) == {"id"}
+
+
+async def test_shift_field_names_reach_the_shift_range(server, sent):
+    result = await _call(
+        server, "get_schedule_shifts", {"id": "sched-1", "starts_at": _TS1, "ends_at": _TS2}
+    )
+
+    assert not result.is_error, _text(result)
+    requests = [r for r in sent if r.url.path == "/v1/schedules/sched-1/shifts"]
+    assert requests, [str(r.url) for r in sent]
+    for request in requests:
+        assert request.url.params.get("from") == _TS1
+        assert request.url.params.get("to") == _TS2
+
+
 async def test_explicit_value_is_never_overwritten(server, sent):
     result = await _call(
         server, "list_incidents", {"status": "resolved", "filter[status]": "resolved"}
