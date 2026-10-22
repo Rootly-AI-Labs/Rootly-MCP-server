@@ -165,6 +165,43 @@ async def test_max_results_inside_a_filters_dict_reaches_page_size(server, sent)
     assert _incident_params(sent).get("page[size]") == "6"
 
 
+async def test_schedule_shift_names_reach_the_tools_own_parameters(server, sent):
+    # Production Code Mode calls: schedule_id for the schedule's id, and the
+    # list_incidents-style start_time/end_time for the shift range.
+    result = await _call(
+        server,
+        "get_schedule_shifts",
+        {"schedule_id": "sched-1", "start_time": _TS1, "end_time": _TS2},
+    )
+
+    assert not result.is_error, _text(result)
+    requests = [r for r in sent if r.url.path == "/v1/schedules/sched-1/shifts"]
+    assert requests, [str(r.url) for r in sent]
+
+
+async def test_page_size_reaches_collect_incidents_batch_size(server, sent):
+    result = await _call(server, "collect_incidents", {"page_size": 25, "max_results": 25})
+
+    assert not result.is_error, _text(result)
+    assert _incident_params(sent).get("page[size]") == "25"
+
+
+def test_resource_id_maps_to_id_only_when_the_tool_names_that_resource():
+    schema = {
+        "type": "object",
+        "properties": {"id": {"type": "string"}},
+        "additionalProperties": False,
+    }
+
+    own = normalize_tool_arguments({"incident_id": "i1"}, schema, tool_name="get_incident")
+    other = normalize_tool_arguments({"user_id": "u1"}, schema, tool_name="get_incident")
+    unnamed = normalize_tool_arguments({"incident_id": "i1"}, schema)
+
+    assert own.arguments == {"id": "i1"}
+    assert set(other.unknown) == {"user_id"}
+    assert set(unnamed.unknown) == {"incident_id"}
+
+
 async def test_explicit_value_is_never_overwritten(server, sent):
     result = await _call(
         server, "list_incidents", {"status": "resolved", "filter[status]": "resolved"}
@@ -251,6 +288,25 @@ async def test_updated_filter_points_at_the_sort_that_exists(server, sent):
     result = await _call(server, "list_incidents", {"filter_updated_at": {"gte": _TS1}})
 
     assert "pass sort='-updated_at'" in _text(result)
+
+
+async def test_created_filter_points_at_the_sort_that_exists(server, sent):
+    result = await _call(
+        server, "list_incidents", {"filter_created_at_gte": _TS1, "filter_created_at_lte": _TS2}
+    )
+
+    text = _text(result)
+    assert "'filter_created_at_gte' (there is no created-time filter)" in text
+    assert "pass sort='-created_at'" in text
+
+
+async def test_short_unrelated_names_get_no_suggestion(server, sent):
+    # difflib's default cutoff paired types with teams; there is no type filter.
+    result = await _call(server, "list_incidents", {"types": "x"})
+
+    text = _text(result)
+    assert "'types'" in text
+    assert "did you mean" not in text
 
 
 async def test_partially_mappable_call_is_rejected_whole(server, sent):
