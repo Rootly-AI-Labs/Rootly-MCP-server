@@ -352,9 +352,6 @@ async def test_call_shape_values_stay_data_in_the_sandbox():
 @pytest.mark.parametrize(
     ("code", "expected"),
     [
-        ("a = {'x': 1}\nb = {'y': 2}\nreturn a | b", "`{**a, **b}`"),
-        ("import datetime\nreturn datetime.datetime.now()", "has no clock"),
-        ("import datetime\nreturn datetime.date.today()", "has no clock"),
         ("return datetime.now()", "Add `import datetime` first"),
         ("return dir()", "Introspection builtins"),
         ("return globals()", "Use tool_search / get_schema"),
@@ -374,10 +371,25 @@ async def test_sandbox_errors_carry_an_actionable_hint(client: Client, code: str
 
 
 @pytest.mark.parametrize(
+    "code",
+    [
+        "a = {'x': 1}\nb = {'y': 2}\nreturn a | b",
+        "import datetime\nreturn datetime.datetime.now(datetime.timezone.utc).isoformat()",
+        "import datetime\nreturn datetime.date.today().isoformat()",
+    ],
+)
+async def test_monty_1_1_supports_what_the_description_recommends(client: Client, code: str):
+    # Monty 1.1 (fastmcp 4.1) added dict `|` and a clock; the execute
+    # description now points at datetime.now(timezone.utc), so it must work.
+    is_error, text = await _execute(client, {"code": code})
+
+    assert not is_error, text
+
+
+@pytest.mark.parametrize(
     "message",
     [
         # Shapes observed in Sentry from earlier Monty releases.
-        "NotImplementedError: OS function 'datetime.now' not implemented",
         "TypeError: '<' not supported between instances of 'list' and 'list'",
         "KeyError: value",
         "TypeError: list indices must be integers or slices, not str",
