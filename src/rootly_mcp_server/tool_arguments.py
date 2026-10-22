@@ -63,12 +63,15 @@ PARAMETER_SYNONYMS: dict[str, tuple[str, ...]] = {
 # which never see validation aliases.
 # start_time/end_time map to the inclusive started_after/started_before,
 # which is what an unqualified start/end bound means, or to the shift tools'
-# start_date/end_date. page_size reaches collect_incidents' batch_size, which
-# is sent as page[size].
+# start_date/end_date; starts_at/ends_at (the shift records' own field
+# names) only reach the shift tools' range parameters. page_size reaches
+# collect_incidents' batch_size, which is sent as page[size].
 ARGUMENT_ALIASES: dict[str, tuple[str, ...]] = {
     "search": ("query",),
     "start_time": ("started_after", "start_date"),
     "end_time": ("started_before", "end_date"),
+    "starts_at": ("start_date", "from_date"),
+    "ends_at": ("end_date", "to_date"),
     "services": ("service_ids",),
     "max_results": ("page_size",),
     "page_size": ("batch_size",),
@@ -220,6 +223,14 @@ def _names_own_resource(key: str, tool_name: str | None, properties: Mapping[str
     return key[: -len("_id")] in tool_name.split("_")
 
 
+def _own_resource_id(tool_name: str | None, properties: Mapping[str, Any]) -> str | None:
+    """``incident_id`` for a bare ``id`` on ``update_incident``, when exactly one matches."""
+    if not tool_name:
+        return None
+    candidates = [f"{token}_id" for token in tool_name.split("_") if f"{token}_id" in properties]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _resolve(
     key: str, value: Any, properties: Mapping[str, Any], tool_name: str | None = None
 ) -> tuple[list[tuple[str, Any]] | None, str]:
@@ -259,6 +270,8 @@ def _resolve(
             return [(candidate, value)], ""
     if _names_own_resource(base, tool_name, properties):
         return [("id", value)], ""
+    if base == "id" and (own_id := _own_resource_id(tool_name, properties)):
+        return [(own_id, value)], ""
 
     # A tool's own range parameters outrank the generic "no such filter" hints:
     # list_incident_post_mortems does have created_after/created_before.
@@ -299,11 +312,27 @@ def normalize_tool_arguments(
     """
     properties = _properties(schema)
     accepted = dict(accepted_aliases or {})
-    result = NormalizedArguments(
-        arguments={k: v for k, v in arguments.items() if k in properties or k in accepted}
-    )
+    result = NormalizedArguments(arguments={})
     # Values the caller set per parameter, whichever accepted name they used.
-    provided: dict[str, Any] = {accepted.get(k, k): v for k, v in result.arguments.items()}
+    provided: dict[str, Any] = {}
+    # Two accepted names for one parameter (max_results and page_size on
+    # list_incidents) make pydantic reject the call as an unexpected keyword.
+    # Keep the parameter's own name, else the first alias; drop a duplicate
+    # with the same value and report one that disagrees.
+    known = sorted(
+        (k for k in arguments if k in properties or k in accepted),
+        key=lambda k: k not in properties,
+    )
+    for key in known:
+        parameter = accepted.get(key, key)
+        if parameter not in provided:
+            result.arguments[key] = arguments[key]
+            provided[parameter] = arguments[key]
+        elif provided[parameter] == arguments[key]:
+            result.rewrites.append(f"{key}->{parameter}:duplicate")
+        else:
+            kept = next(k for k in result.arguments if accepted.get(k, k) == parameter)
+            result.unknown[key] = f"conflicts with {kept!r}, which is also set"
 
     def assign(source: str, pairs: list[tuple[str, Any]]) -> bool:
         conflicts = [
