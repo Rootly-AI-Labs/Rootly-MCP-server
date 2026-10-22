@@ -56,8 +56,11 @@ PARAMETER_SYNONYMS: dict[str, tuple[str, ...]] = {
 # source name and declares the target (first declared target wins). Kept to
 # the shapes production telemetry shows for list_incidents direct calls;
 # ``filter_<x>`` / ``filter[<x>]`` / ``page[<x>]`` are handled generically.
-# ``max_results`` / ``limit`` need no entry: list_incidents accepts them as
-# pydantic validation aliases of ``page_size`` (see validation_aliases).
+# A tool that declares ``max_results`` itself, or accepts it as a pydantic
+# validation alias (list_incidents), never reaches this table: accepted names
+# pass through first. The entry covers tools that only take ``page_size``
+# (list_shifts, list_incident_post_mortems, ...) and ``filters={...}`` dicts,
+# which never see validation aliases.
 # start_time/end_time map to the inclusive started_after/started_before,
 # which is what an unqualified start/end bound means.
 ARGUMENT_ALIASES: dict[str, tuple[str, ...]] = {
@@ -65,6 +68,7 @@ ARGUMENT_ALIASES: dict[str, tuple[str, ...]] = {
     "start_time": ("started_after",),
     "end_time": ("started_before",),
     "services": ("service_ids",),
+    "max_results": ("page_size",),
 }
 
 # Keys that carry a dict of filters (``filters={"status": ...}``).

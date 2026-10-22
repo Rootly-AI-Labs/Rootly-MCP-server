@@ -146,6 +146,25 @@ async def test_sentry_shapes_are_rewritten_and_the_call_succeeds(server, sent, a
         assert params.get(key) == value, (key, params)
 
 
+async def test_max_results_reaches_page_size_on_a_tool_without_its_own_alias(server, sent):
+    # list_incident_post_mortems takes page_size but declares no max_results
+    # alias, so the generic repair has to cover it.
+    result = await _call(server, "list_incident_post_mortems", {"max_results": 5})
+
+    assert not result.is_error, _text(result)
+    requests = [r for r in sent if r.url.path == "/v1/post_mortems"]
+    assert requests, [str(r.url) for r in sent]
+    assert dict(requests[-1].url.params).get("page[size]") == "5"
+
+
+async def test_max_results_inside_a_filters_dict_reaches_page_size(server, sent):
+    # Keys inside filters={...} never see pydantic validation aliases.
+    result = await _call(server, "list_incidents", {"filters": {"max_results": 6}})
+
+    assert not result.is_error, _text(result)
+    assert _incident_params(sent).get("page[size]") == "6"
+
+
 async def test_explicit_value_is_never_overwritten(server, sent):
     result = await _call(
         server, "list_incidents", {"status": "resolved", "filter[status]": "resolved"}
