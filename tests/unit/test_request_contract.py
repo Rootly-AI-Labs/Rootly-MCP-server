@@ -85,18 +85,31 @@ SPEC_GAPS: dict[tuple[str, str, str, str], str] = {
         "(https://jsonapi.org/format/#fetching-sparse-fieldsets)"
     ),
     # /v1/shifts declares `include` as a single-value enum of
-    # shift_override|user|assignee|shift_shadow, but upstream accepts a
-    # comma-separated list (as every JSON:API include does) and also sideloads
-    # `on_call_role` and `schedule_rotation`: shifts carry both relationships
-    # and get_oncall_shift_metrics / list_shifts read them from `included`.
-    # The comma-separated form is handled generically (every include value is
-    # split on "," and checked item by item); only the missing enum members
-    # need listing here.
-    ("GET", "/v1/shifts", "include", "on_call_role"): (
-        "Shift relationship sideloaded upstream but missing from the include enum"
-    ),
-    ("GET", "/v1/shifts", "include", "schedule_rotation"): (
-        "Shift relationship sideloaded upstream but missing from the include enum"
+    # shift_override|user|assignee|shift_shadow. Upstream accepts a
+    # comma-separated list (ShiftsController#included_relationships splits on
+    # ",", rootlyhq/rootly app/controllers/api/v1/shifts_controller.rb:100-102)
+    # -- handled generically here: every include value is split on "," and
+    # checked item by item.
+    #
+    # It also honours nested include paths: the action renders with
+    # `include: params[:include]` (shifts_controller.rb:56, :59), which
+    # ActiveModelSerializers resolves as a JSON:API include directive, and
+    # preloads user details when that directive names `user`
+    # (shifts_controller.rb:108-114 -> app/services/shifts/
+    # preload_rendered_associations_service.rb:12-20, :80, which preloads
+    # current_context_membership: [:role, :on_call_role]). Shifts carry no role
+    # of their own (app/serializers/api/v1/shift_serializer.rb:7-10:
+    # shift_override, user, assignee); `on_call_role` is a user relationship
+    # (app/serializers/api/v1/user_serializer.rb:53-57, :63), so
+    # get_oncall_shift_metrics asks for it as `user.on_call_role` and reads it
+    # from the included user. Bare `on_call_role` and `schedule_rotation` are
+    # deliberately absent: neither is a shift relationship, so upstream ignores
+    # them (a shift's rotation is its `rotation_id` attribute,
+    # shift_serializer.rb:4).
+    ("GET", "/v1/shifts", "include", "user.on_call_role"): (
+        "Nested include honoured upstream (ShiftsController renders include: "
+        "params[:include]; on_call_role is a UserSerializer relationship) but the "
+        "spec enum lists top-level shift relationships only"
     ),
     # /v1/schedules/{id}/shifts declares only from/to, but the action renders
     # with `include: params[:include]` (rootlyhq/rootly
@@ -1012,6 +1025,25 @@ def test_known_violation_is_fixed(
 ) -> None:
     offenders = [v.describe() for v in _all_violations(scenario_runs) if v.key == key]
     assert not offenders, "\n".join(dict.fromkeys(offenders))
+
+
+@pytest.mark.unit
+def test_every_spec_gap_is_exercised(scenario_runs: dict[str, ScenarioRun]) -> None:
+    """A SPEC_GAPS entry no request needs is a stale claim about upstream.
+
+    The allowlist documents what the API honours beyond the spec, so an entry
+    left behind after the request stopped sending it (or one added for a
+    request no scenario makes) asserts upstream behaviour nothing relies on.
+    """
+    raw = {v.key for run in scenario_runs.values() for r in run.records for v in _violations_for(r)}
+
+    def _covers(gap: tuple[str, str, str, str], key: tuple[str, str, str, str]) -> bool:
+        if gap[1] == "*":
+            return key[0] == gap[0] and key[2] == "param" and key[3].startswith("fields[")
+        return key == gap
+
+    stale = sorted("|".join(gap) for gap in SPEC_GAPS if not any(_covers(gap, k) for k in raw))
+    assert not stale, f"SPEC_GAPS entries no scenario request needs: {stale}"
 
 
 @pytest.mark.unit

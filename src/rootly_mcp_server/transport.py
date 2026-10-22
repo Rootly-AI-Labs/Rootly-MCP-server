@@ -694,7 +694,9 @@ def strip_heavy_shift_data(data: dict[str, Any]) -> dict[str, Any]:
         relationships = shift.get("relationships")
         if isinstance(relationships, dict):
             kept_relationships = {}
-            for rel_key in ("user", "assignee", "on_call_role", "shift_override"):
+            # Api::V1::ShiftSerializer's relationships are shift_override, user
+            # and assignee; nothing else is worth keeping.
+            for rel_key in ("user", "assignee", "shift_override"):
                 if rel_key in relationships:
                     kept_relationships[rel_key] = _collapse_relationship_data(
                         relationships[rel_key]
@@ -710,7 +712,17 @@ def strip_heavy_shift_data(data: dict[str, Any]) -> dict[str, Any]:
     included = data.get("included")
     if isinstance(included, list):
         for resource in included:
+            # A shift's on-call role is its user's, sideloaded through the nested
+            # `user.on_call_role` include, so the link from an included user to
+            # its role must survive the trim or the role becomes unreachable.
+            role_link = None
+            if isinstance(resource, dict) and resource.get("type") == "users":
+                rels = resource.get("relationships")
+                if isinstance(rels, dict) and "on_call_role" in rels:
+                    role_link = _collapse_relationship_data(rels["on_call_role"])
             _strip_minimal_included_resource(resource)
+            if role_link is not None:
+                resource["relationships"] = {"on_call_role": role_link}
 
     return data
 

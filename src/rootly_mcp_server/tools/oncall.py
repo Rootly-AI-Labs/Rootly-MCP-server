@@ -442,8 +442,11 @@ def register_oncall_tools(
                 user_id_list = [uid.strip() for uid in user_ids.split(",") if uid.strip()]
                 params["user_ids[]"] = user_id_list
 
-            # Include relationships for richer data
-            params["include"] = "user,shift_override,on_call_role,schedule_rotation"
+            # Shifts carry no on-call role of their own: Api::V1::ShiftSerializer
+            # has only shift_override/user/assignee relationships, so a bare
+            # `on_call_role` include is ignored. The role belongs to the user and
+            # is sideloaded through the nested `user.on_call_role` include.
+            params["include"] = "user,user.on_call_role"
 
             # Query shifts through the shared helper, which splits a range longer
             # than the endpoint accepts into windows and paginates each one. The
@@ -469,13 +472,13 @@ def register_oncall_tools(
             )
 
             # Build lookup maps for included resources
-            users_map = {}
-            on_call_roles_map = {}
+            users_map: dict[str, dict[str, Any]] = {}
+            on_call_roles_map: dict[str, dict[str, Any]] = {}
             for resource in included:
                 if resource.get("type") == "users":
-                    users_map[resource.get("id")] = resource
+                    users_map[str(resource.get("id"))] = resource
                 elif resource.get("type") == "on_call_roles":
-                    on_call_roles_map[resource.get("id")] = resource
+                    on_call_roles_map[str(resource.get("id"))] = resource
 
             # Calculate metrics
             metrics: dict[str, dict[str, Any]] = defaultdict(
@@ -528,14 +531,18 @@ def register_oncall_tools(
                 user_name = "Unknown"
                 user_email = ""
 
-                if user_id and user_id in users_map:
-                    user_attrs = users_map[user_id].get("attributes", {})
+                user = users_map.get(str(user_id)) if user_id else None
+                if user is not None:
+                    user_attrs = user.get("attributes", {})
                     user_name = user_attrs.get("full_name") or user_attrs.get("email", "Unknown")
                     user_email = user_attrs.get("email", "")
 
-                # Get on-call role info (primary vs secondary)
-                role_rel = relationships.get("on_call_role", {}).get("data") or {}
-                role_id = role_rel.get("id")
+                # Get on-call role info (primary vs secondary). This is the
+                # user's on-call role in the team, read from the included user
+                # (shifts themselves have no role relationship).
+                user_rels = (user or {}).get("relationships", {})
+                role_rel = user_rels.get("on_call_role", {}).get("data") or {}
+                role_id = str(role_rel["id"]) if role_rel.get("id") else None
                 role_name = "unknown"
                 is_primary = False
 
@@ -2229,7 +2236,11 @@ def register_oncall_tools(
             params: dict[str, Any] = {
                 "from": from_date,
                 "to": to_date,
-                "include": "user,on_call_role,schedule_rotation",
+                # Only `user` is read below. Shifts have no on_call_role or
+                # schedule_rotation relationship (Api::V1::ShiftSerializer), so
+                # those includes were ignored upstream; the rotation is the
+                # `rotation_id` attribute.
+                "include": "user",
             }
 
             if schedule_ids:
@@ -2562,7 +2573,9 @@ def register_oncall_tools(
             shift_params: dict[str, Any] = {
                 "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
                 "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
-                "include": "user,on_call_role",
+                # Only `user` is read below; a bare `on_call_role` is not a
+                # shift relationship (Api::V1::ShiftSerializer) and was ignored.
+                "include": "user",
             }
             if selected_schedule_ids is not None:
                 shift_params["schedule_ids[]"] = sorted(selected_schedule_ids)
