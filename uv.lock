@@ -2148,6 +2148,7 @@ dev = [
 dev = [
     { name = "bandit" },
     { name = "detect-secrets" },
+    { name = "jsonschema" },
     { name = "mypy" },
     { name = "pip" },
     { name = "pip-audit" },
@@ -2200,6 +2201,7 @@ provides-extras = ["dev"]
 dev = [
     { name = "bandit", specifier = ">=1.7.0" },
     { name = "detect-secrets", specifier = ">=1.5.0" },
+    { name = "jsonschema", specifier = ">=4.26.0" },
     { name = "mypy", specifier = ">=1.0.0" },
     { name = "pip", specifier = ">=26.2.0" },
     { name = "pip-audit", specifier = ">=2.7.0" },
