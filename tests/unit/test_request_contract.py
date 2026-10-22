@@ -466,17 +466,25 @@ def _stub_response(request: httpx2.Request, template: str | None) -> httpx2.Resp
             ]
         )
         body["meta"]["total_pages"] = _stub_options.get({}).get("schedule_pages", 1)
-    elif template == "/v1/schedules/{id}":
-        body = {
-            "data": {
-                "id": "sched-1",
-                "type": "schedules",
-                "attributes": {"name": "Primary", "owner_group_ids": ["team-1"]},
-                "relationships": {
-                    "schedule_rotations": {"data": [{"id": "rot-1", "type": "schedule_rotations"}]}
-                },
-            }
-        }
+    elif template == "/v1/schedules/{schedule_id}/schedule_rotations":
+        body = _list(
+            [
+                {
+                    "id": "rot-1",
+                    "type": "schedule_rotations",
+                    "attributes": {
+                        "schedule_id": "sched-1",
+                        "name": "Weekly",
+                        "position": 1,
+                        "schedule_rotationable_type": "ScheduleWeeklyRotation",
+                        "schedule_rotationable_attributes": {
+                            "handoff_time": "09:00",
+                            "handoff_day": "M",
+                        },
+                    },
+                }
+            ]
+        )
     elif template == "/v1/schedule_rotations/{schedule_rotation_id}/schedule_rotation_users":
         body = _list(
             [

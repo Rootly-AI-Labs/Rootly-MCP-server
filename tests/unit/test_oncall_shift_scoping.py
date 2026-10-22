@@ -118,11 +118,15 @@ class Upstream:
         # short either by failing or by running past its page budget.
         self.schedules_status = schedules_status
         self.schedules_total_pages = schedules_total_pages
-        # A single schedule and its rotation membership are separate reads, and
-        # either can fail independently of the other.
+        # A schedule's rotations (`/v1/schedules/{id}/schedule_rotations`) and
+        # each rotation's membership are separate reads, and either can fail
+        # independently of the other.
         self.schedule_detail_status = schedule_detail_status
         self.rotation_users_status = rotation_users_status
         self.shift_queries: list[dict[str, Any]] = []
+        self.rotation_queries: list[str] = []
+        self.rotation_user_queries: list[str] = []
+        self.schedule_detail_queries: list[str] = []
         # Per-schedule shift reads (`/v1/schedules/{id}/shifts`), keyed by id.
         self.schedule_shift_queries: list[tuple[str, dict[str, Any]]] = []
 
@@ -148,21 +152,36 @@ class Upstream:
                 }
             )
         if "/schedule_rotation_users" in url:
+            self.rotation_user_queries.append(url)
             if self.rotation_users_status != 200:
                 failed = Mock()
                 failed.status_code = self.rotation_users_status
                 failed.json.return_value = {}
                 return failed
+            # Api::V1::ScheduleRotationUserSerializer: attributes only, with the
+            # member as an integer `user_id` and no relationships.
             return _ok(
                 {
                     "data": [
-                        {"relationships": {"user": {"data": {"id": uid}}}}
-                        for uid in self.rotation_users
+                        {
+                            "id": f"ru-{position}",
+                            "type": "schedule_rotation_users",
+                            "attributes": {
+                                "schedule_rotation_id": "rot-1",
+                                "user_id": int(uid),
+                                "position": position,
+                                "created_at": "2026-01-01T00:00:00Z",
+                                "updated_at": "2026-01-01T00:00:00Z",
+                            },
+                        }
+                        for position, uid in enumerate(self.rotation_users, start=1)
                     ],
-                    "meta": {"total_pages": 1},
+                    "links": {},
+                    "meta": {"current_page": 1, "total_pages": 1},
                 }
             )
-        if "/v1/schedules/" in url:
+        if url.startswith("/v1/schedules/") and url.endswith("/schedule_rotations"):
+            self.rotation_queries.append(url)
             if self.schedule_detail_status != 200:
                 failed = Mock()
                 failed.status_code = self.schedule_detail_status
@@ -170,11 +189,33 @@ class Upstream:
                 return failed
             return _ok(
                 {
+                    "data": [
+                        {
+                            "id": "rot-1",
+                            "type": "schedule_rotations",
+                            "attributes": {
+                                "schedule_id": url.split("/")[3],
+                                "name": "Weekly",
+                                "position": 1,
+                                "schedule_rotationable_type": "ScheduleWeeklyRotation",
+                            },
+                        }
+                    ],
+                    "links": {},
+                    "meta": {"current_page": 1, "total_pages": 1},
+                }
+            )
+        if "/v1/schedules/" in url:
+            # GET /v1/schedules/{id}: ScheduleSerializer renders owner_user and
+            # escalation_policies only -- never the schedule's rotations.
+            self.schedule_detail_queries.append(url)
+            return _ok(
+                {
                     "data": {
-                        "id": "sched-a",
-                        "relationships": {
-                            "schedule_rotations": {"data": [{"id": "rot-1"}]},
-                        },
+                        "id": url.split("/")[3],
+                        "type": "schedules",
+                        "attributes": {"name": "Infra Primary"},
+                        "relationships": {"owner_user": {"data": None}},
                     }
                 }
             )
@@ -432,6 +473,32 @@ class TestResponderAvailabilityScoping:
 @pytest.mark.asyncio
 class TestOverrideRecommendationScoping:
     """``create_override_recommendation`` scores only the rotation's own users."""
+
+    async def test_candidates_come_from_the_rotations_endpoint(self):
+        # The schedule resource has no schedule_rotations relationship, so
+        # reading rotations off it found none and nobody was ever recommended.
+        # They are listed from their own endpoint, and each rotation's members
+        # are the `user_id` attributes of its schedule_rotation_users.
+        upstream = Upstream(rotation_users=["94178", "27965"])
+        result = await _tools(upstream)["create_override_recommendation"](
+            schedule_id="sched-a", original_user_id=2381, start_date=START, end_date=END
+        )
+
+        assert upstream.rotation_queries == ["/v1/schedules/sched-a/schedule_rotations"]
+        assert upstream.rotation_user_queries == [
+            "/v1/schedule_rotations/rot-1/schedule_rotation_users"
+        ]
+        assert not upstream.schedule_detail_queries
+        assert result.get("error") is None
+        assert sorted(r["user_id"] for r in result["recommended_replacements"]) == [
+            27965,
+            94178,
+        ]
+        assert {r["user_name"] for r in result["recommended_replacements"]} == {
+            "Gideon Lapshun",
+            "Alexandra Chapin",
+        }
+        assert "warning" not in result
 
     async def test_rotation_users_are_pushed_upstream(self):
         upstream = Upstream(rotation_users=["94178", "27965"])

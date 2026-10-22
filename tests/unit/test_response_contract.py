@@ -165,15 +165,6 @@ RESPONSE_SPEC_GAPS: dict[ContractKey, SpecGap] = {
             }
         ),
     ),
-    # Api::V1::ScheduleSerializer renders `has_one :owner_user` and
-    # `has_many :escalation_policies` (app/serializers/api/v1/
-    # schedule_serializer.rb:23-24); the spec declares no relationships. It has
-    # no `schedule_rotations` -- see KNOWN_RESPONSE_VIOLATIONS.
-    ("GET", "/v1/schedules/{id}", "data.relationships"): SpecGap(
-        "ScheduleSerializer has_one owner_user / has_many escalation_policies; "
-        "undeclared in swagger",
-        frozenset({"owner_user", "escalation_policies"}),
-    ),
     # Api::V1::AuditSerializer `attributes ... :source`
     # (app/serializers/api/v1/audit_serializer.rb:4-9); missing from `audit`.
     ("GET", "/v1/audits", "data[].attributes.source"): SpecGap(
@@ -253,15 +244,7 @@ DEFENSIVE_READS: dict[ContractKey, str] = {
 }
 
 # Reads of keys the API does not return. Each is a strict xfail test.
-KNOWN_RESPONSE_VIOLATIONS: dict[ContractKey, str] = {
-    ("GET", "/v1/schedules/{id}", "data.relationships.schedule_rotations"): (
-        "create_override_recommendation reads rotations from the schedule's "
-        "relationships, but ScheduleSerializer has no schedule_rotations "
-        "association (schedule_serializer.rb:23-24), so rotation_ids is always "
-        "empty and no candidate is ever found. Fetch "
-        "/v1/schedules/{id}/schedule_rotations instead."
-    ),
-}
+KNOWN_RESPONSE_VIOLATIONS: dict[ContractKey, str] = {}
 
 # Requested sparse-fieldset values that are not attributes of the type, keyed
 # by (resource type, field). Each is a strict xfail test.
@@ -494,11 +477,40 @@ def _is_object_schema(node: Any) -> bool:
     )
 
 
+def _object_branches(node: Any) -> list[Any]:
+    """The object alternatives of a ``oneOf``/``anyOf`` object with no properties of its own.
+
+    Such a node (e.g. a rotation's ``schedule_rotationable_attributes``, one
+    closed shape per rotation type) is valid only as one branch, so a fixture
+    built from the merged properties of every branch matches none of them.
+    """
+    if not isinstance(node, dict) or node.get("properties"):
+        return []
+    for combinator in ("oneOf", "anyOf"):
+        branches = [_resolve(sub) for sub in node.get(combinator) or []]
+        if branches and all(_is_object_schema(b) for b in branches):
+            return branches
+    return []
+
+
+def _select_branch(branches: list[Any], base: Any) -> Any:
+    """The first branch declaring every key of ``base`` with a matching value."""
+    if isinstance(base, dict):
+        for branch in branches:
+            properties = _shape(branch).properties
+            if all(k in properties and _matches_type(v, properties[k]) for k, v in base.items()):
+                return branch
+    return branches[0]
+
+
 def _example(node: Any, mode: str, key: str = "", depth: int = 0) -> Any:
     """A schema-valid example: every property (full), or required ones (sparse modes)."""
     node = _resolve(node)
     if not isinstance(node, dict) or depth > 12:
         return None
+    branches = _object_branches(node)
+    if branches:
+        return _example(branches[0], mode, key, depth + 1)
     if node.get("nullable") is True and (mode in SPARSE_MODES or key in _PAGINATION_KEYS):
         return None
     if node.get("enum"):
@@ -598,6 +610,9 @@ def _conform(base: Any, node: Any, mode: str, where: Where) -> Any:
     resolved = _resolve(node)
     if not isinstance(resolved, dict):
         return base
+    branches = _object_branches(resolved)
+    if branches:
+        return _conform(base, _select_branch(branches, base), mode, where)
     key = where.path.rsplit(".", 1)[-1]
     if isinstance(base, list) and _items_schema(resolved) is not None:
         items = _items_schema(resolved)
@@ -1305,14 +1320,14 @@ def test_tracker_flags_attributes_outside_the_requested_fieldset() -> None:
 
 @pytest.mark.unit
 def test_spec_gap_declares_narrow_reads_inside_undocumented_objects() -> None:
-    body = {"data": {"id": "s", "type": "schedules", "attributes": {}, "relationships": {}}}
-    tracked, violations = _tracked_for("GET", "/v1/schedules/{id}", body)
+    body = {"data": {"id": "i", "type": "incidents", "attributes": {}, "relationships": {}}}
+    tracked, violations = _tracked_for("GET", "/v1/incidents/{id}", body)
     relationships = tracked["data"]["relationships"]
-    relationships.get("owner_user")
-    relationships.get("schedule_rotations")
+    relationships.get("action_items")
+    relationships.get("action_items_count")
     assert [v.key_path for v in violations] == [
         "data.relationships",
-        "data.relationships.schedule_rotations",
+        "data.relationships.action_items_count",
     ]
 
 
