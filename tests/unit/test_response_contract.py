@@ -278,32 +278,6 @@ KNOWN_RESPONSE_VIOLATIONS: dict[ContractKey, str] = {
         "IncidentSerializer does not render (action items are the "
         "`action_items` relationship, incident_serializer.rb:215)."
     ),
-    ("GET", "/v1/incidents", "data[].attributes.description"): (
-        "TextSimilarityAnalyzer._combine_incident_text (smart_utils.py) reads "
-        "an incident `description`, which IncidentSerializer does not render."
-    ),
-    ("GET", "/v1/incidents", "data[].description"): (
-        "TextSimilarityAnalyzer._combine_incident_text falls back to "
-        "root-level title/summary/description; JSON:API resources carry them "
-        "only under attributes."
-    ),
-    ("GET", "/v1/incidents/{id}", "data.attributes.description"): (
-        "TextSimilarityAnalyzer._combine_incident_text reads an incident "
-        "`description`, which IncidentSerializer does not render."
-    ),
-    ("GET", "/v1/incidents/{id}", "data.description"): (
-        "TextSimilarityAnalyzer._combine_incident_text falls back to "
-        "root-level fields that JSON:API never puts there."
-    ),
-    ("GET", "/v1/incidents", "data[].summary"): (
-        "TextSimilarityAnalyzer._combine_incident_text falls back to a "
-        "root-level summary when attributes.summary is empty; JSON:API never "
-        "puts it there."
-    ),
-    ("GET", "/v1/incidents/{id}", "data.summary"): (
-        "TextSimilarityAnalyzer._combine_incident_text falls back to a "
-        "root-level summary; JSON:API never puts it there."
-    ),
 }
 
 # Requested sparse-fieldset values that are not attributes of the type, keyed
