@@ -2075,7 +2075,7 @@ def register_incident_tools(
                 "page[size]": 100,  # Get more incidents for better matching
                 "page[number]": 1,
                 "include": "",
-                "fields[incidents]": "id,title,summary,status,created_at,url",
+                "fields[incidents]": "id,title,summary,status,created_at,resolved_at,updated_at,url",
             }
 
             # Only add status filter if specified

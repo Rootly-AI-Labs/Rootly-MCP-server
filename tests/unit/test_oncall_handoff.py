@@ -260,7 +260,7 @@ class TestGetShiftIncidents:
                         "resolved_at": "2026-03-17T16:00:00Z",
                         "summary": "Resolved during shift",
                         "customer_impact_summary": "Minor impact",
-                        "mitigation": "Patched",
+                        "mitigation_message": "Patched",
                         "url": "https://rootly.com/incidents/1",
                     },
                 }
@@ -298,7 +298,7 @@ class TestGetShiftIncidents:
                         "resolved_at": None,
                         "summary": long_summary,
                         "customer_impact_summary": long_summary,
-                        "mitigation": long_summary,
+                        "mitigation_message": long_summary,
                         "url": f"https://rootly.com/incidents/{i}",
                     },
                 }
