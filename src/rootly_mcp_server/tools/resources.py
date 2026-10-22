@@ -13,6 +13,30 @@ MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
 StripHeavyNestedData = Callable[[JsonDict], JsonDict]
 
 
+def _included_users_by_id(payload: Any) -> dict[str, JsonDict]:
+    """Index the ``users`` resources a JSON:API document sideloads, by id."""
+    included = payload.get("included") if isinstance(payload, dict) else None
+    users: dict[str, JsonDict] = {}
+    for resource in included or []:
+        if isinstance(resource, dict) and resource.get("type") == "users":
+            user_id = resource.get("id")
+            if user_id is not None:
+                users[str(user_id)] = resource
+    return users
+
+
+def _shift_user_name(shift: Any, users_by_id: dict[str, JsonDict]) -> str:
+    """The on-call user's name, from ``relationships.user`` and the included user."""
+    relationships = (shift.get("relationships") if isinstance(shift, dict) else None) or {}
+    user_ref = (relationships.get("user") or {}).get("data") or {}
+    user_id = user_ref.get("id")
+    if user_id is None:
+        # A gap in coverage: the shift exists but nobody holds it.
+        return "Unassigned"
+    attributes = (users_by_id.get(str(user_id)) or {}).get("attributes") or {}
+    return attributes.get("full_name") or attributes.get("email") or f"User {user_id}"
+
+
 class MCPErrorLike(Protocol):
     """Protocol for MCP error categorization used by resource handlers."""
 
@@ -172,17 +196,19 @@ Updated: {attributes.get("updated_at", "N/A")}"""
                             params={
                                 "from": (now - timedelta(hours=1)).isoformat(),
                                 "to": (now + timedelta(hours=1)).isoformat(),
+                                # A shift's user is a relationship, not an
+                                # attribute (Api::V1::ShiftSerializer), so the
+                                # name only arrives as an included user.
+                                "include": "user",
                             },
                         )
                         if shifts_response.status_code == 200:
-                            shifts = shifts_response.json().get("data", [])
+                            shifts_payload = shifts_response.json()
+                            shifts = shifts_payload.get("data", [])
+                            users_by_id = _included_users_by_id(shifts_payload)
                             if shifts:
                                 for shift in shifts[:3]:  # Show up to 3 current shifts
-                                    shift_attrs = shift.get("attributes", {})
-                                    user_name = "Unknown User"
-                                    user_data = shift_attrs.get("user", {})
-                                    if isinstance(user_data, dict):
-                                        user_name = user_data.get("name", "Unknown User")
+                                    user_name = _shift_user_name(shift, users_by_id)
                                     status_lines.append(f"  👤 {user_name}")
                             else:
                                 status_lines.append("  ⚠️  No active shifts")

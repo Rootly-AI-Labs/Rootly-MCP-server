@@ -261,12 +261,6 @@ KNOWN_RESPONSE_VIOLATIONS: dict[ContractKey, str] = {
         "empty and no candidate is ever found. Fetch "
         "/v1/schedules/{id}/schedule_rotations instead."
     ),
-    ("GET", "/v1/schedules/{id}/shifts", "data[].attributes.user"): (
-        "rootly://oncall/status reads a `user` attribute; ShiftSerializer has "
-        "user only as a relationship (shift_serializer.rb:9), so every on-call "
-        "user shows as 'Unknown User'. Send include=user and resolve the name "
-        "from the included user."
-    ),
 }
 
 # Requested sparse-fieldset values that are not attributes of the type, keyed
