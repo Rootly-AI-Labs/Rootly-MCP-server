@@ -31,6 +31,12 @@ UNSUPPORTED_TAGS_WARNING = (
     "not filtered by it. Incidents carry key:value labels instead, which the "
     "incidents API filters with filter[labels] (e.g. 'env:prod')."
 )
+UNSUPPORTED_SCHEDULE_IDS_WARNING = (
+    "The schedule_ids argument was ignored: Rootly incidents are not linked to "
+    "on-call schedules, so results are not filtered by it and cover every incident "
+    "in the time range. To scope by the teams that own a schedule, look up its "
+    "owner_group_ids and filter incidents with filter[team_ids]."
+)
 
 # Ceiling on a shift query's total span. Long ranges are split into windows the
 # upstream will accept, but each window is its own request, so an unbounded
@@ -1241,6 +1247,15 @@ def register_oncall_tools(
             warnings: list[str] = []
             if any(t.strip() for t in tags.split(",")):
                 warnings.append(UNSUPPORTED_TAGS_WARNING)
+            # Same for `schedule_ids`: this query reads only /v1/incidents, and
+            # an incident has no schedule to filter on -- the incidents API
+            # permits no schedule filter (IncidentsController#filter_params) and
+            # Api::V1::IncidentSerializer has no schedule relationship. Scoping
+            # by the owning teams' filter[team_ids] would be a guess (it drops
+            # every incident not tagged with those teams), so the argument is
+            # reported as ignored rather than quietly reinterpreted.
+            if any(sid.strip() for sid in schedule_ids.split(",")):
+                warnings.append(UNSUPPORTED_SCHEDULE_IDS_WARNING)
 
             # Query incidents with pagination
             all_incidents = []
@@ -1494,7 +1509,12 @@ def register_oncall_tools(
         schedule_ids: Annotated[
             str,
             Field(
-                description="Comma-separated list of schedule IDs to filter incidents (optional)"
+                description=(
+                    "Deprecated and ignored: Rootly incidents are not linked to on-call "
+                    "schedules, so this does not filter anything (a `warnings` entry is "
+                    "returned when it is set). Results cover every incident in the time "
+                    "range."
+                )
             ),
         ] = "",
         severity: Annotated[
