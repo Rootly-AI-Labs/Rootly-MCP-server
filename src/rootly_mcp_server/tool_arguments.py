@@ -1,0 +1,273 @@
+"""Argument repair and legible argument errors for curated (non-OpenAPI) tools.
+
+Models call curated tools with the raw Rootly API's query shapes --
+``filter[status]``, ``page[size]``, ``filter_started_at={"gte": ...}`` -- or
+with near-miss names such as ``search`` for ``query``. pydantic then rejects
+the whole call with a bare "Unexpected keyword argument".
+
+:func:`normalize_tool_arguments` rewrites the unambiguous shapes, driven by the
+tool's real input schema: a rewrite happens only when its target is a declared
+parameter, the source key is not, and the caller did not set the target
+explicitly. Whatever is still unknown afterwards is described by
+:func:`unknown_arguments_message`, in the same style Code Mode uses for a
+failed ``call_tool`` (see ``code_mode._legible_call_error``).
+"""
+
+from __future__ import annotations
+
+import difflib
+import re
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import Any
+
+# Parameter names models send that a Rootly tool spells differently, mapped
+# to the real names to suggest, in preference order (the first one the tool
+# declares wins). Observed in production Code Mode failures. An empty tuple
+# means "no equivalent": it also stops the fuzzy fallback, which would
+# otherwise suggest started_after for updated_after -- a different filter.
+_START_SYNONYMS = ("started_after", "start_date", "from_date")
+_END_SYNONYMS = ("started_before", "end_date", "to_date")
+_LIMIT_SYNONYMS = ("page_size", "max_results")
+PARAMETER_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "start_time": _START_SYNONYMS,
+    "start_date": _START_SYNONYMS,
+    "start": _START_SYNONYMS,
+    "from": _START_SYNONYMS,
+    "since": _START_SYNONYMS,
+    "end_time": _END_SYNONYMS,
+    "end_date": _END_SYNONYMS,
+    "end": _END_SYNONYMS,
+    "to": _END_SYNONYMS,
+    "until": _END_SYNONYMS,
+    "max_results": ("page_size",),
+    "limit": _LIMIT_SYNONYMS,
+    "per_page": _LIMIT_SYNONYMS,
+    "count": _LIMIT_SYNONYMS,
+    "updated_after": (),
+    "updated_before": (),
+}
+
+# Names that are rewritten, not just suggested, when the tool lacks the
+# source name and declares the target (first declared target wins). Kept to
+# the shapes production telemetry shows for list_incidents direct calls;
+# ``filter_<x>`` / ``filter[<x>]`` / ``page[<x>]`` are handled generically.
+ARGUMENT_ALIASES: dict[str, tuple[str, ...]] = {
+    "search": ("query",),
+    "max_results": ("page_size",),
+    "start_time": ("started_after",),
+    "end_time": ("started_before",),
+    "services": ("service_ids",),
+}
+
+# Keys that carry a dict of filters (``filters={"status": ...}``).
+_FILTER_CONTAINERS = ("filters", "filter")
+# Range operators of the Rootly API's ``filter[<field>_at][gte]`` shape.
+_LOWER_BOUND_OPS = frozenset({"gte", "gt"})
+_UPPER_BOUND_OPS = frozenset({"lte", "lt"})
+_RANGE_OPS = _LOWER_BOUND_OPS | _UPPER_BOUND_OPS
+_BRACKET_KEY = re.compile(r"^(filter|page)\[([^\[\]]+)\](?:\[([^\[\]]+)\])?$")
+_OP_SUFFIX = re.compile(r"^(.+)_(gte|gt|lte|lt)$")
+
+# Explanations for arguments that look like a filter the tool does not have.
+# Keyed by the bare field name (after stripping filter_/filter[...] and ops).
+_NO_EQUIVALENT_HINTS: dict[str, str] = {
+    "updated_at": "there is no updated-time filter",
+    "updated_after": "there is no updated-time filter",
+    "updated_before": "there is no updated-time filter",
+    "include": "related records cannot be side-loaded; the response shape is fixed",
+}
+
+
+@dataclass
+class NormalizedArguments:
+    """Result of :func:`normalize_tool_arguments`."""
+
+    arguments: dict[str, Any]
+    # Human-readable rewrites, e.g. ``"filter[status]->status"``.
+    rewrites: list[str] = field(default_factory=list)
+    # Keys still not declared by the tool, with a hint for each (may be "").
+    unknown: dict[str, str] = field(default_factory=dict)
+
+
+def _properties(schema: Mapping[str, Any] | None) -> dict[str, Any]:
+    properties = (schema or {}).get("properties")
+    return properties if isinstance(properties, dict) else {}
+
+
+def suggest_parameter(name: str, properties: Sequence[str]) -> str | None:
+    """Return the real parameter a mistyped ``name`` most likely meant."""
+    synonyms = PARAMETER_SYNONYMS.get(name)
+    if synonyms is not None:
+        for candidate in synonyms:
+            if candidate in properties:
+                return candidate
+        if not synonyms:
+            return None
+    matches = difflib.get_close_matches(name, list(properties), n=1)
+    return matches[0] if matches else None
+
+
+def valid_parameters_line(tool_name: str, schema: Mapping[str, Any] | None) -> str:
+    """``Valid parameters for <tool> (* = required): a*, b`` or "" without properties."""
+    names = list(_properties(schema))
+    if not names:
+        return ""
+    required = set((schema or {}).get("required") or [])
+    listed = ", ".join(name + ("*" if name in required else "") for name in names)
+    return f"Valid parameters for {tool_name} (* = required): {listed}"
+
+
+def _parse_key(key: str) -> tuple[str, str | None]:
+    """Split an API-shaped key into (field, range operator).
+
+    ``filter[started_at][gte]`` -> ("started_at", "gte"); ``page[size]`` ->
+    ("page_size", None); ``filter_started_at_gte`` -> ("started_at", "gte");
+    ``filter_status`` -> ("status", None); anything else -> (key, op-suffix).
+    """
+    bracket = _BRACKET_KEY.match(key)
+    if bracket:
+        kind, inner, op = bracket.groups()
+        if kind == "page":
+            return (f"page_{inner}", None) if op is None else (key, None)
+        return inner, op
+    base = key[len("filter_") :] if key.startswith("filter_") and len(key) > 7 else key
+    suffix = _OP_SUFFIX.match(base)
+    if suffix:
+        return suffix.group(1), suffix.group(2)
+    return base, None
+
+
+def _range_targets(base: str, properties: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    """(lower, upper) parameters for a ``<field>_at`` range, when the tool has them."""
+    if not base.endswith("_at"):
+        return None, None
+    stem = base[: -len("_at")]
+    lower, upper = f"{stem}_after", f"{stem}_before"
+    return (lower if lower in properties else None, upper if upper in properties else None)
+
+
+def _resolve(
+    key: str, value: Any, properties: Mapping[str, Any]
+) -> tuple[list[tuple[str, Any]] | None, str]:
+    """Map one argument to [(declared parameter, value), ...], or None plus a hint."""
+    base, op = _parse_key(key)
+    lower, upper = _range_targets(base, properties)
+
+    if op is not None:
+        if op not in _RANGE_OPS:
+            return None, ""
+        target = lower if op in _LOWER_BOUND_OPS else upper
+        if target is None:
+            return None, _NO_EQUIVALENT_HINTS.get(base, "")
+        return [(target, value)], ""
+
+    if isinstance(value, dict) and value and set(value) <= _RANGE_OPS:
+        if lower is None and upper is None:
+            return None, _NO_EQUIVALENT_HINTS.get(base, "")
+        pairs: list[tuple[str, Any]] = []
+        for range_op, bound in value.items():
+            target = lower if range_op in _LOWER_BOUND_OPS else upper
+            if target is None:
+                return None, f"{range_op!r} has no matching parameter"
+            pairs.append((target, bound))
+        return pairs, ""
+
+    if base in properties:
+        return [(base, value)], ""
+    for candidate in ARGUMENT_ALIASES.get(base, ()):
+        if candidate in properties:
+            return [(candidate, value)], ""
+
+    if base in _NO_EQUIVALENT_HINTS:
+        return None, _NO_EQUIVALENT_HINTS[base]
+    if lower or upper:
+        options = " and/or ".join(repr(name) for name in (lower, upper) if name)
+        return None, f"use {options} with an ISO 8601 timestamp"
+    suggestion = suggest_parameter(base, list(properties))
+    if suggestion is None and base != key:
+        suggestion = suggest_parameter(key, list(properties))
+    return None, f"did you mean {suggestion!r}?" if suggestion else ""
+
+
+def _is_comma_separated_string(spec: Any) -> bool:
+    if not isinstance(spec, dict) or spec.get("type") != "string":
+        return False
+    return "comma-separated" in str(spec.get("description", "")).lower()
+
+
+def normalize_tool_arguments(
+    arguments: Mapping[str, Any], schema: Mapping[str, Any] | None
+) -> NormalizedArguments:
+    """Rewrite unambiguous argument aliases against ``schema`` (a JSON schema).
+
+    Never overwrites a parameter the caller set: an alias whose target is
+    already present is dropped when it carries the same value and otherwise
+    reported as unknown, with the conflict named.
+    """
+    properties = _properties(schema)
+    result = NormalizedArguments(arguments={k: v for k, v in arguments.items() if k in properties})
+
+    def assign(source: str, pairs: list[tuple[str, Any]]) -> bool:
+        conflicts = [
+            target
+            for target, value in pairs
+            if target in result.arguments and result.arguments[target] != value
+        ]
+        if conflicts:
+            names = ", ".join(repr(name) for name in conflicts)
+            result.unknown[source] = f"conflicts with {names}, which is also set"
+            return False
+        for target, value in pairs:
+            result.arguments.setdefault(target, value)
+            result.rewrites.append(f"{source}->{target}")
+        return True
+
+    for key, value in arguments.items():
+        if key in properties:
+            continue
+        if key in _FILTER_CONTAINERS and isinstance(value, dict):
+            for sub_key, sub_value in value.items():
+                pairs, hint = _resolve(str(sub_key), sub_value, properties)
+                label = f"{key}.{sub_key}"
+                if pairs is None:
+                    result.unknown[label] = hint
+                else:
+                    assign(label, pairs)
+            continue
+        pairs, hint = _resolve(key, value, properties)
+        if pairs is None:
+            result.unknown[key] = hint
+        else:
+            assign(key, pairs)
+
+    for key, value in list(result.arguments.items()):
+        if (
+            isinstance(value, list)
+            and value
+            and all(isinstance(item, str | int) and not isinstance(item, bool) for item in value)
+            and _is_comma_separated_string(properties.get(key))
+        ):
+            result.arguments[key] = ",".join(str(item) for item in value)
+            result.rewrites.append(f"{key}:list->csv")
+    return result
+
+
+def unknown_arguments_message(
+    tool_name: str, schema: Mapping[str, Any] | None, unknown: Mapping[str, str]
+) -> str:
+    """``<tool> does not accept 'x' (hint), 'y'.`` plus the valid parameter list."""
+    described = ", ".join(
+        repr(name) + (f" ({hint})" if hint else "") for name, hint in unknown.items()
+    )
+    message = f"{tool_name} does not accept {described}."
+    properties = _properties(schema)
+    sort = properties.get("sort")
+    if (
+        any("updated" in name for name in unknown)
+        and isinstance(sort, dict)
+        and "-updated_at" in (sort.get("enum") or [])
+    ):
+        message += " To find recently updated records, pass sort='-updated_at'."
+    line = valid_parameters_line(tool_name, schema)
+    return f"{message}\n{line}" if line else message

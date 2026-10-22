@@ -165,18 +165,20 @@ async def test_description_check_catches_invented_parameters(server: FastMCP):
 
 
 async def test_unexpected_argument_names_the_real_parameter(client: Client):
+    # start_time/end_time are rewritten to started_after/started_before before
+    # validation (ToolArgumentAliasMiddleware); since/until are only suggested.
     text = await _run(
         client,
-        "return await call_tool('list_incidents', "
-        "{'start_time': '2026-01-01', 'end_time': '2026-02-01'})",
+        "return await call_tool('list_incidents', {'since': '2026-01-01', 'until': '2026-02-01'})",
     )
 
     assert "call_tool('list_incidents') failed:" in text
-    assert "start_time: Unexpected keyword argument (did you mean 'started_after'?)" in text
-    assert "end_time: Unexpected keyword argument (did you mean 'started_before'?)" in text
+    assert "'since' (did you mean 'started_after'?)" in text
+    assert "'until' (did you mean 'started_before'?)" in text
     assert "Valid parameters for list_incidents (* = required): query, teams," in text
     assert "started_after, started_before" in text
-    # pydantic's own noise stays out of the model's context.
+    # Listed once, and pydantic's own noise stays out of the model's context.
+    assert text.count("Valid parameters for") == 1
     assert "errors.pydantic.dev" not in text
 
 
@@ -186,7 +188,7 @@ async def test_did_you_mean_follows_each_tools_own_schema(client: Client):
         "return await call_tool('get_schedule_shifts', {'id': 's1', 'start_time': 'x'})",
     )
 
-    assert "start_time: Unexpected keyword argument (did you mean 'start_date'?)" in text
+    assert "'start_time' (did you mean 'start_date'?)" in text
     assert "Valid parameters for get_schedule_shifts (* = required): id*, start_date" in text
 
 
@@ -196,8 +198,8 @@ async def test_did_you_mean_never_swaps_in_a_different_filter(client: Client):
         "return await call_tool('list_incidents', {'updated_after': 'x', 'include': 'y'})",
     )
 
-    assert "updated_after: Unexpected keyword argument;" in text
-    assert "include: Unexpected keyword argument" in text
+    assert "'updated_after' (there is no updated-time filter)" in text
+    assert "'include' (related records cannot be side-loaded" in text
     assert "did you mean" not in text
     assert "Valid parameters for list_incidents" in text
 
@@ -285,11 +287,11 @@ async def test_call_shaped_execute_runs_through_call_tool(
 
 async def test_call_shaped_execute_gets_the_same_legible_errors(client: Client):
     is_error, text = await _execute(
-        client, {"tool": "list_incidents", "arguments": {"start_time": "2026-01-01"}}
+        client, {"tool": "list_incidents", "arguments": {"since": "2026-01-01"}}
     )
 
     assert is_error
-    assert "start_time: Unexpected keyword argument (did you mean 'started_after'?)" in text
+    assert "'since' (did you mean 'started_after'?)" in text
 
 
 async def test_call_shaped_execute_cannot_reach_unknown_tools(client: Client):
@@ -397,3 +399,49 @@ def test_format_execute_exception_leaves_call_tool_failures_alone():
         "argument (did you mean 'started_after'?)"
     )
     assert _format_execute_exception(Exception(message)) is None
+
+
+# ---------------------------------------------------------------------------
+# F: get_schema called with a single name
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"tool_name": "get_incident"},
+        {"name": "get_incident"},
+        {"tool": "get_incident"},
+        {"tools": "get_incident"},
+        {"tool_name": ["get_incident"]},
+    ],
+    ids=["tool_name", "name", "tool", "tools-string", "tool_name-list"],
+)
+async def test_get_schema_accepts_a_single_tool_name(client: Client, arguments: dict[str, Any]):
+    result = await client.call_tool("get_schema", arguments, raise_on_error=False)
+    text = "\n".join(getattr(item, "text", "") for item in result.content)
+
+    assert not result.is_error, text
+    assert "get_incident" in text
+    assert "incident_id" in text
+
+
+async def test_get_schema_with_tools_ignores_the_alias_keys(client: Client):
+    # An explicit `tools` list wins; the stray key still fails validation.
+    result = await client.call_tool(
+        "get_schema",
+        {"tools": ["get_incident"], "tool_name": "list_incidents"},
+        raise_on_error=False,
+    )
+
+    assert result.is_error
+
+
+async def test_get_schema_alias_is_code_mode_only(server: FastMCP):
+    from rootly_mcp_server.code_mode import GetSchemaArgumentShapeMiddleware
+    from rootly_mcp_server.server import create_rootly_mcp_server
+
+    classic = create_rootly_mcp_server(swagger_path=SWAGGER_PATH, hosted=True)
+
+    assert any(isinstance(m, GetSchemaArgumentShapeMiddleware) for m in server.middleware)
+    assert not any(isinstance(m, GetSchemaArgumentShapeMiddleware) for m in classic.middleware)
