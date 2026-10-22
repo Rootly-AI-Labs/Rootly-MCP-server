@@ -121,6 +121,7 @@ dev = [
     "detect-secrets>=1.5.0", # Independent oracle for the telemetry scrubber tests
     "mypy>=1.0.0", # Static type checker
     "types-requests>=2.32.0", # Type stubs for requests
+    "jsonschema>=4.26.0", # Validates response-contract fixtures against swagger.json
 ]
 
 [tool.pytest.ini_options]
