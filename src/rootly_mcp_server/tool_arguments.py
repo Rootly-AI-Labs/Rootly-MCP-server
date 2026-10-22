@@ -260,11 +260,13 @@ def _resolve(
     if _names_own_resource(base, tool_name, properties):
         return [("id", value)], ""
 
-    if base in _NO_EQUIVALENT_HINTS:
-        return None, _NO_EQUIVALENT_HINTS[base]
+    # A tool's own range parameters outrank the generic "no such filter" hints:
+    # list_incident_post_mortems does have created_after/created_before.
     if lower or upper:
         options = " and/or ".join(repr(name) for name in (lower, upper) if name)
         return None, f"use {options} with an ISO 8601 timestamp"
+    if base in _NO_EQUIVALENT_HINTS:
+        return None, _NO_EQUIVALENT_HINTS[base]
     suggestion = suggest_parameter(base, list(properties))
     if suggestion is None and base != key:
         suggestion = suggest_parameter(key, list(properties))

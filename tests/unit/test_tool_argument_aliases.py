@@ -177,6 +177,9 @@ async def test_schedule_shift_names_reach_the_tools_own_parameters(server, sent)
     assert not result.is_error, _text(result)
     requests = [r for r in sent if r.url.path == "/v1/schedules/sched-1/shifts"]
     assert requests, [str(r.url) for r in sent]
+    for request in requests:
+        assert request.url.params.get("from") == _TS1
+        assert request.url.params.get("to") == _TS2
 
 
 async def test_page_size_reaches_collect_incidents_batch_size(server, sent):
@@ -298,6 +301,14 @@ async def test_created_filter_points_at_the_sort_that_exists(server, sent):
     text = _text(result)
     assert "'filter_created_at_gte' (there is no created-time filter)" in text
     assert "pass sort='-created_at'" in text
+
+
+async def test_created_filter_on_a_tool_that_has_one_names_its_bounds(server, sent):
+    result = await _call(server, "list_incident_post_mortems", {"created_at": _TS1})
+
+    text = _text(result)
+    assert "'created_at' (use 'created_after' and/or 'created_before'" in text
+    assert "no created-time filter" not in text
 
 
 async def test_short_unrelated_names_get_no_suggestion(server, sent):
