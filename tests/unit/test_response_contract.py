@@ -123,7 +123,8 @@ ContractKey = tuple[str, str, str]  # (METHOD, path template, key path)
 # Allowlists
 # --------------------------------------------------------------------------- #
 # Key paths use `.` between keys, `[]` for a list item and `[<type>]` for a
-# typed JSON:API `included` entry. A trailing `.*` matches everything below.
+# typed JSON:API `included` entry. Matching is exact: no wildcards, so an
+# entry never hides a neighbouring typo.
 # Rails citations are rootlyhq/rootly master.
 
 
@@ -226,18 +227,29 @@ RESPONSE_SCHEMA_OVERRIDES: dict[ContractKey, tuple[str, str]] = {
 
 # Fallback probes for shapes the API does not produce, read only beside the
 # declared shape. Harmless dead branches; accepted.
+# IncidentSerializer#severity is render_nested(SeveritySerializer)
+# (incident_serializer.rb:141-143, app/serializers/api/v1/nested_rendering.rb),
+# i.e. the JSON:API document {"data": {"id", "type", "attributes": {...}}} the
+# spec declares, and both normalizers do read data.attributes.{name,slug}.
+# Before that they probe flat keys for other shapes:
+# * _extract_incident_severity (tools/incidents.py) tries severity.slug/.name;
+# * _normalize_incident_severity (tools/oncall.py) tries name, slug, label,
+#   value, severity, title at each level, then descends into `attributes` and
+#   `data` -- so severity.<probe>, severity.attributes and
+#   severity.data.<probe>.
+# Exactly those paths are accepted; a misspelling anywhere else under severity
+# (e.g. severity.data.attributes.nmae) is still a violation.
+_SEVERITY_PROBES = ("name", "slug", "label", "value", "severity", "title")
+_SEVERITY = "data[].attributes.severity"
 DEFENSIVE_READS: dict[ContractKey, str] = {
-    # IncidentSerializer#severity is render_nested(SeveritySerializer)
-    # (incident_serializer.rb:141-143, app/serializers/api/v1/
-    # nested_rendering.rb), i.e. the JSON:API document
-    # {"data": {"id", "type", "attributes": {...}}} the spec declares.
-    # _extract_incident_severity (tools/incidents.py) and
-    # _normalize_incident_severity (tools/oncall.py) also probe flat
-    # `name`/`slug`/`label`/... keys at each level before descending into
-    # data.attributes, which they do handle.
-    ("GET", "/v1/incidents", "data[].attributes.severity.*"): (
+    ("GET", "/v1/incidents", path): (
         "multi-shape severity normalizers probe flat keys before data.attributes"
-    ),
+    )
+    for path in (
+        *(f"{_SEVERITY}.{probe}" for probe in _SEVERITY_PROBES),
+        f"{_SEVERITY}.attributes",
+        *(f"{_SEVERITY}.data.{probe}" for probe in _SEVERITY_PROBES),
+    )
 }
 
 # Reads of keys the API does not return. Each is a strict xfail test.
@@ -320,8 +332,6 @@ SPARSE_KEEP = {("*", "sequential_id"), ("/v1/severities", "severity")}
 def _key_matches(pattern: ContractKey, key: ContractKey) -> bool:
     if pattern[:2] != key[:2]:
         return False
-    if pattern[2].endswith(".*"):
-        return key[2].startswith(pattern[2][:-1])
     return pattern[2] == key[2]
 
 
@@ -626,7 +636,12 @@ def _conform(base: Any, node: Any, mode: str, where: Where) -> Any:
     Declared keys keep the stub's value (so ids and time windows still line
     up); undeclared keys are dropped unless a SpecGap documents them; missing
     ones come from ``_example``. In the sparse modes only required keys (and
-    optional objects, for NULLED) survive, and optional nullables are null.
+    optional objects, for NULLED) survive, and every nullable is null --
+    required or not, whatever the stub says -- except SPARSE_KEEP values.
+    Routing still works because the stub values the tools match on are
+    non-nullable in the spec and kept: resource ``id``/``type``, shift
+    ``starts_at``/``ends_at``/``schedule_id``, relationship ``data.id`` when
+    the relationship data is present.
     """
     resolved = _resolve(node)
     if not isinstance(resolved, dict):
@@ -656,9 +671,16 @@ def _conform(base: Any, node: Any, mode: str, where: Where) -> Any:
                 if mode == FULL and gap and gap.declares and isinstance(value, dict):
                     conformed[name] = {k: v for k, v in value.items() if k in gap.declares}
                 continue
-            optional = name not in shape.required and not _sparse_keeps(where, name)
-            if mode in SPARSE_MODES and optional:
-                if not (mode == NULLED and _is_object_schema(shape.properties[name])):
+            keep = _sparse_keeps(where, name)
+            if mode in SPARSE_MODES and not keep:
+                if _resolve(shape.properties[name]).get("nullable") is True:
+                    # Nullable stays null even when the stub has a value
+                    # (e.g. a shift's required, nullable rotation_id).
+                    conformed[name] = None
+                    continue
+                if name not in shape.required and not (
+                    mode == NULLED and _is_object_schema(shape.properties[name])
+                ):
                     continue
             conformed[name] = _conform(value, shape.properties[name], mode, child)
         return conformed
@@ -1340,6 +1362,60 @@ def test_spec_gap_declares_narrow_reads_inside_undocumented_objects() -> None:
         "data.relationships",
         "data.relationships.schedule_rotations",
     ]
+
+
+@pytest.mark.unit
+def test_misspelled_severity_key_is_not_a_defensive_read() -> None:
+    """Only the listed fallback probes are accepted; a typo under the declared shape is not."""
+    severity = {"data": {"id": "s", "type": "severities", "attributes": {"name": "SEV1"}}}
+    body = {"data": [{"id": "1", "type": "incidents", "attributes": {"severity": severity}}]}
+    tracked, violations = _tracked_for("GET", "/v1/incidents", body)
+    attributes = tracked["data"][0]["attributes"]["severity"]["data"]["attributes"]
+    attributes.get("name")
+    attributes.get("nmae")
+    tracked["data"][0]["attributes"]["severity"].get("slug")  # a listed probe
+    assert [v.key_path for v in violations] == [
+        "data[].attributes.severity.data.attributes.nmae",
+        "data[].attributes.severity.slug",
+    ]
+    assert [v.key_path for v in _unexpected(violations)] == [
+        "data[].attributes.severity.data.attributes.nmae"
+    ]
+
+
+@pytest.mark.unit
+def test_nulled_fixture_nulls_required_nullable_fields_the_stub_populates() -> None:
+    """A stub value never survives into a nullable field in the sparse modes."""
+    schema = _response_schema("GET", "/v1/shifts")
+    stub = {
+        "data": [
+            {
+                "id": "shift-1",
+                "type": "shifts",
+                "attributes": {
+                    "schedule_id": "sched-1",
+                    "rotation_id": "rot-1",  # required and nullable
+                    "user_id": 7,  # optional and nullable
+                    "starts_at": "2026-01-01T00:00:00Z",
+                    "ends_at": "2026-01-01T08:00:00Z",
+                    "is_override": False,
+                    "is_shadow": False,
+                },
+                "relationships": {"user": {"data": {"id": "7", "type": "users"}}},
+            }
+        ]
+    }
+    for mode in SPARSE_MODES:
+        body = _conform(stub, schema, mode, Where("GET", "/v1/shifts"))
+        shift = body["data"][0]
+        assert shift["id"] == "shift-1" and shift["type"] == "shifts"
+        assert shift["attributes"]["rotation_id"] is None, mode
+        assert shift["attributes"]["user_id"] is None, mode
+        assert shift["attributes"]["schedule_id"] == "sched-1", mode
+        assert shift["attributes"]["starts_at"] == "2026-01-01T00:00:00Z", mode
+        assert _validation_errors(body, schema) == [], mode
+    nulled = _conform(stub, schema, NULLED, Where("GET", "/v1/shifts"))
+    assert nulled["data"][0]["relationships"]["user"]["data"] is None
 
 
 @pytest.mark.unit
