@@ -62,13 +62,16 @@ PARAMETER_SYNONYMS: dict[str, tuple[str, ...]] = {
 # (list_shifts, list_incident_post_mortems, ...) and ``filters={...}`` dicts,
 # which never see validation aliases.
 # start_time/end_time map to the inclusive started_after/started_before,
-# which is what an unqualified start/end bound means.
+# which is what an unqualified start/end bound means, or to the shift tools'
+# start_date/end_date. page_size reaches collect_incidents' batch_size, which
+# is sent as page[size].
 ARGUMENT_ALIASES: dict[str, tuple[str, ...]] = {
     "search": ("query",),
-    "start_time": ("started_after",),
-    "end_time": ("started_before",),
+    "start_time": ("started_after", "start_date"),
+    "end_time": ("started_before", "end_date"),
     "services": ("service_ids",),
     "max_results": ("page_size",),
+    "page_size": ("batch_size",),
 }
 
 # Keys that carry a dict of filters (``filters={"status": ...}``).
@@ -90,8 +93,15 @@ _NO_EQUIVALENT_HINTS: dict[str, str] = {
     "updated_at": "there is no updated-time filter",
     "updated_after": "there is no updated-time filter",
     "updated_before": "there is no updated-time filter",
+    "created_at": "there is no created-time filter",
+    "created_after": "there is no created-time filter",
+    "created_before": "there is no created-time filter",
     "include": "related records cannot be side-loaded; the response shape is fixed",
 }
+
+# Fuzzy did-you-mean threshold. difflib's default (0.6) pairs short unrelated
+# names such as types/teams; real typos score well above 0.7.
+_SUGGESTION_CUTOFF = 0.7
 
 
 @dataclass
@@ -160,7 +170,7 @@ def suggest_parameter(name: str, properties: Sequence[str]) -> str | None:
                 return candidate
         if not synonyms:
             return None
-    matches = difflib.get_close_matches(name, list(properties), n=1)
+    matches = difflib.get_close_matches(name, list(properties), n=1, cutoff=_SUGGESTION_CUTOFF)
     return matches[0] if matches else None
 
 
@@ -203,8 +213,15 @@ def _range_targets(base: str, properties: Mapping[str, Any]) -> tuple[str | None
     return (lower if lower in properties else None, upper if upper in properties else None)
 
 
+def _names_own_resource(key: str, tool_name: str | None, properties: Mapping[str, Any]) -> bool:
+    """True for ``schedule_id`` on ``get_schedule_shifts``: the tool's ``id`` is that resource."""
+    if not tool_name or "id" not in properties or not key.endswith("_id"):
+        return False
+    return key[: -len("_id")] in tool_name.split("_")
+
+
 def _resolve(
-    key: str, value: Any, properties: Mapping[str, Any]
+    key: str, value: Any, properties: Mapping[str, Any], tool_name: str | None = None
 ) -> tuple[list[tuple[str, Any]] | None, str]:
     """Map one argument to [(declared parameter, value), ...], or None plus a hint."""
     base, op = _parse_key(key)
@@ -240,12 +257,16 @@ def _resolve(
     for candidate in ARGUMENT_ALIASES.get(base, ()):
         if candidate in properties:
             return [(candidate, value)], ""
+    if _names_own_resource(base, tool_name, properties):
+        return [("id", value)], ""
 
-    if base in _NO_EQUIVALENT_HINTS:
-        return None, _NO_EQUIVALENT_HINTS[base]
+    # A tool's own range parameters outrank the generic "no such filter" hints:
+    # list_incident_post_mortems does have created_after/created_before.
     if lower or upper:
         options = " and/or ".join(repr(name) for name in (lower, upper) if name)
         return None, f"use {options} with an ISO 8601 timestamp"
+    if base in _NO_EQUIVALENT_HINTS:
+        return None, _NO_EQUIVALENT_HINTS[base]
     suggestion = suggest_parameter(base, list(properties))
     if suggestion is None and base != key:
         suggestion = suggest_parameter(key, list(properties))
@@ -262,12 +283,15 @@ def normalize_tool_arguments(
     arguments: Mapping[str, Any],
     schema: Mapping[str, Any] | None,
     accepted_aliases: Mapping[str, str] | None = None,
+    tool_name: str | None = None,
 ) -> NormalizedArguments:
     """Rewrite unambiguous argument aliases against ``schema`` (a JSON schema).
 
     ``accepted_aliases`` maps names the tool already accepts (pydantic
     validation aliases, see :func:`validation_aliases`) to their parameter;
     those are passed through untouched, never rewritten or rejected.
+    ``tool_name`` lets ``<resource>_id`` reach ``id`` when the name is that
+    resource's (``schedule_id`` on ``get_schedule_shifts``).
 
     Never overwrites a parameter the caller set: an alias whose target is
     already present is dropped when it carries the same value and otherwise
@@ -301,14 +325,14 @@ def normalize_tool_arguments(
             continue
         if key in _FILTER_CONTAINERS and isinstance(value, dict):
             for sub_key, sub_value in value.items():
-                pairs, hint = _resolve(str(sub_key), sub_value, properties)
+                pairs, hint = _resolve(str(sub_key), sub_value, properties, tool_name)
                 label = f"{key}.{sub_key}"
                 if pairs is None:
                     result.unknown[label] = hint
                 else:
                     assign(label, pairs)
             continue
-        pairs, hint = _resolve(key, value, properties)
+        pairs, hint = _resolve(key, value, properties, tool_name)
         if pairs is None:
             result.unknown[key] = hint
         else:
@@ -342,5 +366,11 @@ def unknown_arguments_message(
         and "-updated_at" in (sort.get("enum") or [])
     ):
         message += " To find recently updated records, pass sort='-updated_at'."
+    if (
+        any("created" in name for name in unknown)
+        and isinstance(sort, dict)
+        and "-created_at" in (sort.get("enum") or [])
+    ):
+        message += " To find recently created records, pass sort='-created_at'."
     line = valid_parameters_line(tool_name, schema)
     return f"{message}\n{line}" if line else message

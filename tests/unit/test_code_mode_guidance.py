@@ -185,10 +185,10 @@ async def test_unexpected_argument_names_the_real_parameter(client: Client):
 async def test_did_you_mean_follows_each_tools_own_schema(client: Client):
     text = await _run(
         client,
-        "return await call_tool('get_schedule_shifts', {'id': 's1', 'start_time': 'x'})",
+        "return await call_tool('get_schedule_shifts', {'id': 's1', 'since': 'x'})",
     )
 
-    assert "'start_time' (did you mean 'start_date'?)" in text
+    assert "'since' (did you mean 'start_date'?)" in text
     assert "Valid parameters for get_schedule_shifts (* = required): id*, start_date" in text
 
 

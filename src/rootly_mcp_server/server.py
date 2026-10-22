@@ -860,7 +860,7 @@ class ToolArgumentAliasMiddleware(fastmcp_middleware.Middleware):
             return await call_next(context)
 
         normalized = tool_arguments.normalize_tool_arguments(
-            args, schema, self._accepted_aliases(tool)
+            args, schema, self._accepted_aliases(tool), tool_name
         )
         if normalized.rewrites:
             logger.debug("Normalized %s arguments: %s", tool_name, ", ".join(normalized.rewrites))
