@@ -13,6 +13,7 @@ from rootly_mcp_server.code_mode import (
     DEFAULT_CODE_MODE_PATH,
     EXECUTE_DESCRIPTION,
     ExecuteCallShapeMiddleware,
+    GetSchemaArgumentShapeMiddleware,
     RootlyCodeMode,
     _format_execute_exception,
     build_code_mode_transform,
@@ -81,7 +82,8 @@ def test_create_rootly_codemode_server_adds_code_mode_transform():
         (),
         {
             "add_transform": lambda self, transform: setattr(self, "_transform", transform),
-            "add_middleware": lambda self, middleware: setattr(self, "_middleware", middleware),
+            "add_middleware": lambda self, middleware: self._middleware.append(middleware),
+            "_middleware": [],
         },
     )()
 
@@ -100,7 +102,11 @@ def test_create_rootly_codemode_server_adds_code_mode_transform():
 
     assert server is mock_transform_server
     assert isinstance(server._transform, CodeMode)  # type: ignore[attr-defined]  # noqa: SLF001
-    assert isinstance(server._middleware, ExecuteCallShapeMiddleware)  # type: ignore[attr-defined]  # noqa: SLF001
+    middleware = server._middleware  # type: ignore[attr-defined]  # noqa: SLF001
+    assert [type(m) for m in middleware] == [
+        ExecuteCallShapeMiddleware,
+        GetSchemaArgumentShapeMiddleware,
+    ]
     mock_create.assert_called_once_with(
         swagger_path="swagger.json",
         name="Rootly Code Mode",

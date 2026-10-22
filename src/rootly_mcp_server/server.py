@@ -11,7 +11,8 @@ import logging
 import os
 import time
 import traceback
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
+from contextvars import ContextVar
 from typing import Any
 
 import fastmcp.server.middleware as fastmcp_middleware
@@ -19,7 +20,15 @@ import mcp.types as mt
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 
-from . import audit, legacy_server, payload_stripping, server_defaults, spec_transform, transport
+from . import (
+    audit,
+    legacy_server,
+    payload_stripping,
+    server_defaults,
+    spec_transform,
+    tool_arguments,
+    transport,
+)
 from .exceptions import RootlyAuthenticationError
 from .mcp_error import MCPError
 from .security import mask_sensitive_data, sanitize_error_message
@@ -43,6 +52,13 @@ from .utils import (
 # Set up logger
 logger = logging.getLogger(__name__)
 _tool_usage_json_logger = logging.getLogger("rootly_mcp_server.tool_usage_json")
+
+# Argument rewrites applied during the current tool call, collected by
+# ToolArgumentAliasMiddleware and reported by ToolUsageLoggingMiddleware. A
+# list (not a value) so an inner middleware can append to the outer's bucket.
+_tool_argument_rewrites: ContextVar[list[str] | None] = ContextVar(
+    "rootly_tool_argument_rewrites", default=None
+)
 
 # Module-level storage for hosted auth middleware, set by create_rootly_mcp_server().
 _hosted_auth_middleware: list | None = None
@@ -292,6 +308,7 @@ def _log_tool_usage_event(
     identity: dict[str, str],
     error_type: str | None = None,
     error_context: dict[str, Any] | None = None,
+    arg_rewrites: list[str] | None = None,
 ) -> None:
     """Emit structured per-tool usage events for analytics and observability."""
     if not _tool_usage_logging_enabled():
@@ -304,6 +321,7 @@ def _log_tool_usage_event(
         "duration_ms": round(duration_ms, 2),
         "tool_arg_count": len(arg_keys),
         "tool_arg_keys": arg_keys[:20],
+        "tool_arg_rewrites": (arg_rewrites or [])[:20],
         "token_fingerprint": identity.get("token_fingerprint", ""),
         "auth_header_state": identity.get("auth_header_state", ""),
         "client_ip": identity.get("client_ip", ""),
@@ -733,6 +751,8 @@ class ToolUsageLoggingMiddleware(fastmcp_middleware.Middleware):
         identity = _current_tool_identity()
         start = time.perf_counter()
         transport._clear_error_context()
+        rewrites: list[str] = []
+        rewrites_token = _tool_argument_rewrites.set(rewrites)
 
         try:
             result = await call_next(context)
@@ -745,8 +765,11 @@ class ToolUsageLoggingMiddleware(fastmcp_middleware.Middleware):
                 identity=identity,
                 error_type=type(exc).__name__,
                 error_context=_extract_exception_error_context(exc),
+                arg_rewrites=rewrites,
             )
             raise
+        finally:
+            _tool_argument_rewrites.reset(rewrites_token)
 
         structured_error = _extract_structured_tool_error(result)
         if structured_error:
@@ -758,6 +781,7 @@ class ToolUsageLoggingMiddleware(fastmcp_middleware.Middleware):
                 identity=identity,
                 error_type=str(structured_error.get("error_type", "ToolError")),
                 error_context=structured_error,
+                arg_rewrites=rewrites,
             )
             return result
 
@@ -767,8 +791,88 @@ class ToolUsageLoggingMiddleware(fastmcp_middleware.Middleware):
             duration_ms=(time.perf_counter() - start) * 1000,
             arg_keys=arg_keys,
             identity=identity,
+            arg_rewrites=rewrites,
         )
         return result
+
+
+class ToolArgumentAliasMiddleware(fastmcp_middleware.Middleware):
+    """Repairs API-shaped arguments to curated tools and explains the rest.
+
+    Models call curated tools such as ``list_incidents`` with the raw Rootly
+    API's query shapes (``filter[status]``, ``page[size]``,
+    ``filter_started_at={"gte": ...}``, ``filters={...}``) or near-miss names
+    (``search``). pydantic rejects those with a bare "Unexpected keyword
+    argument" that names no alternative, so the model retries blind.
+
+    Before validation this rewrites the unambiguous shapes against the tool's
+    own input schema (see ``tool_arguments.normalize_tool_arguments``) and, if
+    anything is still undeclared, raises a ToolError that names each argument,
+    a did-you-mean where one exists, and the valid parameters.
+
+    Autogen OpenAPI tools are left alone: their arguments are API-shaped by
+    design and PathArgumentValidationMiddleware owns their errors. When
+    ``tool_names`` is set, only those tools are handled, which keeps Code
+    Mode's own ``execute`` / discovery tools out of scope.
+    """
+
+    def __init__(self, tool_names: Collection[str] | None = None) -> None:
+        self.tool_names: Collection[str] | None = tool_names
+        self._alias_cache: dict[int, dict[str, str]] = {}
+
+    def _accepted_aliases(self, tool: Any) -> dict[str, str]:
+        """Names the tool's own signature accepts besides its schema properties.
+
+        pydantic validation aliases (``AliasChoices``) are honored by FastMCP's
+        argument validation but left out of the JSON schema, so they must be
+        treated as known here: never rewritten, never rejected.
+        """
+        fn = getattr(tool, "fn", None)
+        if fn is None:
+            return {}
+        key = id(fn)
+        if key not in self._alias_cache:
+            self._alias_cache[key] = tool_arguments.validation_aliases(fn)
+        return self._alias_cache[key]
+
+    async def on_call_tool(
+        self,
+        context: fastmcp_middleware.MiddlewareContext[mt.CallToolRequestParams],
+        call_next: fastmcp_middleware.CallNext[mt.CallToolRequestParams, Any],
+    ) -> Any:
+        tool_name = context.message.name
+        args = context.message.arguments
+        if (
+            not args
+            or context.fastmcp_context is None
+            or (self.tool_names is not None and tool_name not in self.tool_names)
+        ):
+            return await call_next(context)
+        try:
+            tool = await context.fastmcp_context.fastmcp.get_tool(tool_name)
+        except Exception:
+            tool = None
+        if tool is None or getattr(tool, "_route", None) is not None:
+            return await call_next(context)
+
+        schema = getattr(tool, "parameters", None)
+        if not isinstance(schema, dict) or schema.get("additionalProperties", True) is not False:
+            return await call_next(context)
+
+        normalized = tool_arguments.normalize_tool_arguments(
+            args, schema, self._accepted_aliases(tool)
+        )
+        if normalized.rewrites:
+            logger.debug("Normalized %s arguments: %s", tool_name, ", ".join(normalized.rewrites))
+            bucket = _tool_argument_rewrites.get()
+            if bucket is not None:
+                bucket.extend(normalized.rewrites)
+        if normalized.unknown:
+            raise ToolError(
+                tool_arguments.unknown_arguments_message(tool_name, schema, normalized.unknown)
+            )
+        context.message.arguments = normalized.arguments
+        return await call_next(context)
 
 
 def create_rootly_mcp_server(
@@ -933,6 +1037,11 @@ def create_rootly_mcp_server(
     mcp.add_middleware(LegacyContextArgumentMiddleware())
     mcp.add_middleware(InjectedToolAnnotationMiddleware())
     mcp.add_middleware(ToolUsageLoggingMiddleware())
+    # Inside usage logging, so the logged arg keys are what the caller sent and
+    # the applied rewrites (or the rejection) are recorded with them. Scoped to
+    # the curated tools once they are registered, below.
+    argument_alias_middleware = ToolArgumentAliasMiddleware()
+    mcp.add_middleware(argument_alias_middleware)
     # Innermost, so usage logging still records the rejected call and its arg keys.
     mcp.add_middleware(PathArgumentValidationMiddleware())
 
@@ -1194,6 +1303,7 @@ def create_rootly_mcp_server(
     # A curated tool and an autogen tool can resolve to the same name; drop the
     # autogen duplicate so only the richer curated implementation is surfaced.
     _remove_autogen_tools_shadowed_by_curated(mcp)
+    argument_alias_middleware.tool_names = frozenset(_provider_tool_inventory(mcp)[0])
 
     # Apply MCP tool annotations (read_only_hint, destructive_hint, etc.) to
     # autogen tools based on HTTP method. Curated tools set their own annotations

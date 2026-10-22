@@ -34,6 +34,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from .server import create_rootly_mcp_server
 from .spec_transform import to_snake_case
+from .tool_arguments import suggest_parameter, valid_parameters_line
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -113,32 +114,6 @@ _VALIDATION_ERROR_MARKERS = (
     "unexpected keyword argument",
     "missing required argument",
 )
-# Parameter names models send that a Rootly tool spells differently, mapped
-# to the real names to suggest, in preference order (the first one the tool
-# declares wins). Observed in production Code Mode failures. An empty tuple
-# means "no equivalent": it also stops the fuzzy fallback, which would
-# otherwise suggest started_after for updated_after -- a different filter.
-_START_SYNONYMS = ("started_after", "start_date", "from_date")
-_END_SYNONYMS = ("started_before", "end_date", "to_date")
-_LIMIT_SYNONYMS = ("page_size", "max_results")
-_PARAMETER_SYNONYMS: dict[str, tuple[str, ...]] = {
-    "start_time": _START_SYNONYMS,
-    "start_date": _START_SYNONYMS,
-    "start": _START_SYNONYMS,
-    "from": _START_SYNONYMS,
-    "since": _START_SYNONYMS,
-    "end_time": _END_SYNONYMS,
-    "end_date": _END_SYNONYMS,
-    "end": _END_SYNONYMS,
-    "to": _END_SYNONYMS,
-    "until": _END_SYNONYMS,
-    "max_results": ("page_size",),
-    "limit": _LIMIT_SYNONYMS,
-    "per_page": _LIMIT_SYNONYMS,
-    "count": _LIMIT_SYNONYMS,
-    "updated_after": (),
-    "updated_before": (),
-}
 
 
 def _normalize_http_path(path: str) -> str:
@@ -275,19 +250,6 @@ def resolve_tool_name(requested: str, tools: Sequence[Tool]) -> ToolNameResoluti
     return ToolNameResolution(name, suggestions=tuple(suggestions[:_MAX_TOOL_SUGGESTIONS]))
 
 
-def _suggest_parameter(name: str, properties: Sequence[str]) -> str | None:
-    """Return the real parameter a mistyped ``name`` most likely meant."""
-    synonyms = _PARAMETER_SYNONYMS.get(name)
-    if synonyms is not None:
-        for candidate in synonyms:
-            if candidate in properties:
-                return candidate
-        if not synonyms:
-            return None
-    matches = difflib.get_close_matches(name, list(properties), n=1)
-    return matches[0] if matches else None
-
-
 def _legible_call_error(tool_name: str, tool: Tool, error: Exception) -> str:
     """Rewrite a failed call's error for the model that wrote the script.
 
@@ -311,7 +273,7 @@ def _legible_call_error(tool_name: str, tool: Tool, error: Exception) -> str:
             loc = ".".join(str(part) for part in item["loc"]) or "arguments"
             problem = f"{loc}: {item['msg']}"
             if item["type"] == "unexpected_keyword_argument":
-                suggestion = _suggest_parameter(loc, names)
+                suggestion = suggest_parameter(loc, names)
                 if suggestion is not None:
                     problem += f" (did you mean {suggestion!r}?)"
             problems.append(problem)
@@ -320,10 +282,12 @@ def _legible_call_error(tool_name: str, tool: Tool, error: Exception) -> str:
         text = str(error)
 
     message = f"call_tool({tool_name!r}) failed: {text}"
+    # The curated-tool argument check (server.ToolArgumentAliasMiddleware) already
+    # appends the parameter list; never list it twice.
+    if "\nValid parameters for " in text:
+        return message
     if names and (validation or any(m in text.lower() for m in _VALIDATION_ERROR_MARKERS)):
-        required = set(parameters.get("required") or [])
-        listed = ", ".join(name + ("*" if name in required else "") for name in names)
-        message += f"\nValid parameters for {tool_name} (* = required): {listed}"
+        message += f"\n{valid_parameters_line(tool_name, parameters)}"
     return message
 
 
@@ -719,6 +683,50 @@ class ExecuteCallShapeMiddleware(fastmcp_middleware.Middleware):
         return await call_next(context)
 
 
+_GET_SCHEMA_TOOL_NAME = "get_schema"
+_GET_SCHEMA_NAME_KEYS = ("tool_name", "name", "tool")
+
+
+class GetSchemaArgumentShapeMiddleware(fastmcp_middleware.Middleware):
+    """Accepts ``get_schema(tool_name="x")`` as ``get_schema(tools=["x"])``.
+
+    Models ask for one schema by name, the way they call ``execute``'s
+    ``tool`` (see ExecuteCallShapeMiddleware), and get_schema's only required
+    argument is the ``tools`` list. A bare string ``tools`` is wrapped too. A
+    request that already has a ``tools`` list is never touched. Registered
+    only on the Code Mode server.
+    """
+
+    def __init__(self, tool_name: str = _GET_SCHEMA_TOOL_NAME) -> None:
+        self._tool_name = tool_name
+
+    async def on_call_tool(
+        self,
+        context: fastmcp_middleware.MiddlewareContext[mt.CallToolRequestParams],
+        call_next: fastmcp_middleware.CallNext[mt.CallToolRequestParams, Any],
+    ) -> Any:
+        arguments = context.message.arguments
+        if context.message.name == self._tool_name and arguments:
+            tools = arguments.get("tools")
+            if isinstance(tools, str) and tools.strip():
+                arguments["tools"] = [tools]
+                logger.info("Wrapped a string get_schema `tools` argument in a list")
+            elif "tools" not in arguments:
+                key = _first_present(arguments, _GET_SCHEMA_NAME_KEYS)
+                value = arguments.get(key) if key else None
+                names = [value] if isinstance(value, str) else value
+                if (
+                    key is not None
+                    and isinstance(names, list)
+                    and names
+                    and all(isinstance(name, str) and name.strip() for name in names)
+                ):
+                    arguments.pop(key)
+                    arguments["tools"] = names
+                    logger.info("Rewrote get_schema(%s=...) into tools=[...]", key)
+        return await call_next(context)
+
+
 def build_code_mode_transform(max_tool_calls: int | None = None) -> CodeMode:
     """Build the shared Code Mode transform used by hosted deployments.
 
@@ -763,4 +771,5 @@ def create_rootly_codemode_server(
     transform = build_code_mode_transform()
     mcp.add_transform(transform)
     mcp.add_middleware(ExecuteCallShapeMiddleware(transform.execute_tool_name))
+    mcp.add_middleware(GetSchemaArgumentShapeMiddleware())
     return mcp
