@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import httpx2
 import pytest
@@ -294,9 +294,9 @@ async def test_declared_resource_id_parameter_is_never_consumed():
         fastmcp_context=SimpleNamespace(fastmcp=SimpleNamespace(get_tool=get_tool)),
     )
 
-    async def call_next(_context):
+    async def call_next(context: Any) -> Any:
         raise AssertionError("the call must not proceed without its path argument")
 
     with pytest.raises(ToolError, match="requires the path argument 'id'"):
-        await PathArgumentValidationMiddleware().on_call_tool(context, call_next)
+        await PathArgumentValidationMiddleware().on_call_tool(cast(Any, context), call_next)
     assert message.arguments == {"alert_id": "a1"}
