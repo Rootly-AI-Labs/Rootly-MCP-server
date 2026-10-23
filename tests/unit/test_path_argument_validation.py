@@ -9,15 +9,19 @@ the transport guard, which failed without naming the argument to pass.
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 from typing import Any
 
 import httpx2
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
 
 from rootly_mcp_server.server import (
+    PathArgumentValidationMiddleware,
     _openapi_path_arguments,
     _provider_tool_inventory,
+    _resource_id_alias,
     create_rootly_mcp_server,
 )
 from rootly_mcp_server.spec_transform import (
@@ -259,3 +263,40 @@ class TestSpecHelpers:
         names = {param["name"] for param in path_item["get"]["parameters"]}
         assert "page[size]" not in names
         assert "filter[status]" not in names
+
+
+def test_several_candidate_ids_are_not_chosen_between():
+    # causes -> cause / caus: two different nonblank ids mean nothing is guessed.
+    assert _resource_id_alias("/v1/causes/{id}", "id", {"cause_id": "a", "caus_id": "b"}) is None
+    assert _resource_id_alias("/v1/causes/{id}", "id", {"cause_id": "a", "caus_id": ""}) == (
+        "cause_id"
+    )
+
+
+async def test_declared_resource_id_parameter_is_never_consumed():
+    """A tool that declares `alert_id` itself keeps it; the path error still fires."""
+    route = SimpleNamespace(
+        path="/v1/alerts/{id}",
+        method="GET",
+        parameter_map={"id": {"location": "path"}, "alert_id": {"location": "query"}},
+    )
+    tool = SimpleNamespace(
+        _route=route,
+        parameters={"properties": {"id": {}, "alert_id": {}}},
+    )
+
+    async def get_tool(_name):
+        return tool
+
+    message = SimpleNamespace(name="get_alert", arguments={"alert_id": "a1"})
+    context = SimpleNamespace(
+        message=message,
+        fastmcp_context=SimpleNamespace(fastmcp=SimpleNamespace(get_tool=get_tool)),
+    )
+
+    async def call_next(_context):
+        raise AssertionError("the call must not proceed without its path argument")
+
+    with pytest.raises(ToolError, match="requires the path argument 'id'"):
+        await PathArgumentValidationMiddleware().on_call_tool(context, call_next)
+    assert message.arguments == {"alert_id": "a1"}
