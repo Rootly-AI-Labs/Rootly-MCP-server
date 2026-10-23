@@ -276,6 +276,31 @@ async def test_sentry_tail_names_reach_the_real_parameter(
         assert params.get(key) == value, (key, params)
 
 
+def test_shift_window_names_reach_list_shifts_range():
+    schema = {
+        "type": "object",
+        "properties": {"from_date": {}, "to_date": {}},
+        "additionalProperties": False,
+    }
+
+    result = normalize_tool_arguments({"starts_after": _TS1, "ends_before": _TS2}, schema)
+
+    assert result.arguments == {"from_date": _TS1, "to_date": _TS2}
+
+
+def test_ends_before_never_becomes_an_incident_start_bound():
+    schema = {
+        "type": "object",
+        "properties": {"started_after": {}, "started_before": {}},
+        "additionalProperties": False,
+    }
+
+    result = normalize_tool_arguments({"ends_before": _TS2}, schema)
+
+    assert set(result.unknown) == {"ends_before"}
+    assert "started_before" not in result.arguments
+
+
 def test_start_date_reaches_shift_incidents_start_time():
     # get_shift_incidents takes start_time/end_time, not start_date/end_date.
     schema = {
@@ -545,11 +570,12 @@ async def test_openapi_tools_are_untouched(server, sent):
 
 
 async def test_openapi_missing_path_argument_keeps_its_own_error(server, sent):
-    result = await _call(server, "get_alert", {"alert_id": "a1"})
+    # incident_id names another resource than /v1/action_items/{id}, so it stays unmapped.
+    result = await _call(server, "get_incident_action_items", {"incident_id": "i1"})
 
     text = _text(result)
     assert result.is_error
-    assert text.startswith("get_alert requires the path argument 'id'"), text
+    assert text.startswith("get_incident_action_items requires the path argument 'id'"), text
 
 
 def test_scope_is_the_registered_curated_tools(server):

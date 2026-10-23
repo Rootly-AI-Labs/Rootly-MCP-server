@@ -86,8 +86,6 @@ class TestGetAlertCalls:
     @pytest.mark.parametrize(
         "arguments,rejected",
         [
-            ({"alert_id": "abc"}, ["alert_id"]),
-            ({"alert_id": "abc", "include": "notified_users"}, ["alert_id"]),
             ({"short_id": "ABC-1"}, ["short_id"]),
             ({"include": "notified_users"}, []),
             ({}, []),
@@ -125,24 +123,46 @@ class TestGetAlertCalls:
 
 
 @pytest.mark.parametrize(
-    "tool_name,arguments",
+    "tool_name,arguments,path",
     [
-        # Argument shapes observed in production for the same failure mode.
-        ("get_team", {"team_id": "t-1"}),
-        ("get_cause", {"cause_id": "c-1"}),
-        ("get_schedule", {"schedule_id": "s-1"}),
-        ("get_incident_action_items", {"incident_id": "i-1"}),
+        # Argument shapes observed in production (Sentry, 2026-10-23).
+        ("get_alert", {"alert_id": "abc", "include": "notified_users"}, "/v1/alerts/abc"),
+        ("get_team", {"team_id": "t-1"}, "/v1/teams/t-1"),
+        ("get_cause", {"cause_id": "c-1"}, "/v1/causes/c-1"),
+        ("get_schedule", {"schedule_id": "s-1"}, "/v1/schedules/s-1"),
+        ("get_service", {"service_id": "svc-1"}, "/v1/services/svc-1"),
+        ("get_user", {"user_id": 42}, "/v1/users/42"),
     ],
 )
-async def test_other_id_tools_reject_resource_named_id(server, sent_requests, tool_name, arguments):
+async def test_resource_named_id_fills_the_path(server, sent_requests, tool_name, arguments, path):
     async with Client(server) as client:
         result = await client.call_tool(tool_name, arguments, raise_on_error=False)
 
+    assert not result.is_error, result
+    assert [request.url.path for request in sent_requests] == [path]
+
+
+async def test_other_resources_id_is_still_rejected(server, sent_requests):
+    # /v1/action_items/{id}: an incident_id names a different resource.
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "get_incident_action_items", {"incident_id": "i-1"}, raise_on_error=False
+        )
+
     text = _error_text(result)
-    assert f"{tool_name} requires the path argument 'id'" in text
-    (passed,) = arguments
-    assert f"does not accept '{passed}'" in text
+    assert "get_incident_action_items requires the path argument 'id'" in text
+    assert "does not accept 'incident_id'" in text
     assert sent_requests == []
+
+
+async def test_explicit_id_wins_over_resource_named_id(server, sent_requests):
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "get_alert", {"id": "real", "alert_id": "other"}, raise_on_error=False
+        )
+
+    assert not result.is_error, result
+    assert [request.url.path for request in sent_requests] == ["/v1/alerts/real"]
 
 
 async def test_nested_path_argument_is_reported_by_name(server, sent_requests):
