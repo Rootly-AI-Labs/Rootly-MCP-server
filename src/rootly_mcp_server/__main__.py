@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from . import __version__, server_defaults
 from .code_mode import (
@@ -35,11 +35,21 @@ from .server_defaults import (
     enabled_tools_from_env,
     resolve_write_tools_enabled,
 )
+from .sse_deprecation import (
+    CLI_SSE_DEPRECATION_WARNING,
+    SSE_SUNSET_DATE,
+    SSEDeprecationMiddleware,
+    with_sse_deprecation_instructions,
+)
 from .telemetry_scrubber import (
     redact_agentcat_telemetry_text,
     scrub_event_arguments,
 )
 from .transport import _session_auth_token, get_hosted_authenticated_user
+
+if TYPE_CHECKING:
+    from starlette.requests import Request
+    from starlette.responses import Response
 
 TransportName = Literal["stdio", "sse", "streamable-http", "both"]
 TRANSPORT_ALIASES: dict[str, TransportName] = {
@@ -457,7 +467,7 @@ def setup_logging(log_level, debug=False):
     logging.getLogger("rootly_mcp_server").setLevel(numeric_level)
     logging.getLogger("mcp").setLevel(numeric_level)
 
-    # httpx logs one INFO line per outbound request. At production request
+    # httpx2 logs one INFO line per outbound request. At production request
     # volume that is an eighth of this service's log events and, because the
     # lines carry full URLs, a larger share of the bytes ingested. It is also
     # strictly less informative than what we already record: every
@@ -465,8 +475,10 @@ def setup_logging(log_level, debug=False):
     # method, URL and a body excerpt. Successful calls belong in traces, not
     # in a line per request. Left alone when debugging is explicitly on, where
     # seeing every request is the point.
+    # Every outbound client (Rootly API, OAuth/token probes, On-Call Health) is
+    # httpx2, which logs under "httpx2"; legacy httpx is no longer a dependency.
     if numeric_level > logging.DEBUG:
-        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpx2").setLevel(logging.WARNING)
 
     # Log the configuration
     logger = logging.getLogger(__name__)
@@ -543,19 +555,44 @@ async def _get_sorted_tool_names(server) -> list[str]:
 mcp = get_server() if __name__ != "__main__" else None
 
 
-def run_dual_http_server(
+async def _forward_streamable_http_request(selected_app: Any, request: "Request") -> "Response":
+    """Hand a streamable-HTTP request to the MCP ASGI app.
+
+    A client that hangs up before its POST body arrives makes
+    ``Request.body()`` raise ``ClientDisconnect``. mcp 2.x's handler for
+    2026-07-28-era requests (``handle_modern_request``) does not catch it,
+    so without this it reaches uvicorn as "Exception in ASGI application"
+    with a full traceback for what is ordinary client behaviour.
+
+    Only ``ClientDisconnect`` is caught. Nothing is written for it: the
+    returned empty ``Response`` is the same trailer every request already
+    gets, and uvicorn drops sends once the connection is gone.
+    """
+    from starlette.requests import ClientDisconnect
+    from starlette.responses import Response
+
+    try:
+        await selected_app(request.scope, request.receive, request._send)  # noqa: SLF001
+    except ClientDisconnect:
+        logging.getLogger(__name__).debug(
+            "Client disconnected before the %s %s request was read",
+            request.method,
+            request.url.path,
+        )
+    return Response()
+
+
+def build_dual_http_app(
     server,
-    log_level: str,
     middleware: list | None = None,
     code_mode_server=None,
     code_mode_path: str | None = None,
     profiled_servers: dict[str, Any] | None = None,
     profiled_code_mode_servers: dict[str, Any] | None = None,
     default_tool_profile: str = server_defaults.HOSTED_TOOL_PROFILE_FULL,
-) -> None:
-    """Run SSE and streamable-http together on one ASGI server."""
+):
+    """Build the ASGI app serving SSE, streamable-http and Code Mode together."""
     import fastmcp
-    import uvicorn
     from fastmcp.server.http import StreamableHTTPASGIApp, create_base_app
     from mcp.server.sse import SseServerTransport
     from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
@@ -597,7 +634,10 @@ def run_dual_http_server(
             await selected_server._mcp_server.run(  # noqa: SLF001
                 streams[0],
                 streams[1],
-                selected_server._mcp_server.create_initialization_options(),  # noqa: SLF001
+                # SSE is deprecated: tell the model/client in this session only.
+                with_sse_deprecation_instructions(
+                    selected_server._mcp_server.create_initialization_options()  # noqa: SLF001
+                ),
             )
         return Response()
 
@@ -634,8 +674,7 @@ def run_dual_http_server(
             default_profile=default_tool_profile,
         )
         selected_app = streamable_http_apps[selected_profile]
-        await selected_app(request.scope, request.receive, request._send)  # noqa: SLF001
-        return Response()
+        return await _forward_streamable_http_request(selected_app, request)
 
     # Always allow POST for streamable HTTP - stateless mode only affects session persistence
     streamable_methods = ["POST", "DELETE"]
@@ -672,8 +711,7 @@ def run_dual_http_server(
                 default_profile=default_tool_profile,
             )
             selected_app = code_mode_http_apps[selected_profile]
-            await selected_app(request.scope, request.receive, request._send)  # noqa: SLF001
-            return Response()
+            return await _forward_streamable_http_request(selected_app, request)
 
         routes.append(
             Route(code_mode_path, endpoint=code_mode_endpoint, methods=streamable_methods)
@@ -699,7 +737,12 @@ def run_dual_http_server(
                 await stack.enter_async_context(session_manager.run())
             yield
 
-    app_middleware = cast(list[Middleware], middleware or [])
+    # Outermost of ours, so the 401 from the auth middleware carries the
+    # deprecation headers too. A fresh list: create_base_app mutates it.
+    app_middleware = [
+        Middleware(SSEDeprecationMiddleware, sse_path=sse_path, message_path=message_path),
+        *cast(list[Middleware], middleware or []),
+    ]
     app = create_base_app(
         routes=routes,
         middleware=app_middleware,
@@ -711,6 +754,42 @@ def run_dual_http_server(
         [path for path in (sse_path, streamable_path, code_mode_path) if path]
     )
     app.state.transport_type = "both"
+    return app
+
+
+def run_dual_http_server(
+    server,
+    log_level: str,
+    middleware: list | None = None,
+    code_mode_server=None,
+    code_mode_path: str | None = None,
+    profiled_servers: dict[str, Any] | None = None,
+    profiled_code_mode_servers: dict[str, Any] | None = None,
+    default_tool_profile: str = server_defaults.HOSTED_TOOL_PROFILE_FULL,
+) -> None:
+    """Run SSE and streamable-http together on one ASGI server."""
+    import fastmcp
+    import uvicorn
+
+    logger = logging.getLogger(__name__)
+    app = build_dual_http_app(
+        server,
+        middleware=middleware,
+        code_mode_server=code_mode_server,
+        code_mode_path=code_mode_path,
+        profiled_servers=profiled_servers,
+        profiled_code_mode_servers=profiled_code_mode_servers,
+        default_tool_profile=default_tool_profile,
+    )
+    sse_path = fastmcp.settings.sse_path
+    streamable_path = fastmcp.settings.streamable_http_path
+    logger.info(
+        "SSE endpoint %s is deprecated and will be removed after %s; "
+        "clients should use %s (or Code Mode)",
+        sse_path,
+        SSE_SUNSET_DATE,
+        streamable_path,
+    )
 
     host = fastmcp.settings.host
     port = fastmcp.settings.port
@@ -806,8 +885,7 @@ def run_profiled_streamable_http_server(
         )
         selected_profile = profile if profile in streamable_http_apps else default_tool_profile
         selected_app = streamable_http_apps[selected_profile]
-        await selected_app(request.scope, request.receive, request._send)  # noqa: SLF001
-        return Response()
+        return await _forward_streamable_http_request(selected_app, request)
 
     routes: list[BaseRoute] = [
         Route(streamable_path, endpoint=streamable_http_endpoint, methods=["POST", "DELETE"])
@@ -891,6 +969,8 @@ def main():
         logger.info(f"Initializing server with name: {args.name}")
         # argparse already normalizes/validates --transport via type=normalize_transport
         normalized_transport = args.transport
+        if normalized_transport == "sse":
+            logger.warning(CLI_SSE_DEPRECATION_WARNING)
         code_mode_enabled = args.enable_code_mode or code_mode_enabled_from_env(default=True)
         enable_write_tools = resolve_write_tools_enabled(args.enable_write_tools)
         code_mode_path = (
@@ -1022,9 +1102,22 @@ def main():
                     default_tool_profile=default_hosted_tool_profile,
                 )
             else:
+                run_middleware = get_hosted_auth_middleware()
+                if normalized_transport == "sse":
+                    import fastmcp
+                    from starlette.middleware import Middleware
+
+                    run_middleware = [
+                        Middleware(
+                            SSEDeprecationMiddleware,
+                            sse_path=fastmcp.settings.sse_path,
+                            message_path=fastmcp.settings.message_path,
+                        ),
+                        *(run_middleware or []),
+                    ]
                 run_kwargs = {
                     "transport": normalized_transport,
-                    "middleware": get_hosted_auth_middleware(),
+                    "middleware": run_middleware,
                     # Override FastMCP's default of 0s to allow active SSE connections
                     # to finish gracefully during deployments (avoids 502s).
                     "uvicorn_config": {"timeout_graceful_shutdown": 30},

@@ -199,7 +199,7 @@ async def test_tool_schemas_are_unchanged():
     async with Client(server) as mcp_client:
         tools = await mcp_client.list_tools()
 
-    assert list(tools[0].inputSchema["properties"]) == ["note"]
+    assert list(tools[0].input_schema["properties"]) == ["note"]
 
 
 @pytest.mark.parametrize("with_middleware", [True, False], ids=["tolerated", "rejected"])

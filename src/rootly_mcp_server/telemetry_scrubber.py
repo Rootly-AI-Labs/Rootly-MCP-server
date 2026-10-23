@@ -363,4 +363,27 @@ def scrub_posthog_mcp_event(event: Any) -> Any:
         for name in _POSTHOG_MCP_SCRUBBED_PROPERTIES:
             if name in properties:
                 properties[name] = walk(properties[name], 0)
+        _drop_retired_arguments(properties.get("$mcp_parameters"), 0)
     return event
+
+
+def _drop_retired_arguments(node: Any, depth: int) -> None:
+    """Remove retired injected parameters from every `arguments` dict in *node*.
+
+    posthog.mcp up to 7.60 recorded the arguments dict our middleware had
+    already stripped in place; later versions record a copy of the whole
+    request (`request.params.arguments`) taken before it runs, so a cached
+    client's `context` text arrived intact. Mirrors `scrub_event_arguments`.
+    """
+    if depth > _MAX_ARGUMENT_DEPTH:
+        return
+    if isinstance(node, dict):
+        arguments = node.get("arguments")
+        if isinstance(arguments, dict):
+            for name in RETIRED_INJECTED_PARAMS:
+                arguments.pop(name, None)
+        for value in node.values():
+            _drop_retired_arguments(value, depth + 1)
+    elif isinstance(node, list | tuple):
+        for item in node:
+            _drop_retired_arguments(item, depth + 1)

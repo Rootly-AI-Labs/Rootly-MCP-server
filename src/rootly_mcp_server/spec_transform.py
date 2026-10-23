@@ -30,6 +30,76 @@ def _normalize_path_template(path: str) -> str:
     return _PATH_PARAM_PATTERN.sub("{}", path)
 
 
+def _is_single_resource_path(path: str) -> bool:
+    """Whether *path* addresses one resource, i.e. its last segment is a `{param}`."""
+    last_segment = path.rstrip("/").rsplit("/", 1)[-1]
+    return bool(_PATH_PARAM_PATTERN.fullmatch(last_segment))
+
+
+def _singular_resource_name(segment: str) -> str:
+    """Best-effort human name for a collection path segment (`alert_sources` -> `alert source`)."""
+    words = segment.replace("-", "_").split("_")
+    last = words[-1]
+    if last.endswith("ies") and len(last) > 3:
+        last = last[:-3] + "y"
+    elif last.endswith(("sses", "shes", "ches", "xes", "uses")):
+        last = last[:-2]
+    elif last.endswith("s") and not last.endswith("ss"):
+        last = last[:-1]
+    words[-1] = last
+    return " ".join(word for word in words if word)
+
+
+def _path_parameter_description(path: str, param_name: str) -> str:
+    """Describe a path parameter so the model knows exactly which argument fills it.
+
+    Models routinely call `get_alert(alert_id=...)` or `get_team(team_id=...)`
+    when the URL template is `/v1/alerts/{id}` / `/v1/teams/{id}`: the bare `id`
+    argument carries no description, so the model guesses a "nicer" name, the
+    placeholder stays unfilled and the call fails (ROOTLY-MCP-7S). Spelling out
+    the resource and the exact argument name removes the ambiguity.
+    """
+    segments = [segment for segment in path.split("/") if segment]
+    placeholder = "{" + param_name + "}"
+    resource = ""
+    if placeholder in segments:
+        index = segments.index(placeholder)
+        if index > 0 and not _PATH_PARAM_PATTERN.fullmatch(segments[index - 1]):
+            resource = _singular_resource_name(segments[index - 1])
+    if param_name == "id" and resource:
+        alias = resource.replace(" ", "_") + "_id"
+        return (
+            f"Required. ID of the {resource} (fills `{{id}}` in {path}). "
+            f"Pass it as `id` -- this tool has no `{alias}` argument."
+        )
+    if param_name.endswith("_id"):
+        subject = param_name[: -len("_id")].replace("_", " ")
+        return f"Required. ID of the {subject} (fills `{placeholder}` in {path})."
+    return f"Required. Value for `{placeholder}` in {path}."
+
+
+def _describe_path_parameters(paths: dict[str, Any]) -> None:
+    """Give every undocumented `in: path` parameter an explicit description, in place."""
+    for path, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        parameter_lists = [path_item.get("parameters")]
+        parameter_lists.extend(
+            operation.get("parameters")
+            for method, operation in path_item.items()
+            if method.lower() in _OPENAPI_METHODS and isinstance(operation, dict)
+        )
+        for parameters in parameter_lists:
+            if not isinstance(parameters, list):
+                continue
+            for param in parameters:
+                if not isinstance(param, dict) or param.get("in") != "path":
+                    continue
+                if param.get("description") or not param.get("name"):
+                    continue
+                param["description"] = _path_parameter_description(path, param["name"])
+
+
 # camelCase / PascalCase boundary detection for operationId normalization.
 _SNAKE_BOUNDARY_1 = re.compile(r"(.)([A-Z][a-z]+)")
 _SNAKE_BOUNDARY_2 = re.compile(r"([a-z0-9])([A-Z])")
@@ -304,75 +374,81 @@ def _filter_openapi_spec(
                 if "parameters" not in operation:
                     operation["parameters"] = []
 
-                # Find existing pagination parameters and update them with limits
-                page_size_param = None
-                page_number_param = None
+                # Pagination is meaningless on a single-resource path such as
+                # `/v1/alerts/{id}`: advertising page/filter arguments there makes the
+                # tool look like a list endpoint, and models then call it without the
+                # `{id}` path argument (ROOTLY-MCP-7S).
+                single_resource = _is_single_resource_path(path)
+                if not single_resource:
+                    # Find existing pagination parameters and update them with limits
+                    page_size_param = None
+                    page_number_param = None
 
-                for param in operation["parameters"]:
-                    if param.get("name") == "page[size]":
-                        page_size_param = param
-                    elif param.get("name") == "page[number]":
-                        page_number_param = param
+                    for param in operation["parameters"]:
+                        if param.get("name") == "page[size]":
+                            page_size_param = param
+                        elif param.get("name") == "page[number]":
+                            page_number_param = param
 
-                # Update or add page[size] parameter with limits
-                if page_size_param:
-                    # Update existing parameter with limits
-                    if "schema" not in page_size_param:
-                        page_size_param["schema"] = {}
-                    page_size_param["schema"].update(
-                        {
-                            "type": "integer",
-                            "default": 10,
-                            "minimum": 1,
-                            "maximum": 20,
-                            "description": "Number of results per page (max: 20)",
-                        }
-                    )
-                else:
-                    # Add new parameter
-                    operation["parameters"].append(
-                        {
-                            "name": "page[size]",
-                            "in": "query",
-                            "required": False,
-                            "schema": {
+                    # Update or add page[size] parameter with limits
+                    if page_size_param:
+                        # Update existing parameter with limits
+                        if "schema" not in page_size_param:
+                            page_size_param["schema"] = {}
+                        page_size_param["schema"].update(
+                            {
                                 "type": "integer",
                                 "default": 10,
                                 "minimum": 1,
                                 "maximum": 20,
                                 "description": "Number of results per page (max: 20)",
-                            },
-                        }
-                    )
+                            }
+                        )
+                    else:
+                        # Add new parameter
+                        operation["parameters"].append(
+                            {
+                                "name": "page[size]",
+                                "in": "query",
+                                "required": False,
+                                "schema": {
+                                    "type": "integer",
+                                    "default": 10,
+                                    "minimum": 1,
+                                    "maximum": 20,
+                                    "description": "Number of results per page (max: 20)",
+                                },
+                            }
+                        )
 
-                # Update or add page[number] parameter with defaults
-                if page_number_param:
-                    # Update existing parameter
-                    if "schema" not in page_number_param:
-                        page_number_param["schema"] = {}
-                    page_number_param["schema"].update(
-                        {
-                            "type": "integer",
-                            "default": 1,
-                            "minimum": 1,
-                            "description": "Page number to retrieve",
-                        }
-                    )
-                else:
-                    # Add new parameter
-                    operation["parameters"].append(
-                        {
-                            "name": "page[number]",
-                            "in": "query",
-                            "required": False,
-                            "schema": {
+                    # Update or add page[number] parameter with defaults
+                    if page_number_param:
+                        # Update existing parameter
+                        if "schema" not in page_number_param:
+                            page_number_param["schema"] = {}
+                        page_number_param["schema"].update(
+                            {
                                 "type": "integer",
                                 "default": 1,
                                 "minimum": 1,
                                 "description": "Page number to retrieve",
-                            },
-                        }
-                    )
+                            }
+                        )
+                    else:
+                        # Add new parameter
+                        operation["parameters"].append(
+                            {
+                                "name": "page[number]",
+                                "in": "query",
+                                "required": False,
+                                "schema": {
+                                    "type": "integer",
+                                    "default": 1,
+                                    "minimum": 1,
+                                    "description": "Page number to retrieve",
+                                },
+                            }
+                        )
 
                 # Add sparse fieldsets for alerts endpoints to reduce payload size
                 if "alert" in path.lower():
@@ -411,7 +487,7 @@ def _filter_openapi_spec(
                         )
 
                 # Add filter parameters for alerts endpoints to enable team/date/source filtering
-                if "alert" in path.lower():
+                if "alert" in path.lower() and not single_resource:
                     filter_params = [
                         {
                             "name": "filter[status]",
@@ -619,6 +695,7 @@ def _filter_openapi_spec(
                                         f"Cleaned broken reference in {method.upper()} {path} response: {ref_path}"
                                     )
 
+    _describe_path_parameters(filtered_spec.get("paths", {}))
     _ensure_array_items(filtered_spec)
 
     return filtered_spec

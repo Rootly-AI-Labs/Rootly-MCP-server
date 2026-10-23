@@ -3,7 +3,7 @@
 import json
 from unittest.mock import AsyncMock, patch
 
-import httpx
+import httpx2
 import pytest
 
 from rootly_mcp_server import transport
@@ -431,7 +431,7 @@ class TestTransportModule:
         }
 
     def test_maybe_normalize_incident_form_field_selection_response(self):
-        response = httpx.Response(
+        response = httpx2.Response(
             200,
             json={
                 "data": {
@@ -457,7 +457,7 @@ class TestTransportModule:
         assert "selected_groups" not in parsed["data"]["attributes"]
 
     def test_maybe_normalize_incident_form_field_selection_list_response(self):
-        response = httpx.Response(
+        response = httpx2.Response(
             200,
             json={
                 "data": [
@@ -500,9 +500,9 @@ class TestTransportModule:
 
     @pytest.mark.asyncio
     async def test_authenticated_client_records_upstream_error_response_context(self):
-        response = httpx.Response(
+        response = httpx2.Response(
             502,
-            request=httpx.Request("GET", "https://api.rootly.com/v1/incidents?page[size]=10"),
+            request=httpx2.Request("GET", "https://api.rootly.com/v1/incidents?page[size]=10"),
             content=b'{"error":"backend down","api_token":"secret"}',
         )
 
@@ -539,9 +539,9 @@ class TestTransportModule:
             transport.AuthenticatedHTTPXClient, "_get_api_token", return_value="token"
         ):
             client = transport.AuthenticatedHTTPXClient(hosted=False, transport="stdio")
-            client.client.request = AsyncMock(side_effect=httpx.ReadTimeout("request timed out"))
+            client.client.request = AsyncMock(side_effect=httpx2.ReadTimeout("request timed out"))
 
-            with pytest.raises(httpx.ReadTimeout):
+            with pytest.raises(httpx2.ReadTimeout):
                 await client.request("GET", "/v1/teams")
 
         error_context = transport._get_error_context()
@@ -553,14 +553,14 @@ class TestTransportModule:
     @pytest.mark.asyncio
     async def test_authenticated_client_preserves_failure_context_across_followup_success(self):
         responses = [
-            httpx.Response(
+            httpx2.Response(
                 502,
-                request=httpx.Request("GET", "https://api.rootly.com/v1/alerts"),
+                request=httpx2.Request("GET", "https://api.rootly.com/v1/alerts"),
                 content=b'{"error":"backend down"}',
             ),
-            httpx.Response(
+            httpx2.Response(
                 200,
-                request=httpx.Request("GET", "https://api.rootly.com/v1/users/me"),
+                request=httpx2.Request("GET", "https://api.rootly.com/v1/users/me"),
                 content=b'{"data":{"id":"1"}}',
             ),
         ]
@@ -582,9 +582,9 @@ class TestTransportModule:
 
     @pytest.mark.asyncio
     async def test_authenticated_client_unwraps_body_envelope_on_write_requests(self):
-        response = httpx.Response(
+        response = httpx2.Response(
             200,
-            request=httpx.Request("POST", "https://api.rootly.com/v1/workflows"),
+            request=httpx2.Request("POST", "https://api.rootly.com/v1/workflows"),
             content=b'{"data":{"id":"wf-1"}}',
         )
 
@@ -605,9 +605,9 @@ class TestTransportModule:
 
     @pytest.mark.asyncio
     async def test_authenticated_client_preserves_non_envelope_payload_on_update_requests(self):
-        response = httpx.Response(
+        response = httpx2.Response(
             200,
-            request=httpx.Request("PATCH", "https://api.rootly.com/v1/workflows/wf-1"),
+            request=httpx2.Request("PATCH", "https://api.rootly.com/v1/workflows/wf-1"),
             content=b'{"data":{"id":"wf-1"}}',
         )
 
@@ -754,9 +754,9 @@ class TestTransportModule:
 
     def test_alert_routing_rules_403_gets_use_tool_hint(self):
         """403 from /alert_routing_rules with advanced-routing message gets a _use_tool field."""
-        response = httpx.Response(
+        response = httpx2.Response(
             403,
-            request=httpx.Request(
+            request=httpx2.Request(
                 "GET", "https://api.rootly.com/v1/alert_routing_rules?page%5Bsize%5D=20"
             ),
             content=(
@@ -776,9 +776,9 @@ class TestTransportModule:
 
     def test_alert_routing_rules_non_advanced_403_not_annotated(self):
         """Other 403 reasons (auth failure, etc.) must not get the use_tool hint."""
-        response = httpx.Response(
+        response = httpx2.Response(
             403,
-            request=httpx.Request("GET", "https://api.rootly.com/v1/alert_routing_rules"),
+            request=httpx2.Request("GET", "https://api.rootly.com/v1/alert_routing_rules"),
             content=b'{"errors":[{"title":"Forbidden","status":"403"}]}',
         )
         annotated = transport.AuthenticatedHTTPXClient._maybe_annotate_alert_routing_deprecation(
@@ -788,9 +788,9 @@ class TestTransportModule:
 
     def test_unrelated_403_not_annotated(self):
         """A 403 on an endpoint other than /alert_routing_rules is left alone."""
-        response = httpx.Response(
+        response = httpx2.Response(
             403,
-            request=httpx.Request("GET", "https://api.rootly.com/v1/schedules"),
+            request=httpx2.Request("GET", "https://api.rootly.com/v1/schedules"),
             content=b'{"errors":[{"title":"Forbidden","status":"403"}]}',
         )
         annotated = transport.AuthenticatedHTTPXClient._maybe_annotate_alert_routing_deprecation(
@@ -821,7 +821,7 @@ class TestTransportModule:
             client = transport.AuthenticatedHTTPXClient(hosted=False, transport="stdio")
             client.client.send = AsyncMock()
 
-            request = httpx.Request(
+            request = httpx2.Request(
                 "GET",
                 "https://api.rootly.com/v1/schedules/%7Bschedule_id%7D/shifts",
             )
@@ -833,9 +833,9 @@ class TestTransportModule:
     @pytest.mark.asyncio
     async def test_authenticated_client_request_allows_filled_path(self):
         """A fully-substituted URL must pass the path-template guard."""
-        response = httpx.Response(
+        response = httpx2.Response(
             200,
-            request=httpx.Request("GET", "https://api.rootly.com/v1/schedules/abc-123/shifts"),
+            request=httpx2.Request("GET", "https://api.rootly.com/v1/schedules/abc-123/shifts"),
             content=b'{"data":[]}',
         )
         with patch.object(
@@ -851,9 +851,9 @@ class TestTransportModule:
 
     @pytest.mark.asyncio
     async def test_authenticated_client_send_drops_empty_query_parameters(self):
-        response = httpx.Response(
+        response = httpx2.Response(
             200,
-            request=httpx.Request(
+            request=httpx2.Request(
                 "GET",
                 "https://api.rootly.com/v1/alerts?include=alert_urgency&page%5Bnumber%5D=1",
             ),
@@ -875,7 +875,7 @@ class TestTransportModule:
             )
             client.client.send = AsyncMock(return_value=response)
 
-            request = httpx.Request(
+            request = httpx2.Request(
                 "GET",
                 "https://api.rootly.com/v1/alerts"
                 "?filter_status=&filter_source=%20%20%20&include=alert_urgency"
@@ -1382,7 +1382,7 @@ class TestAuthCaptureMiddlewareWWWAuthenticate:
         )
 
 
-def _pagination_400(body: dict | list | str | None = None) -> httpx.Response:
+def _pagination_400(body: dict | list | str | None = None) -> httpx2.Response:
     """A 400 shaped like Rootly's offset-pagination rejection."""
     if body is None:
         body = {
@@ -1401,10 +1401,10 @@ def _pagination_400(body: dict | list | str | None = None) -> httpx.Response:
     content = body if isinstance(body, bytes | str) else json.dumps(body)
     if isinstance(content, str):
         content = content.encode()
-    return httpx.Response(
+    return httpx2.Response(
         status_code=400,
         content=content,
-        request=httpx.Request("GET", "https://api.rootly.com/v1/alerts?page%5Bnumber%5D=5000"),
+        request=httpx2.Request("GET", "https://api.rootly.com/v1/alerts?page%5Bnumber%5D=5000"),
     )
 
 
@@ -1416,7 +1416,7 @@ class TestOffsetPaginationHint:
     the same shape because nothing in the response told it to switch.
     """
 
-    def _annotate(self, response: httpx.Response) -> httpx.Response:
+    def _annotate(self, response: httpx2.Response) -> httpx2.Response:
         return transport.AuthenticatedHTTPXClient._maybe_annotate_offset_pagination_limit(
             "GET", "https://api.rootly.com/v1/alerts", response
         )
@@ -1459,10 +1459,10 @@ class TestOffsetPaginationHint:
         assert "_use_cursor_pagination" not in self._annotate(other).json()
 
     def test_non_400_is_left_alone(self):
-        ok = httpx.Response(
+        ok = httpx2.Response(
             status_code=200,
             content=json.dumps({"data": []}).encode(),
-            request=httpx.Request("GET", "https://api.rootly.com/v1/alerts"),
+            request=httpx2.Request("GET", "https://api.rootly.com/v1/alerts"),
         )
         assert "_use_cursor_pagination" not in self._annotate(ok).json()
 
@@ -1501,7 +1501,7 @@ class TestHintSurvivesToolErrorFormatting:
         try:
             annotated.raise_for_status()
             raise AssertionError("expected a 400 to raise")
-        except httpx.HTTPStatusError as exc:
+        except httpx2.HTTPStatusError as exc:
             message = f"HTTP error {exc.response.status_code}: {exc.response.reason_phrase}"
             message += f" - {exc.response.json()}"
 
@@ -1540,7 +1540,7 @@ class TestAnnotatorsReachBothTransportPaths:
         client = self._client()
         client.client.send = AsyncMock(return_value=_pagination_400())
 
-        returned = await client.send(httpx.Request("GET", "https://api.rootly.com/v1/alerts"))
+        returned = await client.send(httpx2.Request("GET", "https://api.rootly.com/v1/alerts"))
 
         assert "_use_cursor_pagination" in returned.json()
 
@@ -1553,10 +1553,10 @@ class TestAnnotatorsReachBothTransportPaths:
             transport.AuthenticatedHTTPXClient._maybe_strip_alert_response,
             transport.AuthenticatedHTTPXClient._maybe_strip_collection_response,
         ):
-            response = httpx.Response(
+            response = httpx2.Response(
                 status_code=400,
                 content=body.encode(),
-                request=httpx.Request("GET", "https://api.rootly.com/v1/alerts"),
+                request=httpx2.Request("GET", "https://api.rootly.com/v1/alerts"),
             )
             out = stripper("GET", "https://api.rootly.com/v1/alerts", response)
             assert out.json() == json.loads(body), f"{stripper.__name__} altered an error body"
@@ -1581,11 +1581,11 @@ class TestPlanGatingHintReachesAutogenTools:
         ):
             return transport.AuthenticatedHTTPXClient(hosted=False, transport="stdio")
 
-    def _plan_gated_404(self) -> httpx.Response:
-        return httpx.Response(
+    def _plan_gated_404(self) -> httpx2.Response:
+        return httpx2.Response(
             status_code=404,
             content=json.dumps({"errors": [{"title": "Not found or unauthorized"}]}).encode(),
-            request=httpx.Request("GET", "https://api.rootly.com/v1/pulses"),
+            request=httpx2.Request("GET", "https://api.rootly.com/v1/pulses"),
         )
 
     @pytest.mark.asyncio
@@ -1593,7 +1593,7 @@ class TestPlanGatingHintReachesAutogenTools:
         client = self._client()
         client.client.send = AsyncMock(return_value=self._plan_gated_404())
 
-        returned = await client.send(httpx.Request("GET", "https://api.rootly.com/v1/pulses"))
+        returned = await client.send(httpx2.Request("GET", "https://api.rootly.com/v1/pulses"))
 
         assert "_plan_gating_hint" in returned.json()
 
@@ -1644,10 +1644,10 @@ class TestPlanGatingHintDoesNotMisdiagnoseNestedCollections:
 
     def _hint(self, path: str, method: str = "GET") -> str | None:
         url = "https://api.rootly.com" + path
-        response = httpx.Response(
+        response = httpx2.Response(
             404,
             content=json.dumps({"errors": [{"title": "Not found or unauthorized"}]}).encode(),
-            request=httpx.Request(method, url),
+            request=httpx2.Request(method, url),
         )
         annotated = transport.AuthenticatedHTTPXClient._maybe_annotate_404_response(
             method, url, response

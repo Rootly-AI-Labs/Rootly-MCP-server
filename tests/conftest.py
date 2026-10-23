@@ -120,11 +120,17 @@ def mock_server_config():
 @pytest.fixture
 def mock_httpx_client():
     """
-    Provide a mock httpx client for testing HTTP interactions.
+    Provide a mock HTTP client for testing HTTP interactions.
+
+    Every outbound client is httpx2: the Rootly API client
+    (AuthenticatedHTTPXClient) and transport.upstream_client (OAuth metadata
+    proxy, token probe, On-Call Health).
     """
-    with patch("httpx.AsyncClient") as mock_client:
+    with patch("httpx2.AsyncClient") as mock_client:
         mock_instance = Mock()
         mock_client.return_value = mock_instance
+        # Both clients set default headers on the client after construction.
+        mock_instance.headers = {}
 
         # Configure default responses
         mock_response = Mock()

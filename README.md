@@ -16,8 +16,11 @@ Use the hosted MCP server. No local installation required.
 ### Hosted Transport Options
 
 - **Streamable HTTP (recommended):** `https://mcp.rootly.com/mcp`
-- **SSE (stable alternative):** `https://mcp.rootly.com/sse`
 - **Code Mode:** `https://mcp.rootly.com/mcp-codemode`
+- **SSE (deprecated, removed after 2026-11-20):** `https://mcp.rootly.com/sse`
+
+> [!WARNING]
+> **SSE is deprecated.** The hosted `https://mcp.rootly.com/sse` endpoint and the self-hosted `--transport sse` option will be removed after **2026-11-20**. Switch your client to Streamable HTTP (`https://mcp.rootly.com/mcp`) or Code Mode (`https://mcp.rootly.com/mcp-codemode`); for most clients that means changing the URL and, if your client config has one, setting the transport to `http`/`streamable-http`. SSE responses now carry `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers.
 
 Hosted tool profiles:
 
@@ -58,18 +61,6 @@ Your MCP client handles OAuth2 login automatically — a browser window opens fo
 }
 ```
 
-SSE (alternative):
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "url": "https://mcp.rootly.com/sse"
-    }
-  }
-}
-```
-
 Code Mode:
 
 ```json
@@ -81,6 +72,8 @@ Code Mode:
   }
 }
 ```
+
+If your config still points at `https://mcp.rootly.com/sse`, replace it with `https://mcp.rootly.com/mcp` before 2026-11-20 (SSE is deprecated, see above).
 
 ### Agent Setup
 
@@ -289,6 +282,43 @@ Claude Desktop handles OAuth2 login automatically.
 
 </details>
 
+<details>
+<summary><strong>Databricks</strong></summary>
+
+<br>
+
+Register the hosted server in Unity Gateway so Supervisor Agent, AI Playground, and other Databricks agents can use it:
+
+1. In your workspace, open **Unity Gateway > MCPs**, click **+ MCP**, and choose **Connect an existing MCP server**.
+2. Pick a catalog and schema, name the MCP, and create a new connection with URL `https://mcp.rootly.com/mcp`.
+3. Choose an authentication method:
+   - **Dynamic Client Registration (recommended):** each user signs in to Rootly with their own account.
+   - **Bearer token:** paste a Rootly API token.
+4. Click **Create & load tools**, click **Login** if prompted, and select the tools to expose.
+
+Or create the connection with the Databricks SDK:
+
+```python
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.service import catalog as c
+
+WorkspaceClient().connections.create(
+    name="rootly_connection",
+    parent="schemas/main.default",
+    connection_type=c.ConnectionType.HTTP,
+    options={
+        "host": "https://mcp.rootly.com",
+        "port": "443",
+        "base_path": "/mcp",
+        "bearer_token": "<YOUR_ROOTLY_API_TOKEN>",
+    },
+)
+```
+
+The full profile exposes about 250 tools. Use Unity Gateway tool selection to expose only what your agents need. See [docs/databricks-marketplace.md](docs/databricks-marketplace.md) for the Marketplace listing details.
+
+</details>
+
 ## Rootly CLI
 
 Standalone CLI for incidents, alerts, services, and on-call operations.
@@ -358,8 +388,8 @@ A **Global API Key** is recommended for organization-wide queries and for action
 Choose one transport per server process:
 
 - **Streamable HTTP** endpoint path: `/mcp`
-- **SSE** endpoint path: `/sse`
-- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode
+- **SSE (deprecated, removed after 2026-11-20)** endpoint path: `/sse`. `--transport sse` logs a deprecation warning at startup; use `--transport streamable-http` instead.
+- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode. One `execute` call may make at most 50 tool calls; set `ROOTLY_CODE_MODE_MAX_TOOL_CALLS` to a positive integer to change that.
 
 Hosted and self-hosted deployments now both expose the full tool surface by default.
 
@@ -455,7 +485,7 @@ docker run -p 8000:8000 \
   rootly-mcp-server
 ```
 
-Example Docker run (SSE):
+Example Docker run (SSE, deprecated: removed after 2026-11-20, use Streamable HTTP above):
 
 ```bash
 docker run -p 8000:8000 \
@@ -464,7 +494,7 @@ docker run -p 8000:8000 \
   rootly-mcp-server
 ```
 
-Example Docker run (Dual transport + Code Mode):
+Example Docker run (Dual transport + Code Mode; the `/sse` endpoint it also serves is deprecated):
 
 ```bash
 docker run -p 8000:8000 \

@@ -620,9 +620,9 @@ def register_incident_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def list_incidents(
@@ -767,9 +767,9 @@ def register_incident_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def collect_incidents(
@@ -937,9 +937,9 @@ def register_incident_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def search_incidents(
@@ -1060,8 +1060,10 @@ def register_incident_tools(
                         all_incidents.extend(incidents)
 
                         # Check metadata if available
-                        meta = response_data.get("meta", {})
-                        current_page_meta = meta.get("current_page", current_page)
+                        # `current_page` is nullable in the spec, so a present
+                        # null must fall back too (a .get default would not).
+                        meta = response_data.get("meta") or {}
+                        current_page_meta = meta.get("current_page") or current_page
                         total_pages = meta.get("total_pages")
 
                         # If we have reliable metadata, use it
@@ -1115,9 +1117,9 @@ def register_incident_tools(
     @mcp.tool(
         name="get_incident",
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_incident(
@@ -1153,9 +1155,9 @@ def register_incident_tools(
     @mcp.tool(
         name="get_incident_retrospective",
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_incident_retrospective(
@@ -1238,9 +1240,9 @@ def register_incident_tools(
     @mcp.tool(
         name="list_incident_post_mortems",
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def list_incident_post_mortems(
@@ -1403,9 +1405,9 @@ def register_incident_tools(
     @mcp.tool(
         name="list_incident_roles",
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def list_incident_roles(
@@ -1504,9 +1506,9 @@ def register_incident_tools(
     @mcp.tool(
         name="get_incident_meeting_transcripts",
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_incident_meeting_transcripts(
@@ -1688,10 +1690,10 @@ def register_incident_tools(
         @mcp.tool(
             name="create_incident",
             annotations=ToolAnnotations(
-                readOnlyHint=False,
-                destructiveHint=False,
-                idempotentHint=False,
-                openWorldHint=True,
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=False,
+                open_world_hint=True,
             ),
         )
         async def create_incident(
@@ -1790,10 +1792,10 @@ def register_incident_tools(
         @mcp.tool(
             name="update_incident",
             annotations=ToolAnnotations(
-                readOnlyHint=False,
-                destructiveHint=False,
-                idempotentHint=True,
-                openWorldHint=True,
+                read_only_hint=False,
+                destructive_hint=False,
+                idempotent_hint=True,
+                open_world_hint=True,
             ),
         )
         async def update_incident(
@@ -1987,9 +1989,9 @@ def register_incident_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def find_related_incidents(
@@ -2058,7 +2060,6 @@ def register_incident_tools(
                     "attributes": {
                         "title": incident_description,
                         "summary": incident_description,
-                        "description": incident_description,
                     },
                 }
             else:
@@ -2075,7 +2076,7 @@ def register_incident_tools(
                 "page[size]": 100,  # Get more incidents for better matching
                 "page[number]": 1,
                 "include": "",
-                "fields[incidents]": "id,title,summary,status,created_at,url",
+                "fields[incidents]": "id,title,summary,status,created_at,resolved_at,updated_at,url",
             }
 
             # Only add status filter if specified
@@ -2156,9 +2157,9 @@ def register_incident_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def suggest_solutions(
@@ -2224,7 +2225,6 @@ def register_incident_tools(
                     "attributes": {
                         "title": incident_title,
                         "summary": incident_description,
-                        "description": incident_description,
                     },
                 }
             else:

@@ -1,6 +1,6 @@
 [project]
 name = "rootly-mcp-server"
-version = "2.3.21"
+version = "2.3.22"
 description = "Secure Model Context Protocol server for Rootly APIs with AI SRE capabilities, comprehensive error handling, and input validation"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,28 +32,31 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "License :: OSI Approved :: Apache Software License",
 ]
 dependencies = [
-    "fastmcp[code-mode]==3.4.7",  # Pin to patched version with Code Mode support
+    "fastmcp[code-mode]==4.0.11",  # Pin to patched version with Code Mode support
     "authlib>=1.7.1",  # Override vulnerable transitive authlib (GHSA-jj8c-mmj3-mmgv, GHSA-w8p2-r796-3vmq)
     "python-dotenv>=1.2.2",  # Override vulnerable transitive python-dotenv (GHSA-m8f7-34r5-grfg)
     "python-multipart>=0.0.31",  # Override vulnerable transitive python-multipart (CVE-2026-40347, GHSA-v9pg-7xvm-68hf and others)
     "cryptography>=50.0.0",  # Override vulnerable transitive cryptography (GHSA-537c-gmf6-5ccf, PKCS#7 Bleichenbacher oracle)
     "Pygments>=2.20.0",  # Override vulnerable transitive Pygments
-    "pyjwt>=2.14.0",  # Override vulnerable transitive pyjwt (GHSA-ffc3-869f-jxw9, GHSA-p4g4-x82p-q773, GHSA-r6x4-923q-g947 and others)
+    "pyjwt>=2.15.1",  # Override vulnerable transitive pyjwt (GHSA-ffc3-869f-jxw9, GHSA-p4g4-x82p-q773, GHSA-r6x4-923q-g947, GHSA-42vr-xj54-vc7v and others)
     "anyio>=4.14.2",  # Override vulnerable transitive anyio (GHSA-82r6-8w77-94w6 TLS spoofing, GHSA-5p39-cfhj-2xmp)
+    "urllib3>=2.8.0",  # Override vulnerable transitive urllib3 (GHSA-8988-9cw3-xx77, GHSA-vxq7-64xx-v4gw, GHSA-gh4c-6fx4-qh6g)
     "msgpack>=1.2.1",  # Override vulnerable transitive msgpack (GHSA-6v7p-g79w-8964)
     "starlette>=1.3.1",  # Override vulnerable transitive starlette (GHSA-82w8-qh3p-5jfq and others)
-    "mcp>=1.28.1",  # Override vulnerable transitive mcp (CVE-2026-52870, CVE-2026-52869, CVE-2026-59950)
+    "mcp>=2.2.0",  # fastmcp 4 needs mcp 2.x; 2.0.0-2.1.x are vulnerable to CVE-2026-59951 (1.x CVEs 52870/52869/59950 fixed before 2.0)
     "joserfc>=1.6.8",  # Override vulnerable transitive joserfc (PYSEC-2026-2528, PYSEC-2026-2530)
     "idna>=3.15",  # Override vulnerable transitive idna (PYSEC-2026-215)
     "click>=8.3.3",  # Override vulnerable transitive click (PYSEC-2026-2132)
     "requests==2.34.2", # Pin to patched version
-    "httpx==0.28.1",   # Pin to specific version
-    "pydantic==2.13.5",  # Pin to specific version
-    "brotli>=1.2.0",    # For Brotli compression support in httpx
+    "httpx2==2.13.0",  # Rootly API client handed to FastMCP.from_openapi; FastMCP 4 deprecates legacy httpx there
+    "certifi>=2026.10.19",  # CA bundle for every httpx2 outbound client (matches legacy httpx); floor for CVE-2026-111943 (#242)
+    "pydantic==2.14.1",  # Pin to specific version
+    "brotli>=1.2.0",    # For Brotli compression support in httpx2
     "scikit-learn>=1.3.0", # For text similarity and ML utilities
     "numpy>=1.24.0",    # For numerical operations
     "posthog>=7.21",   # PostHog MCP analytics (posthog.mcp, pre-1.0 API; exact version locked in uv.lock)
@@ -108,7 +111,6 @@ dev = [
     "pytest-asyncio>=0.23.0", # Async testing support
     "pytest-mock>=3.12.0", # Mocking utilities
     "pytest-timeout>=2.2.0", # Test timeout handling
-    "respx>=0.20.0", # HTTP request mocking
     "sseclient-py>=1.8.0", # Server-Sent Events client for remote tests
     "bandit>=1.7.0", # Security linter
     "pip-audit>=2.7.0", # Dependency vulnerability checker
@@ -119,6 +121,7 @@ dev = [
     "detect-secrets>=1.5.0", # Independent oracle for the telemetry scrubber tests
     "mypy>=1.0.0", # Static type checker
     "types-requests>=2.32.0", # Type stubs for requests
+    "jsonschema>=4.26.0", # Validates response-contract fixtures against swagger.json
 ]
 
 [tool.pytest.ini_options]

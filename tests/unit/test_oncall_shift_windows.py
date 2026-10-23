@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
-import httpx
+import httpx2
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -744,6 +744,108 @@ class TestCuratedScheduleShifts:
         assert "total_shifts" not in result
 
     @pytest.mark.asyncio
+    async def test_over_a_hundred_shifts_are_each_returned_once(self):
+        # The endpoint is unpaginated and ignores page[...]: it answers every
+        # request with the window's full list. Routed through the generic
+        # paginator, a window of 100+ shifts was re-requested as pages 2..10
+        # and every shift came back ten times.
+        def window_shifts(params: dict[str, Any]) -> Mock:
+            start = _parse_iso_datetime(params["from"])
+            assert start is not None
+            return _ok(
+                {
+                    "data": [
+                        _shift(f"{start.date()}-{i}", starts=start.isoformat()) for i in range(150)
+                    ]
+                }
+            )
+
+        responder, seen = _responder(window_shifts)
+        tools = _build_tools(responder)
+        result = await tools["get_schedule_shifts"](
+            id="s1", start_date="2026-07-30", end_date="2026-09-28"
+        )
+
+        assert not result.get("error"), result
+        # Exactly one request per 30-day window, with no pagination keys.
+        assert len(seen) == result["upstream_windows"] == 2
+        for params in seen:
+            assert not any(key.startswith("page[") for key in params), params
+            assert set(params) == {"from", "to"}
+        ids = [shift["id"] for shift in result["shifts"]]
+        assert len(ids) == len(set(ids)) == 300
+        assert result["total_shifts"] == 300
+        assert "truncated" not in result
+
+    @pytest.mark.asyncio
+    async def test_windows_are_fetched_concurrently_in_stable_order(self):
+        # A year is 13 windows; fetched one after another it is 13 round trips
+        # in series. They run concurrently under the tool's 10-request bound,
+        # and the output keeps window order even when later windows answer
+        # first.
+        state = {"in_flight": 0, "max_in_flight": 0}
+
+        async def responder(method, path, params=None, **kwargs):
+            if not path.endswith("/shifts"):
+                return _ok({"data": [], "meta": {"total_pages": 1}})
+            start = _parse_iso_datetime((params or {}).get("from"))
+            assert start is not None
+            state["in_flight"] += 1
+            state["max_in_flight"] = max(state["max_in_flight"], state["in_flight"])
+            # Earlier windows answer last, so completion order is reversed.
+            await asyncio.sleep(0.001 * (400 - start.timetuple().tm_yday) / 10)
+            state["in_flight"] -= 1
+            return _ok({"data": [_shift(f"S-{start.date()}", starts=start.isoformat())]})
+
+        tools = _build_tools(responder)
+        result = await tools["get_schedule_shifts"](
+            id="s1", start_date="2026-01-01T00:00:00Z", end_date="2027-01-02T00:00:00Z"
+        )
+
+        assert not result.get("error"), result
+        assert result["upstream_windows"] == 13
+        assert 1 < state["max_in_flight"] <= 10
+        starts = [shift["attributes"]["starts_at"] for shift in result["shifts"]]
+        assert len(starts) == 13
+        assert starts == sorted(starts)
+
+    @pytest.mark.asyncio
+    async def test_one_failed_window_fails_the_whole_query(self):
+        def fail_second_window(params: dict[str, Any]) -> Mock:
+            if params["from"].startswith("2026-08-29"):
+                return _status(404)
+            return _ok({"data": [_shift()]})
+
+        responder, _ = _responder(fail_second_window)
+        tools = _build_tools(responder)
+        result = await tools["get_schedule_shifts"](
+            id="s1", start_date="2026-07-30", end_date="2026-09-28"
+        )
+
+        assert result["error"] is True
+        assert "total_shifts" not in result
+
+    @pytest.mark.asyncio
+    async def test_a_transient_failure_is_retried_once(self):
+        attempts = {"n": 0}
+
+        def flaky(_params: dict[str, Any]) -> Mock:
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                return _status(502)
+            return _ok({"data": [_shift()]})
+
+        responder, _ = _responder(flaky)
+        tools = _build_tools(responder)
+        result = await tools["get_schedule_shifts"](
+            id="s1", start_date="2026-08-01", end_date="2026-08-20"
+        )
+
+        assert attempts["n"] == 2
+        assert not result.get("error"), result
+        assert result["total_shifts"] == 1
+
+    @pytest.mark.asyncio
     async def test_no_date_range_still_works(self):
         # Both bounds are optional on the generated tool; omitting them must
         # not attempt a split.
@@ -1043,7 +1145,7 @@ class TestTransportErrorsAreRetried:
             if path == "/v1/shifts":
                 attempts["n"] += 1
                 if attempts["n"] == 1:
-                    raise httpx.ConnectError("connection reset")
+                    raise httpx2.ConnectError("connection reset")
                 return _ok({"data": [_shift("S1")], "meta": {"total_pages": 1}})
             return _ok({"data": [], "meta": {"total_pages": 1}})
 
@@ -1064,7 +1166,7 @@ class TestTransportErrorsAreRetried:
             if path == "/v1/shifts":
                 attempts["n"] += 1
                 if attempts["n"] == 1:
-                    raise httpx.ReadTimeout("timed out")
+                    raise httpx2.ReadTimeout("timed out")
                 return _ok({"data": [_shift("S1")], "meta": {"total_pages": 1}})
             return _ok({"data": [], "meta": {"total_pages": 1}})
 
@@ -1084,7 +1186,7 @@ class TestTransportErrorsAreRetried:
         async def responder(method, path, params=None, **kwargs):
             if path == "/v1/shifts":
                 attempts["n"] += 1
-                raise httpx.ConnectError("down")
+                raise httpx2.ConnectError("down")
             return _ok({"data": [], "meta": {"total_pages": 1}})
 
         tools = _build_tools(responder)
@@ -1177,7 +1279,7 @@ class TestDateArgumentAliases:
         responder, _ = _responder()
         mcp = self._server(responder)
         tool = {t.name: t for t in await mcp.list_tools()}["get_schedule_shifts"]
-        schema = getattr(tool, "inputSchema", None) or getattr(tool, "parameters", None) or {}
+        schema = getattr(tool, "input_schema", None) or getattr(tool, "parameters", None) or {}
         assert set(schema.get("properties", {})) == {"id", "start_date", "end_date"}
 
 
@@ -1210,14 +1312,18 @@ class TestTruncationNoteWordsUnknownTotals:
         assert "None" not in note
 
     @pytest.mark.asyncio
-    async def test_schedule_shifts_names_the_unknown(self):
+    async def test_schedule_shifts_has_nothing_to_truncate(self):
+        # /v1/schedules/{id}/shifts is unpaginated: a 100-shift response is the
+        # whole window, not "page 1 of an unknown total". The note this used to
+        # carry was produced by re-requesting that list as pages 2..10.
         tools = _build_tools(self._responder_with_full_pages_and_no_total())
         result = await tools["get_schedule_shifts"](
             id="s1", start_date="2026-08-01T00:00:00Z", end_date="2026-08-20T00:00:00Z"
         )
-        note = result["truncation_note"]
-        assert "of at least " in note
-        assert "None" not in note
+        assert not result.get("error"), result
+        assert result["total_shifts"] == 100
+        assert "truncated" not in result
+        assert "truncation_note" not in result
 
     @pytest.mark.asyncio
     async def test_metrics_names_the_unknown(self):

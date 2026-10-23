@@ -10,7 +10,7 @@ Tests cover:
 
 import json
 
-import httpx
+import httpx2
 
 from rootly_mcp_server.server import (
     ALERT_ESSENTIAL_ATTRIBUTES,
@@ -224,8 +224,8 @@ class TestMaybeStripAlertResponse:
     """Tests for AuthenticatedHTTPXClient._maybe_strip_alert_response."""
 
     def _make_response(self, data, status_code=200):
-        """Create an httpx.Response with given JSON data."""
-        return httpx.Response(
+        """Create an httpx2.Response with given JSON data."""
+        return httpx2.Response(
             status_code=status_code,
             json=data,
         )
@@ -266,7 +266,7 @@ class TestMaybeStripAlertResponse:
         assert "title" in parsed["data"][0]["attributes"]
 
     def test_handles_malformed_json_gracefully(self):
-        response = httpx.Response(status_code=200, content=b"not json")
+        response = httpx2.Response(status_code=200, content=b"not json")
         result = AuthenticatedHTTPXClient._maybe_strip_alert_response("GET", "/v1/alerts", response)
         # Should return the original response without raising
         assert result.content == b"not json"

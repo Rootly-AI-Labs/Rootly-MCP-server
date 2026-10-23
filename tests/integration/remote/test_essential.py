@@ -11,7 +11,7 @@ import asyncio
 import os
 import time
 
-import httpx
+import httpx2
 import pytest
 
 
@@ -23,7 +23,7 @@ class ContainerClient:
         self.url = url or os.getenv("MCP_SERVER_URL", "http://localhost:8000")
         self.authenticated = False
         self._token = None
-        self.client = httpx.AsyncClient(timeout=30.0)
+        self.client = httpx2.AsyncClient(timeout=30.0)
 
     async def health_check(self):
         """Test container server health endpoint."""

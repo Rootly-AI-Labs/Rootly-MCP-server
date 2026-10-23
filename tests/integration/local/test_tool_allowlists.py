@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-import httpx
+import httpx2
 import pytest
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
@@ -26,13 +26,13 @@ def _find_free_port() -> int:
 async def _wait_for_health(base_url: str, timeout: float = 15.0) -> None:
     """Poll the health endpoint until the subprocess server is ready."""
     deadline = time.monotonic() + timeout
-    async with httpx.AsyncClient(timeout=1.0) as client:
+    async with httpx2.AsyncClient(timeout=1.0) as client:
         while time.monotonic() < deadline:
             try:
                 response = await client.get(f"{base_url}/health")
                 if response.status_code == 200:
                     return
-            except httpx.HTTPError:
+            except httpx2.HTTPError:
                 pass
             await asyncio.sleep(0.25)
     raise AssertionError(f"Timed out waiting for MCP server health at {base_url}/health")
@@ -136,7 +136,9 @@ async def test_self_hosted_allowlists_match_live_mcp_tool_list(
     try:
         await _wait_for_health(base_url)
 
-        async with streamable_http_client(f"{base_url}/mcp") as (read_stream, write_stream, _):
+        # MCP SDK v2 yields (read, write); the trailing get_session_id callable
+        # the v1 client returned is gone.
+        async with streamable_http_client(f"{base_url}/mcp") as (read_stream, write_stream):
             async with ClientSession(read_stream, write_stream) as session:
                 await session.initialize()
                 tools = await session.list_tools()

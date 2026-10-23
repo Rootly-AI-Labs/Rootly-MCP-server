@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Protocol, cast
 
-import httpx
+import httpx2
 from mcp.types import ToolAnnotations
 from pydantic import AliasChoices, Field
 
@@ -22,10 +22,20 @@ MakeAuthenticatedRequest = Callable[..., Awaitable[Any]]
 logger = logging.getLogger(__name__)
 
 SHIFT_INCIDENT_QUERY_FIELDS = (
-    "title,status,started_at,resolved_at,created_at,summary,"
-    "customer_impact_summary,mitigation,severity,url"
+    "title,status,started_at,resolved_at,created_at,summary,mitigation_message,severity,url"
 )
 DEFAULT_MAX_SHIFT_INCIDENT_RESULTS = 100
+UNSUPPORTED_TAGS_WARNING = (
+    "The tags argument was ignored: Rootly incidents have no tags, so results are "
+    "not filtered by it. Incidents carry key:value labels instead, which the "
+    "incidents API filters with filter[labels] (e.g. 'env:prod')."
+)
+UNSUPPORTED_SCHEDULE_IDS_WARNING = (
+    "The schedule_ids argument was ignored: Rootly incidents are not linked to "
+    "on-call schedules, so results are not filtered by it and cover every incident "
+    "in the time range. To scope by the teams that own a schedule, look up its "
+    "owner_group_ids and filter incidents with filter[team_ids]."
+)
 
 # Ceiling on a shift query's total span. Long ranges are split into windows the
 # upstream will accept, but each window is its own request, so an unbounded
@@ -196,6 +206,33 @@ def _pages_fetched_phrase(report: dict[str, Any]) -> str:
     return f"{fetched} of {total} pages"
 
 
+def _shift_fetch_meta(report: dict[str, Any], to_raw: Any = None) -> dict[str, Any]:
+    """Keys describing why a shift query covers less than the range asked for.
+
+    The aggregating tools return one number per person or per schedule, so a
+    partial fetch reads as a quiet week rather than as a missing page. Each key
+    is present only when it applies, leaving an ordinary response untouched and
+    making any key here a real signal that the totals are short.
+
+    Callers merge the result into their own ``meta``, matching
+    ``get_oncall_shift_metrics`` and ``list_shifts``.
+    """
+    meta: dict[str, Any] = {}
+    if report.get("windows"):
+        meta["upstream_windows"] = report["windows"]
+    if report.get("truncated"):
+        meta["truncated"] = True
+        meta["truncation_note"] = (
+            "More shifts exist upstream than this query fetched "
+            f"({_pages_fetched_phrase(report)}). Narrow the date range, or "
+            "filter by schedule_ids or user_ids."
+        )
+    horizon_note = _shifts_future_horizon_note(to_raw)
+    if horizon_note:
+        meta["future_horizon_note"] = horizon_note
+    return meta
+
+
 def _truncate_text(value: Any, max_length: int = 280) -> str | None:
     """Keep large narrative fields compact enough for MCP clients."""
     if not value:
@@ -291,9 +328,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_oncall_shift_metrics(
@@ -410,8 +447,11 @@ def register_oncall_tools(
                 user_id_list = [uid.strip() for uid in user_ids.split(",") if uid.strip()]
                 params["user_ids[]"] = user_id_list
 
-            # Include relationships for richer data
-            params["include"] = "user,shift_override,on_call_role,schedule_rotation"
+            # Shifts carry no on-call role of their own: Api::V1::ShiftSerializer
+            # has only shift_override/user/assignee relationships, so a bare
+            # `on_call_role` include is ignored. The role belongs to the user and
+            # is sideloaded through the nested `user.on_call_role` include.
+            params["include"] = "user,user.on_call_role"
 
             # Query shifts through the shared helper, which splits a range longer
             # than the endpoint accepts into windows and paginates each one. The
@@ -437,13 +477,13 @@ def register_oncall_tools(
             )
 
             # Build lookup maps for included resources
-            users_map = {}
-            on_call_roles_map = {}
+            users_map: dict[str, dict[str, Any]] = {}
+            on_call_roles_map: dict[str, dict[str, Any]] = {}
             for resource in included:
                 if resource.get("type") == "users":
-                    users_map[resource.get("id")] = resource
+                    users_map[str(resource.get("id"))] = resource
                 elif resource.get("type") == "on_call_roles":
-                    on_call_roles_map[resource.get("id")] = resource
+                    on_call_roles_map[str(resource.get("id"))] = resource
 
             # Calculate metrics
             metrics: dict[str, dict[str, Any]] = defaultdict(
@@ -496,14 +536,18 @@ def register_oncall_tools(
                 user_name = "Unknown"
                 user_email = ""
 
-                if user_id and user_id in users_map:
-                    user_attrs = users_map[user_id].get("attributes", {})
+                user = users_map.get(str(user_id)) if user_id else None
+                if user is not None:
+                    user_attrs = user.get("attributes", {})
                     user_name = user_attrs.get("full_name") or user_attrs.get("email", "Unknown")
                     user_email = user_attrs.get("email", "")
 
-                # Get on-call role info (primary vs secondary)
-                role_rel = relationships.get("on_call_role", {}).get("data") or {}
-                role_id = role_rel.get("id")
+                # Get on-call role info (primary vs secondary). This is the
+                # user's on-call role in the team, read from the included user
+                # (shifts themselves have no role relationship).
+                user_rels = (user or {}).get("relationships", {})
+                role_rel = user_rels.get("on_call_role", {}).get("data") or {}
+                role_id = str(role_rel["id"]) if role_rel.get("id") else None
                 role_name = "unknown"
                 is_primary = False
 
@@ -690,9 +734,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_oncall_handoff_summary(
@@ -725,6 +769,8 @@ def register_oncall_tools(
         """
         Get current on-call handoff summary. Shows who's currently on-call and who's next.
         Optionally fetch incidents (set include_incidents=True, but slower).
+        Each responder's `role` is their On-Call role (e.g. Responder, Admin);
+        shifts themselves carry no role.
 
         Use filter_by_region=True with a timezone to see only people on-call
         during business hours in that region (e.g., timezone='Asia/Tokyo', filter_by_region=True
@@ -898,14 +944,38 @@ def register_oncall_tools(
                 shifts = shifts_data.get("data", [])
                 included = shifts_data.get("included", [])
 
-                # Build user and role maps
-                users_map = {}
-                roles_map = {}
+                # Build user and role maps. Shifts carry no role of their own
+                # (Api::V1::ShiftSerializer has only shift_override/user/assignee);
+                # the on-call role belongs to the user and is sideloaded through
+                # the nested `user.on_call_role` include.
+                users_map: dict[str, dict[str, Any]] = {}
+                roles_map: dict[str, dict[str, Any]] = {}
                 for resource in included:
                     if resource.get("type") == "users":
-                        users_map[resource.get("id")] = resource
+                        users_map[str(resource.get("id"))] = resource
                     elif resource.get("type") == "on_call_roles":
-                        roles_map[resource.get("id")] = resource
+                        roles_map[str(resource.get("id"))] = resource
+
+                def _responder_labels(
+                    user_id: str | None,
+                    users_map: dict[str, dict[str, Any]] = users_map,
+                    roles_map: dict[str, dict[str, Any]] = roles_map,
+                ) -> tuple[str, str]:
+                    user = users_map.get(user_id) if user_id else None
+                    if user is None:
+                        return "Unknown", "Unknown Role"
+                    user_attrs = user.get("attributes", {})
+                    user_name = user_attrs.get("full_name") or user_attrs.get("email", "Unknown")
+                    role_ref = (
+                        user.get("relationships", {}).get("on_call_role", {}).get("data") or {}
+                    )
+                    role = roles_map.get(str(role_ref.get("id"))) if role_ref.get("id") else None
+                    role_name = (
+                        role.get("attributes", {}).get("name", "Unknown Role")
+                        if role
+                        else "Unknown Role"
+                    )
+                    return user_name, role_name
 
                 # Find current and next shifts
                 current_shift = None
@@ -948,22 +1018,9 @@ def register_oncall_tools(
 
                 if current_shift:
                     current_attrs = current_shift.get("attributes", {})
-                    current_rels = current_shift.get("relationships", {})
                     user_id = _shift_user_id(current_shift)
-                    role_data = current_rels.get("on_call_role", {}).get("data") or {}
-                    role_id = role_data.get("id")
 
-                    user_name = "Unknown"
-                    if user_id and user_id in users_map:
-                        user_attrs = users_map[user_id].get("attributes", {})
-                        user_name = user_attrs.get("full_name") or user_attrs.get(
-                            "email", "Unknown"
-                        )
-
-                    role_name = "Unknown Role"
-                    if role_id and role_id in roles_map:
-                        role_attrs = roles_map[role_id].get("attributes", {})
-                        role_name = role_attrs.get("name", "Unknown Role")
+                    user_name, role_name = _responder_labels(user_id)
 
                     schedule_info["current_oncall"] = {
                         "user_name": user_name,
@@ -976,22 +1033,9 @@ def register_oncall_tools(
 
                 if next_shift:
                     next_attrs = next_shift.get("attributes", {})
-                    next_rels = next_shift.get("relationships", {})
                     user_id = _shift_user_id(next_shift)
-                    role_data = next_rels.get("on_call_role", {}).get("data") or {}
-                    role_id = role_data.get("id")
 
-                    user_name = "Unknown"
-                    if user_id and user_id in users_map:
-                        user_attrs = users_map[user_id].get("attributes", {})
-                        user_name = user_attrs.get("full_name") or user_attrs.get(
-                            "email", "Unknown"
-                        )
-
-                    role_name = "Unknown Role"
-                    if role_id and role_id in roles_map:
-                        role_attrs = roles_map[role_id].get("attributes", {})
-                        role_name = role_attrs.get("name", "Unknown Role")
+                    user_name, role_name = _responder_labels(user_id)
 
                     schedule_info["next_oncall"] = {
                         "user_name": user_name,
@@ -1194,11 +1238,23 @@ def register_oncall_tools(
             if status:
                 params["filter[status]"] = status.lower()
 
-            # Add tags filter if provided
-            if tags:
-                tag_list = [t.strip() for t in tags.split(",") if t.strip()]
-                if tag_list:
-                    params["filter[tags][]"] = tag_list
+            # `tags` is accepted for compatibility only. Rootly incidents have no
+            # tags: the closest concept is key:value labels, and GET /v1/incidents
+            # permits no tags filter (Api::V1::IncidentsController#filter_params),
+            # so strong params silently dropped the `filter[tags][]` this used to
+            # send and the argument never narrowed anything. Say so instead.
+            warnings: list[str] = []
+            if any(t.strip() for t in tags.split(",")):
+                warnings.append(UNSUPPORTED_TAGS_WARNING)
+            # Same for `schedule_ids`: this query reads only /v1/incidents, and
+            # an incident has no schedule to filter on -- the incidents API
+            # permits no schedule filter (IncidentsController#filter_params) and
+            # Api::V1::IncidentSerializer has no schedule relationship. Scoping
+            # by the owning teams' filter[team_ids] would be a guess (it drops
+            # every incident not tagged with those teams), so the argument is
+            # reported as ignored rather than quietly reinterpreted.
+            if any(sid.strip() for sid in schedule_ids.split(",")):
+                warnings.append(UNSUPPORTED_SCHEDULE_IDS_WARNING)
 
             # Query incidents with pagination
             all_incidents = []
@@ -1320,8 +1376,7 @@ def register_oncall_tools(
                 title = attrs.get("title", "Untitled Incident")
                 severity = _normalize_incident_severity(attrs.get("severity"))
                 summary_text = _truncate_text(attrs.get("summary"))
-                impact_text = _truncate_text(attrs.get("customer_impact_summary"))
-                mitigation_text = _truncate_text(attrs.get("mitigation"))
+                mitigation_text = _truncate_text(attrs.get("mitigation_message"))
                 narrative_parts.append(f"[{severity.upper()}] {title}")
 
                 # When and duration
@@ -1338,17 +1393,9 @@ def register_oncall_tools(
                 if summary_text:
                     narrative_parts.append(f"Details: {summary_text}")
 
-                # Impact
-                if impact_text:
-                    narrative_parts.append(f"Impact: {impact_text}")
-
                 # Resolution (if available)
                 if mitigation_text:
                     narrative_parts.append(f"Resolution: {mitigation_text}")
-                elif attrs.get("action_items_count") and attrs.get("action_items_count") > 0:
-                    narrative_parts.append(
-                        f"Action items created: {attrs.get('action_items_count')}"
-                    )
 
                 narrative = _truncate_text(" | ".join(narrative_parts), max_length=400)
 
@@ -1362,10 +1409,9 @@ def register_oncall_tools(
                         "resolved_at": resolved_at,
                         "duration_minutes": duration_minutes,
                         "summary": summary_text,
-                        "impact": impact_text,
                         "mitigation": mitigation_text,
                         "narrative": narrative,
-                        "incident_url": attrs.get("incident_url") or attrs.get("url"),
+                        "incident_url": attrs.get("url"),
                     }
                 )
 
@@ -1395,7 +1441,7 @@ def register_oncall_tools(
                 returned_incidents = incidents_summary[:max_incidents]
                 truncated_count = total_incidents - max_incidents
 
-            return {
+            result: dict[str, Any] = {
                 "success": True,
                 "period": {"start_time": start_time, "end_time": end_time},
                 "summary": {
@@ -1410,6 +1456,9 @@ def register_oncall_tools(
                 "truncated_incidents": truncated_count,
                 "results_truncated": truncated_count > 0,
             }
+            if warnings:
+                result["warnings"] = warnings
+            return result
 
         except Exception as e:
             import traceback
@@ -1428,9 +1477,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_shift_incidents(
@@ -1449,7 +1498,12 @@ def register_oncall_tools(
         schedule_ids: Annotated[
             str,
             Field(
-                description="Comma-separated list of schedule IDs to filter incidents (optional)"
+                description=(
+                    "Deprecated and ignored: Rootly incidents are not linked to on-call "
+                    "schedules, so this does not filter anything (a `warnings` entry is "
+                    "returned when it is set). Results cover every incident in the time "
+                    "range."
+                )
             ),
         ] = "",
         severity: Annotated[
@@ -1466,7 +1520,14 @@ def register_oncall_tools(
         ] = "",
         tags: Annotated[
             str,
-            Field(description="Comma-separated list of tag slugs to filter incidents (optional)"),
+            Field(
+                description=(
+                    "Deprecated and ignored: Rootly incidents have no tags, so this does "
+                    "not filter anything (a `warnings` entry is returned when it is set). "
+                    "Incidents carry key:value labels instead (filter[labels] on the "
+                    "incidents API)."
+                )
+            ),
         ] = "",
     ) -> dict:
         """
@@ -1496,42 +1557,90 @@ def register_oncall_tools(
         "data": None,
         "timestamp": 0.0,
         "ttl_seconds": 300,  # 5 minutes
+        # Whether the cached schedules listing is the whole set. The lookup is
+        # bounded by a page budget and best-effort about failures, so a short
+        # map has two very different meanings. Anyone turning "not in the map"
+        # into a statement about the workspace -- rather than into a display
+        # name -- has to know which one they are holding.
+        "schedules_complete": False,
     }
     _lookup_maps_lock = asyncio.Lock()
 
     async def _fetch_schedule_shift_window(
         schedule_id: str,
-        start: str,
-        end: str,
+        start: str | None,
+        end: str | None,
         semaphore: asyncio.Semaphore,
         *,
         clip_to_window: bool = False,
+        # Honoured upstream (see SPEC_GAPS in tests/unit/test_request_contract.py).
+        # `on_call_role` is a user relationship, not a shift one, so it is
+        # reached through `user.` -- a bare `on_call_role` is ignored.
+        include: str | None = "user,assignee,user.on_call_role",
     ) -> dict[str, Any]:
         """Derive overlapping shifts, including ones that began before the window.
 
         The global /shifts endpoint on older API versions selects shifts by
         start time. Per-schedule calculation covers overlaps and future shifts.
-        This endpoint is unpaginated; split only by its 30-day range limit.
+        This endpoint is unpaginated -- it declares only ``from``/``to`` and
+        returns the whole window in one response -- so each window is exactly
+        one request with no ``page[...]`` keys. A range beyond the endpoint's
+        30-day cap is split into consecutive windows.
+
+        A missing or empty bound is omitted rather than sent as ``from=``.
+        ``include`` is the sideload list; ``None`` sends none. The result's
+        ``windows`` is how many upstream ranges were queried.
+
+        A transient failure (no response, 5xx, transport error) is retried
+        once; a 4xx is not. Any request still failing raises, so a partial or
+        failed fetch is never returned as "no shifts".
         """
-        windows = _split_date_windows(start, end, 30)
-        bounds = [(a.isoformat(), b.isoformat()) for a, b in windows] or [(start, end)]
+        path = f"/v1/schedules/{schedule_id}/shifts"
+        # Every */shifts path has a cap; read it from the transport constants
+        # so the split cannot drift from the validation that enforces it.
+        limit_days = cast(int, _shift_window_limit_days(path))
+        windows = _split_date_windows(start, end, limit_days)
+        bounds: list[tuple[str | None, str | None]] = [
+            (a.isoformat(), b.isoformat()) for a, b in windows
+        ] or [(start, end)]
         data: list[dict[str, Any]] = []
         included: list[dict[str, Any]] = []
         seen: set[tuple[Any, ...]] = set()
-        for window_start, window_end in bounds:
-            async with semaphore:
-                response = await make_authenticated_request(
-                    "GET",
-                    f"/v1/schedules/{schedule_id}/shifts",
-                    params={
-                        "from": window_start,
-                        "to": window_end,
-                        "include": "user,assignee,on_call_role",
-                    },
+
+        async def _fetch_bound(window_start: str | None, window_end: str | None) -> Any:
+            params: dict[str, Any] = {}
+            if window_start:
+                params["from"] = window_start
+            if window_end:
+                params["to"] = window_end
+            if include:
+                params["include"] = include
+            response = None
+            for attempt in (1, 2):
+                try:
+                    async with semaphore:
+                        response = await make_authenticated_request("GET", path, params=params)
+                except httpx2.TransportError:
+                    if attempt == 2:
+                        raise
+                    continue
+                status = getattr(response, "status_code", None)
+                if status is not None and status < 500:
+                    break
+            status = getattr(response, "status_code", None)
+            if response is None or status != 200:
+                raise RootlyAPIError(
+                    f"Could not load shifts for schedule {schedule_id}"
+                    + (f" (status {status})" if status else " (no response)")
                 )
-            if response is None or response.status_code != 200:
-                raise RootlyAPIError(f"Could not load shifts for schedule {schedule_id}")
-            payload = response.json()
+            return response.json()
+
+        # Windows are independent, so fetch them concurrently; the caller's
+        # semaphore bounds how many are in flight. gather() keeps results in
+        # window order, so merging and de-duplication below are unaffected,
+        # and any window failing fails the whole fetch.
+        payloads = await asyncio.gather(*(_fetch_bound(a, b) for a, b in bounds))
+        for (window_start, window_end), payload in zip(bounds, payloads, strict=True):
             for shift in payload.get("data", []):
                 attrs = shift.get("attributes", {})
                 if clip_to_window:
@@ -1591,7 +1700,7 @@ def register_oncall_tools(
                     merged.append(shift)
                     previous_by_identity[identity] = shift
             data = merged
-        return {"data": data, "included": included}
+        return {"data": data, "included": included, "windows": len(bounds)}
 
     async def _fetch_all_pages(
         path: str,
@@ -1722,7 +1831,7 @@ def register_oncall_tools(
                         response = await make_authenticated_request(
                             "GET", path, params=_params_for(page_number)
                         )
-                except httpx.TransportError as exc:
+                except httpx2.TransportError as exc:
                     # A timeout or dropped connection arrives as a raised error,
                     # not as a response, so it used to leave this loop before the
                     # second attempt -- retrying only what came back meant not
@@ -1762,7 +1871,8 @@ def register_oncall_tools(
                     f"Upstream request to {path} failed"
                     + (f" with status {status}" if status else " (no response)")
                     + ". Returning no results would be indistinguishable from an "
-                    "empty result, so the query is failed instead."
+                    "empty result, so the query is failed instead.",
+                    status_code=status,
                 )
             return []
         first_data = first.json()
@@ -1818,10 +1928,11 @@ def register_oncall_tools(
                 report["fetched_pages"] = report.get("fetched_pages", 0) + 1
             return items
 
-        async def _fetch_page(page_number: int) -> dict[str, Any] | None:
+        async def _fetch_page(page_number: int) -> dict[str, Any] | int | None:
+            """The page's payload, else its failing status (``None``: no response)."""
             response = await _request_page(page_number)
             if not response or response.status_code != 200:
-                return None
+                return getattr(response, "status_code", None)
             return cast(dict[str, Any], response.json())
 
         rest = await asyncio.gather(
@@ -1829,22 +1940,38 @@ def register_oncall_tools(
             return_exceptions=True,
         )
         failed_pages = 0
+        # Why the pages failed, so a raise can name it: the first HTTP status
+        # seen, and otherwise the first exception (a transport error).
+        failed_status: int | None = None
+        failed_exception: BaseException | None = None
         for page_payload in rest:
-            if isinstance(page_payload, BaseException) or page_payload is None:
+            if not isinstance(page_payload, dict):
                 # One transient page error shouldn't drop a best-effort
                 # enrichment lookup, but for a fetch whose result is the answer
                 # it means the caller would receive a short list and read it as
                 # complete -- the same failure as the first page returning
                 # empty, just further in.
                 failed_pages += 1
+                if isinstance(page_payload, BaseException):
+                    failed_exception = failed_exception or page_payload
+                elif isinstance(page_payload, int) and failed_status is None:
+                    failed_status = page_payload
                 continue
             items.extend(page_payload.get("data", []))
             if on_included:
                 on_included(list(page_payload.get("included", [])))
         if failed_pages and required:
+            if failed_status is not None:
+                cause = f" (upstream answered {failed_status})"
+            elif failed_exception is not None:
+                cause = f" ({type(failed_exception).__name__}: {failed_exception})"
+            else:
+                cause = " (no response)"
             raise RootlyAPIError(
-                f"{failed_pages} of {total_pages - 1} additional pages from {path} failed. "
-                "The partial result would read as complete, so the query is failed instead."
+                f"{failed_pages} of {total_pages - 1} additional pages from {path} "
+                f"failed{cause}. The partial result would read as complete, so the "
+                "query is failed instead.",
+                status_code=failed_status,
             )
         if report is not None:
             # Counted here rather than from the reported total, so a window
@@ -1908,9 +2035,10 @@ def register_oncall_tools(
             # first page also fans out. A shared semaphore caps total
             # concurrency to avoid hammering upstream.
             request_semaphore = asyncio.Semaphore(10)
+            schedules_report: dict[str, Any] = {}
             users, schedules, teams = await asyncio.gather(
                 _fetch_all_pages("/v1/users", request_semaphore),
-                _fetch_all_pages("/v1/schedules", request_semaphore),
+                _fetch_all_pages("/v1/schedules", request_semaphore, report=schedules_report),
                 _fetch_all_pages("/v1/teams", request_semaphore),
             )
 
@@ -1932,6 +2060,16 @@ def register_oncall_tools(
                 if isinstance(tid, str):
                     teams_map[tid] = t
 
+            # `fetch_pages` is only recorded once a page has actually been read,
+            # and this lookup swallows a failed first page into an empty list.
+            # Its absence therefore separates "upstream did not answer" from a
+            # workspace that genuinely has no schedules, which a plain
+            # `if schedules_map` cannot tell apart.
+            _lookup_maps_cache["schedules_complete"] = bool(
+                schedules_report.get("fetched_pages") is not None
+                and not schedules_report.get("truncated")
+            )
+
             result = (users_map, schedules_map, teams_map)
             _lookup_maps_cache["data"] = result
             _lookup_maps_cache["timestamp"] = now
@@ -1940,9 +2078,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_schedule_shifts(
@@ -2000,14 +2138,15 @@ def register_oncall_tools(
             )
 
         try:
-            fetch_report: dict[str, Any] = {}
-            shifts = await _fetch_all_pages(
-                f"/v1/schedules/{id}/shifts",
-                asyncio.Semaphore(10),
-                extra_params=params,
-                required=True,
-                report=fetch_report,
+            # The endpoint is unpaginated, so this must not go through the
+            # generic paginator: it would add page[size]/page[number], and at
+            # 100+ shifts in a window re-request "pages 2..10", each answered
+            # with the same full list -- every shift returned up to ten times.
+            # Not truncatable either, so there is no truncation note to report.
+            fetched = await _fetch_schedule_shift_window(
+                id, start_date, end_date, asyncio.Semaphore(10), include=None
             )
+            shifts = fetched["data"]
 
             result: dict[str, Any] = {
                 "schedule_id": id,
@@ -2015,14 +2154,8 @@ def register_oncall_tools(
                 "total_shifts": len(shifts),
                 "shifts": shifts,
             }
-            if fetch_report.get("windows"):
-                result["upstream_windows"] = fetch_report["windows"]
-            if fetch_report.get("truncated"):
-                result["truncated"] = True
-                result["truncation_note"] = (
-                    "More shifts exist upstream than this query fetched "
-                    f"({_pages_fetched_phrase(fetch_report)}). Narrow the date range."
-                )
+            if fetched["windows"] > 1:
+                result["upstream_windows"] = fetched["windows"]
             return result
         except Exception as e:
             error_type, error_message = mcp_error.categorize_error(e)
@@ -2034,9 +2167,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def list_shifts(
@@ -2130,7 +2263,11 @@ def register_oncall_tools(
             params: dict[str, Any] = {
                 "from": from_date,
                 "to": to_date,
-                "include": "user,on_call_role,schedule_rotation",
+                # Only `user` is read below. Shifts have no on_call_role or
+                # schedule_rotation relationship (Api::V1::ShiftSerializer), so
+                # those includes were ignored upstream; the rotation is the
+                # `rotation_id` attribute.
+                "include": "user",
             }
 
             if schedule_ids:
@@ -2300,9 +2437,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def get_oncall_schedule_summary(
@@ -2349,6 +2486,16 @@ def register_oncall_tools(
             from collections import defaultdict
             from datetime import datetime
 
+            date_error = _date_argument_error(
+                {"start_date": start_date, "end_date": end_date}, required=True
+            )
+            if date_error:
+                return mcp_error.tool_error(
+                    f"Failed to get on-call schedule summary: {date_error}",
+                    "validation_error",
+                    details={"start_date": start_date, "end_date": end_date},
+                )
+
             # Parse filter IDs
             schedule_id_filter = set()
             if schedule_ids:
@@ -2361,9 +2508,10 @@ def register_oncall_tools(
             # Fetch lookup maps
             users_map, schedules_map, teams_map = await _fetch_users_and_schedules_maps()
 
-            # Build schedule -> team mapping and apply team filter
+            # Build schedule -> team mapping for naming, for every schedule
+            # rather than only the selected ones: a shift names its schedule
+            # whether or not a filter was applied.
             schedule_to_team = {}
-            filtered_schedule_ids = set()
             for schedule_id, schedule in schedules_map.items():
                 owner_group_ids = schedule.get("attributes", {}).get("owner_group_ids", [])
                 team_id = owner_group_ids[0] if owner_group_ids else None
@@ -2376,23 +2524,88 @@ def register_oncall_tools(
                     "schedule_name": schedule.get("attributes", {}).get("name", "Unknown Schedule"),
                 }
 
-                # Apply filters
-                if schedule_id_filter and schedule_id not in schedule_id_filter:
-                    continue
-                if team_id_filter and (not team_id or team_id not in team_id_filter):
-                    continue
-                filtered_schedule_ids.add(schedule_id)
+            # `None` means "every schedule", which is not the same as the empty
+            # set. Collapsing the two is what let a filter matching nothing fall
+            # through to an unfiltered answer: the guard below read the empty set
+            # as "no filter" and aggregated the whole workspace under the
+            # caller's filter.
+            selected_schedule_ids: set[str] | None = None
+            if schedule_id_filter:
+                # Taken at face value rather than intersected with the lookup
+                # map, which pages out at a few hundred schedules: a real id
+                # missing from that map must not read as a bad filter.
+                selected_schedule_ids = set(schedule_id_filter)
+            if team_id_filter:
+                team_schedule_ids = {
+                    sid
+                    for sid, info in schedule_to_team.items()
+                    if info["team_id"] is not None and str(info["team_id"]) in team_id_filter
+                }
+                selected_schedule_ids = (
+                    team_schedule_ids
+                    if selected_schedule_ids is None
+                    else selected_schedule_ids & team_schedule_ids
+                )
 
-            # If no filters, include all schedules
-            if not schedule_id_filter and not team_id_filter:
-                filtered_schedule_ids = set(schedules_map.keys())
+            # `team_ids` is the one filter that has to be resolved through the
+            # schedules listing -- `/v1/schedules` has no owner-group filter, and
+            # `/v1/shifts` takes schedule ids rather than team ids. When that
+            # listing is short, a team with schedules is indistinguishable from
+            # a team without any, so "no schedule matched" would be a confident
+            # answer drawn from data known to be incomplete. `schedule_ids` is
+            # unaffected: it is passed upstream untouched.
+            if (
+                team_id_filter
+                and selected_schedule_ids is not None
+                and not selected_schedule_ids
+                and not _lookup_maps_cache["schedules_complete"]
+            ):
+                return mcp_error.tool_error(
+                    "Cannot resolve team_ids to schedules: the schedule listing "
+                    "this resolution depends on came back incomplete, so a team "
+                    "with schedules cannot be told apart from a team without "
+                    "any. Retry, or pass schedule_ids instead -- those are sent "
+                    "upstream directly and do not depend on the listing.",
+                    "execution_error",
+                    details={"team_ids": team_ids, "schedule_ids": schedule_ids},
+                )
 
-            # Fetch shifts (concurrent pagination via _fetch_all_pages)
+            if selected_schedule_ids is not None and not selected_schedule_ids:
+                supplied = " and ".join(
+                    name
+                    for name, given in (
+                        ("schedule_ids", schedule_id_filter),
+                        ("team_ids", team_id_filter),
+                    )
+                    if given
+                )
+                return {
+                    "period": {"start": start_date, "end": end_date},
+                    "total_schedules": 0,
+                    "total_responders": 0,
+                    "schedule_coverage": [],
+                    "responder_load": [],
+                    "note": (
+                        "No schedule matched the filter, so this is an empty result "
+                        f"rather than a summary of the workspace. Check {supplied}: "
+                        "team_ids takes team IDs and schedule_ids takes schedule IDs, "
+                        "and a team owning no schedules matches nothing."
+                    ),
+                }
+
+            # Fetch shifts (concurrent pagination via _fetch_all_pages). The
+            # selection goes upstream as `schedule_ids[]` so the page budget is
+            # spent on shifts that can appear in the answer, rather than pulling
+            # the workspace and discarding most of it.
             shift_params: dict[str, Any] = {
                 "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
                 "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
-                "include": "user,on_call_role",
+                # Only `user` is read below; a bare `on_call_role` is not a
+                # shift relationship (Api::V1::ShiftSerializer) and was ignored.
+                "include": "user",
             }
+            if selected_schedule_ids is not None:
+                shift_params["schedule_ids[]"] = sorted(selected_schedule_ids)
 
             def _merge_users(included: list[dict[str, Any]]) -> None:
                 for resource in included:
@@ -2401,12 +2614,14 @@ def register_oncall_tools(
                         if isinstance(uid, str):
                             users_map[uid] = resource
 
+            fetch_report: dict[str, Any] = {}
             all_shifts = await _fetch_all_pages(
                 "/v1/shifts",
                 asyncio.Semaphore(10),
                 extra_params=shift_params,
                 on_included=_merge_users,
                 required=True,
+                report=fetch_report,
             )
 
             # Aggregate by schedule and user
@@ -2439,8 +2654,13 @@ def register_oncall_tools(
                 attrs = shift.get("attributes", {})
                 schedule_id = attrs.get("schedule_id")
 
-                # Apply schedule filter
-                if filtered_schedule_ids and schedule_id not in filtered_schedule_ids:
+                # Backstop for the upstream `schedule_ids[]` filter. `is not
+                # None` rather than a truthiness test: an empty selection means
+                # nothing matches, and is already returned above.
+                if (
+                    selected_schedule_ids is not None
+                    and str(schedule_id) not in selected_schedule_ids
+                ):
                     continue
 
                 # Get user info
@@ -2548,12 +2768,14 @@ def register_oncall_tools(
             formatted_load.sort(key=lambda x: x["total_hours"], reverse=True)
             formatted_coverage.sort(key=lambda x: x["schedule_name"])
 
+            fetch_meta = _shift_fetch_meta(fetch_report, shift_params["to"])
             return {
                 "period": {"start": start_date, "end": end_date},
                 "total_schedules": len(formatted_coverage),
                 "total_responders": len(formatted_load),
                 "schedule_coverage": formatted_coverage,
                 "responder_load": formatted_load,
+                **({"meta": fetch_meta} if fetch_meta else {}),
             }
 
         except Exception as e:
@@ -2572,9 +2794,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def check_responder_availability(
@@ -2787,9 +3009,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def create_override_recommendation(
@@ -2826,6 +3048,16 @@ def register_oncall_tools(
         try:
             from datetime import datetime
 
+            date_error = _date_argument_error(
+                {"start_date": start_date, "end_date": end_date}, required=True
+            )
+            if date_error:
+                return mcp_error.tool_error(
+                    f"Failed to create override recommendation: {date_error}",
+                    "validation_error",
+                    details={"start_date": start_date, "end_date": end_date},
+                )
+
             # Parse exclusions
             exclude_set = set()
             if exclude_user_ids:
@@ -2846,58 +3078,133 @@ def register_oncall_tools(
                 original_user_attrs.get("full_name") or original_user_attrs.get("name") or "Unknown"
             )
 
-            # Fetch schedule rotations to find rotation users
-            rotation_users = set()
+            # Candidates are the users rostered in the schedule's rotations.
+            rotation_users: set[str] = set()
+            semaphore = asyncio.Semaphore(10)
 
-            # First, get the schedule to find its rotations
-            schedule_response = await make_authenticated_request(
-                "GET", f"/v1/schedules/{schedule_id}"
-            )
+            # Rotations come from their own endpoint: Api::V1::ScheduleSerializer
+            # renders no schedule_rotations relationship (only owner_user and
+            # escalation_policies), so reading them off GET /v1/schedules/{id}
+            # always found none and no candidate was ever recommended.
+            # Each roster read reports whether its page budget cut it short.
+            rotations_report: dict[str, Any] = {}
+            try:
+                rotations = await _fetch_all_pages(
+                    f"/v1/schedules/{schedule_id}/schedule_rotations",
+                    semaphore,
+                    required=True,
+                    report=rotations_report,
+                )
+            except (RootlyAPIError, httpx2.TransportError) as exc:
+                # A schedule that could not be read is not a schedule without
+                # rotations. Treating a failure as an empty list said the
+                # schedule "may not have any rotations configured" -- pointing
+                # the caller at the schedule's setup when the id was wrong or
+                # the token could not see it.
+                schedule_status = exc.status_code if isinstance(exc, RootlyAPIError) else None
+                upstream_error = (
+                    exc.message
+                    if isinstance(exc, RootlyAPIError)
+                    else f"{type(exc).__name__}: {exc}"
+                )
+                if schedule_status is not None:
+                    answered = f"upstream answered {schedule_status} for its rotations"
+                else:
+                    # No status is not "no answer": a transport error or a
+                    # failure past the first page. Say what happened.
+                    answered = f"reading its rotations failed ({upstream_error})"
+                hint = (
+                    " Rootly answers 404 both for a schedule that does not exist and "
+                    "for one this token cannot see, so confirm the id with "
+                    "list_schedules and check the token's access before reading this "
+                    "as a configuration problem."
+                    if schedule_status in (403, 404)
+                    else " This is an upstream failure, not a schedule without rotations."
+                )
+                return mcp_error.tool_error(
+                    f"Cannot read schedule {schedule_id}: {answered}.{hint}",
+                    "execution_error",
+                    details={
+                        "schedule_id": schedule_id,
+                        "upstream_status": schedule_status,
+                        "upstream_error": upstream_error,
+                    },
+                )
 
-            if schedule_response and schedule_response.status_code == 200:
-                schedule_data = schedule_response.json()
-                schedule_obj = schedule_data.get("data", {})
-                relationships = schedule_obj.get("relationships", {})
+            rotation_ids = [
+                str(rotation["id"])
+                for rotation in rotations
+                if isinstance(rotation, dict) and rotation.get("id")
+            ]
 
-                # Get schedule rotations
-                rotations = relationships.get("schedule_rotations", {}).get("data", [])
-                rotation_ids = [r.get("id") for r in rotations if r.get("id")]
+            # A rotation whose membership could not be read is unknown, not
+            # empty. Counted rather than dropped, so a candidate missing because
+            # of a failed request is never scored as a schedule with nobody in it.
+            rotation_failures = 0
+            member_reports: dict[str, dict[str, Any]] = {rid: {} for rid in rotation_ids}
 
-                # Fetch all rotation users in parallel
-                if rotation_ids:
-
-                    async def fetch_rotation_users(rotation_id: str):
-                        response = await make_authenticated_request(
-                            "GET",
+            if rotation_ids:
+                # `required=True` raises on a failed read rather than returning
+                # `[]`: an empty rotation and an unreadable one must not arrive
+                # looking the same. `return_exceptions` turns the raise into a
+                # counted failure for that rotation alone.
+                rotation_results = await asyncio.gather(
+                    *(
+                        _fetch_all_pages(
                             f"/v1/schedule_rotations/{rotation_id}/schedule_rotation_users",
-                            params={"page[size]": 100},
+                            semaphore,
+                            required=True,
+                            report=member_reports[rotation_id],
                         )
-                        if response and response.status_code == 200:
-                            return response.json().get("data", [])
-                        return []
+                        for rotation_id in rotation_ids
+                    ),
+                    return_exceptions=True,
+                )
 
-                    # Execute all rotation user fetches in parallel
-                    rotation_results = await asyncio.gather(
-                        *[fetch_rotation_users(rid) for rid in rotation_ids], return_exceptions=True
-                    )
+                for result in rotation_results:
+                    if not isinstance(result, list):
+                        rotation_failures += 1
+                        continue
+                    for rotation_user in result:
+                        # ScheduleRotationUserSerializer renders the member as
+                        # a plain `user_id` attribute; it has no relationships.
+                        attrs = (
+                            rotation_user.get("attributes")
+                            if isinstance(rotation_user, dict)
+                            else None
+                        ) or {}
+                        member_id = attrs.get("user_id")
+                        if member_id is not None:
+                            rotation_users.add(str(member_id))
 
-                    # Process results
-                    for result in rotation_results:
-                        if isinstance(result, list):
-                            for ru in result:
-                                user_rel = (
-                                    ru.get("relationships", {}).get("user", {}).get("data", {})
-                                )
-                                user_id = user_rel.get("id")
-                                if user_id:
-                                    rotation_users.add(str(user_id))
+            # Nothing readable and something failed: recommending from an empty
+            # candidate list would be indistinguishable from a schedule whose
+            # rotations are genuinely unstaffed.
+            if rotation_failures and not rotation_users:
+                return mcp_error.tool_error(
+                    f"Cannot read rotation membership for schedule {schedule_id}: "
+                    f"{rotation_failures} of {len(rotation_ids)} rotation(s) failed to "
+                    "load and none of the rest named anyone, so there is no candidate "
+                    "list to recommend from. This is an upstream failure rather than "
+                    "an unstaffed schedule.",
+                    "execution_error",
+                    details={
+                        "schedule_id": schedule_id,
+                        "rotations_total": len(rotation_ids),
+                        "rotations_failed": rotation_failures,
+                    },
+                )
 
             # Fetch shifts to calculate current load for rotation users
-            # (concurrent pagination via _fetch_all_pages).
+            # (concurrent pagination via _fetch_all_pages). Load is only ever
+            # read for rotation users, so they go upstream as `user_ids[]`:
+            # fetching the workspace to keep a handful of rows could push a
+            # candidate's shifts past the last page and score them as free.
             shift_params: dict[str, Any] = {
                 "from": f"{start_date}T00:00:00Z" if "T" not in start_date else start_date,
                 "to": f"{end_date}T23:59:59Z" if "T" not in end_date else end_date,
                 "include": "user",
+                "user_ids[]": sorted(rotation_users),
             }
 
             def _merge_users(included: list[dict[str, Any]]) -> None:
@@ -2907,13 +3214,21 @@ def register_oncall_tools(
                         if isinstance(uid, str):
                             users_map[uid] = resource
 
-            all_shifts = await _fetch_all_pages(
-                "/v1/shifts",
-                asyncio.Semaphore(10),
-                extra_params=shift_params,
-                on_included=_merge_users,
-                required=True,
-            )
+            fetch_report: dict[str, Any] = {}
+            if rotation_users:
+                all_shifts = await _fetch_all_pages(
+                    "/v1/shifts",
+                    semaphore,
+                    extra_params=shift_params,
+                    on_included=_merge_users,
+                    required=True,
+                    report=fetch_report,
+                )
+            else:
+                # No candidates to score. An empty `user_ids[]` is dropped
+                # rather than matching nobody, so asking anyway would fetch the
+                # workspace to answer a question that already has no answer.
+                all_shifts = []
 
             # Calculate load per user
             user_load: dict[str, float] = {}
@@ -2993,7 +3308,8 @@ def register_oncall_tools(
                 }
 
             # Build response with optional warning
-            response = {
+            fetch_meta = _shift_fetch_meta(fetch_report, shift_params["to"])
+            response: dict[str, Any] = {
                 "schedule_name": schedule_name,
                 "original_user": {
                     "id": original_user_id,
@@ -3005,9 +3321,13 @@ def register_oncall_tools(
                 },
                 "recommended_replacements": recommendations[:5],  # Top 5
                 "override_payload": override_payload,
+                **({"meta": fetch_meta} if fetch_meta else {}),
             }
 
-            # Add warning if no recommendations available
+            # Add warning if no recommendations available. Reaching here with no
+            # rotation users means every rotation was read successfully and named
+            # nobody -- the unreadable case returned above -- so the claim about
+            # configuration is one this can now actually make.
             if not rotation_users:
                 response["warning"] = (
                     "No rotation users found for this schedule. The schedule may not have any rotations configured."
@@ -3016,6 +3336,51 @@ def register_oncall_tools(
                 response["warning"] = (
                     "All rotation users are either excluded or the original user. No recommendations available."
                 )
+
+            partial_notes: list[str] = []
+            if rotation_failures:
+                # Candidates were found, so the call still answers, but it is
+                # drawn from part of the rotation and says which part.
+                partial_notes.append(
+                    f"{rotation_failures} of {len(rotation_ids)} rotation(s) could not be "
+                    "read, so anyone rostered only in those is missing from these "
+                    "recommendations and from the load figures."
+                )
+
+            # A roster read that hit its page budget is short, not failed. Every
+            # candidate it did return is genuinely in the rotation and scored on
+            # real load, so the ranking is still right for those it lists -- it
+            # may just miss someone better. That is the same trade the shift
+            # fetch makes, so warn and still recommend rather than refuse.
+            truncated_reads: list[str] = []
+            if rotations_report.get("truncated"):
+                truncated_reads.append(
+                    f"the schedule's rotations ({_pages_fetched_phrase(rotations_report)})"
+                )
+            truncated_rotations = [
+                rid for rid, report in member_reports.items() if report.get("truncated")
+            ]
+            if truncated_rotations:
+                truncated_reads.append(
+                    "the members of rotation(s) "
+                    + ", ".join(
+                        f"{rid} ({_pages_fetched_phrase(member_reports[rid])})"
+                        for rid in sorted(truncated_rotations)
+                    )
+                )
+            if truncated_reads:
+                partial_notes.append(
+                    "The page limit cut short the read of "
+                    + " and ".join(truncated_reads)
+                    + ", so anyone rostered past it is missing from these "
+                    "recommendations; a lighter-loaded candidate may exist."
+                )
+                roster_meta = response.setdefault("meta", {})
+                roster_meta["truncated"] = True
+                roster_meta["roster_truncated"] = True
+
+            if partial_notes:
+                response["partial_rotation_warning"] = " ".join(partial_notes)
 
             return response
 
@@ -3043,9 +3408,9 @@ def register_oncall_tools(
 
     @mcp.tool(
         annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            openWorldHint=True,
+            read_only_hint=True,
+            destructive_hint=False,
+            open_world_hint=True,
         ),
     )
     async def check_oncall_health_risk(
@@ -3085,6 +3450,16 @@ def register_oncall_tools(
         Available only in self-hosted deployments. Requires ONCALLHEALTH_API_KEY environment variable.
         """
         try:
+            date_error = _date_argument_error(
+                {"start_date": start_date, "end_date": end_date}, required=True
+            )
+            if date_error:
+                return mcp_error.tool_error(
+                    f"Failed to check health risk: {date_error}",
+                    "validation_error",
+                    details={"start_date": start_date, "end_date": end_date},
+                )
+
             # Validate OCH API key is configured
             if not os.environ.get("ONCALLHEALTH_API_KEY"):
                 raise PermissionError(
@@ -3101,7 +3476,7 @@ def register_oncall_tools(
                 else:
                     analysis = await och_client.get_latest_analysis()
                     och_analysis_id = analysis.get("id")
-            except httpx.HTTPStatusError as e:
+            except httpx2.HTTPStatusError as e:
                 raise ConnectionError(f"Failed to fetch On-Call Health data: {e}")
             except ValueError as e:
                 raise ValueError(str(e))
@@ -3137,14 +3512,36 @@ def register_oncall_tools(
             users_map.update({str(k): v for k, v in lookup_users.items()})
             schedules_map.update({str(k): v for k, v in lookup_schedules.items()})
 
-            # Fetch shifts (concurrent pagination via _fetch_all_pages)
+            # Fetch shifts (concurrent pagination via _fetch_all_pages).
+            #
+            # `/v1/shifts` takes `from`/`to` and nothing else: it has no
+            # `filter[...]` parameters, and an unsupported query parameter is
+            # ignored rather than rejected. Asking with `filter[starts_at_lte]`
+            # therefore applied no date bound at all, and every shift the
+            # endpoint returned was correlated against the at-risk users and
+            # reported as "scheduled for the period" -- a shift from a year
+            # earlier could raise action_required for a week it had nothing to
+            # do with.
+            #
+            # Only the users being reported on can appear in the answer, so they
+            # go upstream as `user_ids[]` as well. Bound once here and reused for
+            # the scoring below, so the users fetched and the users scored cannot
+            # drift apart.
+            replacement_candidates = safe_users[:5] if include_replacements else []
+            examined_user_ids = sorted(
+                {
+                    str(user["rootly_user_id"])
+                    for user in [*at_risk_users, *replacement_candidates]
+                    if user.get("rootly_user_id")
+                }
+            )
             shift_params: dict[str, Any] = {
-                "filter[starts_at_lte]": (end_date if "T" in end_date else f"{end_date}T23:59:59Z"),
-                "filter[ends_at_gte]": (
-                    start_date if "T" in start_date else f"{start_date}T00:00:00Z"
-                ),
-                "include": "user,schedule",
+                "from": start_date if "T" in start_date else f"{start_date}T00:00:00Z",
+                "to": end_date if "T" in end_date else f"{end_date}T23:59:59Z",
+                "include": "user",
             }
+            if examined_user_ids:
+                shift_params["user_ids[]"] = examined_user_ids
 
             def _merge_users_and_schedules(included: list[dict[str, Any]]) -> None:
                 for resource in included:
@@ -3156,6 +3553,7 @@ def register_oncall_tools(
                     elif resource.get("type") == "schedules":
                         schedules_map[rid] = resource
 
+            fetch_report: dict[str, Any] = {}
             all_shifts.extend(
                 await _fetch_all_pages(
                     "/v1/shifts",
@@ -3163,6 +3561,7 @@ def register_oncall_tools(
                     extra_params=shift_params,
                     on_included=_merge_users_and_schedules,
                     required=True,
+                    report=fetch_report,
                 )
             )
 
@@ -3186,8 +3585,11 @@ def register_oncall_tools(
 
                     if shift_user_id == rootly_id_str:
                         attrs = shift.get("attributes", {})
-                        schedule_rel = relationships.get("schedule", {}).get("data") or {}
-                        schedule_id = str(schedule_rel.get("id", ""))
+                        # From the attribute, not a `schedule` relationship:
+                        # `/v1/shifts` has no such relationship to include, so
+                        # reading one named every schedule "Unknown". The
+                        # sibling tools all resolve it this way.
+                        schedule_id = str(attrs.get("schedule_id") or "")
                         schedule_info = schedules_map.get(schedule_id, {})
                         schedule_name = schedule_info.get("attributes", {}).get("name", "Unknown")
 
@@ -3237,51 +3639,47 @@ def register_oncall_tools(
 
             # 6. Get recommended replacements (if requested)
             recommended_replacements = []
-            if include_replacements and safe_users:
-                safe_rootly_ids = [
-                    str(u["rootly_user_id"]) for u in safe_users[:10] if u.get("rootly_user_id")
-                ]
+            if include_replacements and replacement_candidates:
+                # The same slice the shift query was built from, so the users
+                # scored here and the users fetched above cannot drift apart:
+                # scoring a user whose shifts were never requested would report
+                # them as free.
+                for user in replacement_candidates:
+                    rootly_id = user.get("rootly_user_id")
+                    if not rootly_id:
+                        continue
 
-                if safe_rootly_ids:
-                    # Calculate current hours for safe users
-                    for user in safe_users[:5]:
-                        rootly_id = user.get("rootly_user_id")
-                        if not rootly_id:
-                            continue
+                    rootly_id_str = str(rootly_id)
+                    user_hours = 0.0
 
-                        rootly_id_str = str(rootly_id)
-                        user_hours = 0.0
+                    for shift in all_shifts:
+                        relationships = shift.get("relationships", {})
+                        user_rel = relationships.get("user", {}).get("data") or {}
+                        shift_user_id = str(user_rel.get("id", ""))
 
-                        for shift in all_shifts:
-                            relationships = shift.get("relationships", {})
-                            user_rel = relationships.get("user", {}).get("data") or {}
-                            shift_user_id = str(user_rel.get("id", ""))
+                        if shift_user_id == rootly_id_str:
+                            attrs = shift.get("attributes", {})
+                            starts_at = attrs.get("starts_at")
+                            ends_at = attrs.get("ends_at")
+                            if starts_at and ends_at:
+                                try:
+                                    start_dt = datetime.fromisoformat(
+                                        starts_at.replace("Z", "+00:00")
+                                    )
+                                    end_dt = datetime.fromisoformat(ends_at.replace("Z", "+00:00"))
+                                    user_hours += (end_dt - start_dt).total_seconds() / 3600
+                                except (ValueError, AttributeError):
+                                    pass
 
-                            if shift_user_id == rootly_id_str:
-                                attrs = shift.get("attributes", {})
-                                starts_at = attrs.get("starts_at")
-                                ends_at = attrs.get("ends_at")
-                                if starts_at and ends_at:
-                                    try:
-                                        start_dt = datetime.fromisoformat(
-                                            starts_at.replace("Z", "+00:00")
-                                        )
-                                        end_dt = datetime.fromisoformat(
-                                            ends_at.replace("Z", "+00:00")
-                                        )
-                                        user_hours += (end_dt - start_dt).total_seconds() / 3600
-                                    except (ValueError, AttributeError):
-                                        pass
-
-                        recommended_replacements.append(
-                            {
-                                "user_name": user["user_name"],
-                                "user_id": int(rootly_id),
-                                "och_score": user["och_score"],
-                                "risk_level": user["risk_level"],
-                                "current_hours_in_period": round(user_hours, 1),
-                            }
-                        )
+                    recommended_replacements.append(
+                        {
+                            "user_name": user["user_name"],
+                            "user_id": int(rootly_id),
+                            "och_score": user["och_score"],
+                            "risk_level": user["risk_level"],
+                            "current_hours_in_period": round(user_hours, 1),
+                        }
+                    )
 
             # 7. Build summary
             total_scheduled_hours = sum(u["total_hours"] for u in at_risk_scheduled)
@@ -3295,6 +3693,7 @@ def register_oncall_tools(
             else:
                 message = "No at-risk users are scheduled for the period."
 
+            fetch_meta = _shift_fetch_meta(fetch_report, shift_params["to"])
             return {
                 "period": {"start": start_date, "end": end_date},
                 "och_analysis_id": och_analysis_id,
@@ -3308,6 +3707,7 @@ def register_oncall_tools(
                     "action_required": action_required,
                     "message": message,
                 },
+                **({"meta": fetch_meta} if fetch_meta else {}),
             }
 
         except PermissionError as e:
