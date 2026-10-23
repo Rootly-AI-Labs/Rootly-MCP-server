@@ -737,6 +737,44 @@ class PathArgumentValidationMiddleware(fastmcp_middleware.Middleware):
         raise ToolError(message)
 
 
+class JsonApiBodyRepairMiddleware(fastmcp_middleware.Middleware):
+    """Repairs unambiguous JSON:API envelope mistakes in autogen write tool bodies.
+
+    Models call write tools such as ``attach_alert`` with ``data`` as a JSON
+    string, wrapped twice, or with attributes directly on ``data``. Rootly
+    rejects each with a 400 ("must be nested under data.attributes"), so the
+    model retries, often with the same shape. The body is fixed against the
+    tool's own schema (see ``tool_arguments.repair_jsonapi_body``); anything
+    that does not map cleanly reaches the API unchanged.
+    """
+
+    async def on_call_tool(
+        self,
+        context: fastmcp_middleware.MiddlewareContext[mt.CallToolRequestParams],
+        call_next: fastmcp_middleware.CallNext[mt.CallToolRequestParams, Any],
+    ) -> Any:
+        args = context.message.arguments
+        if not args or "data" not in args or context.fastmcp_context is None:
+            return await call_next(context)
+        try:
+            tool = await context.fastmcp_context.fastmcp.get_tool(context.message.name)
+        except Exception:
+            tool = None
+        route = getattr(tool, "_route", None)
+        if route is None or str(getattr(route, "method", "GET")).upper() == "GET":
+            return await call_next(context)
+
+        repaired, rewrites = tool_arguments.repair_jsonapi_body(
+            args, getattr(tool, "parameters", None)
+        )
+        if rewrites:
+            bucket = _tool_argument_rewrites.get()
+            if bucket is not None:
+                bucket.extend(rewrites)
+            context.message.arguments = repaired
+        return await call_next(context)
+
+
 class ToolUsageLoggingMiddleware(fastmcp_middleware.Middleware):
     """FastMCP middleware that logs per-tool usage with caller identity context."""
 
@@ -1042,6 +1080,7 @@ def create_rootly_mcp_server(
     # the curated tools once they are registered, below.
     argument_alias_middleware = ToolArgumentAliasMiddleware()
     mcp.add_middleware(argument_alias_middleware)
+    mcp.add_middleware(JsonApiBodyRepairMiddleware())
     # Innermost, so usage logging still records the rejected call and its arg keys.
     mcp.add_middleware(PathArgumentValidationMiddleware())
 

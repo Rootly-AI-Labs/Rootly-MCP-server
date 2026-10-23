@@ -256,6 +256,40 @@ async def test_shift_field_names_reach_the_shift_range(server, sent):
         assert request.url.params.get("to") == _TS2
 
 
+@pytest.mark.parametrize(
+    ("tool", "arguments", "path", "expected"),
+    [
+        ("list_audits", {"page_size": 7}, "/v1/audits", {"page[size]": "7"}),
+        ("list_incidents", {"page": 3}, "/v1/incidents", {"page[number]": "3"}),
+    ],
+)
+async def test_sentry_tail_names_reach_the_real_parameter(
+    server, sent, tool, arguments, path, expected
+):
+    result = await _call(server, tool, arguments)
+
+    assert not result.is_error, _text(result)
+    requests = [r for r in sent if r.url.path == path]
+    assert requests, [str(r.url) for r in sent]
+    params = dict(requests[0].url.params)
+    for key, value in expected.items():
+        assert params.get(key) == value, (key, params)
+
+
+def test_start_date_reaches_shift_incidents_start_time():
+    # get_shift_incidents takes start_time/end_time, not start_date/end_date.
+    schema = {
+        "type": "object",
+        "properties": {"start_time": {}, "end_time": {}},
+        "additionalProperties": False,
+    }
+
+    result = normalize_tool_arguments({"start_date": _TS1, "end_date": _TS2}, schema)
+
+    assert result.arguments == {"start_time": _TS1, "end_time": _TS2}
+    assert not result.unknown
+
+
 async def test_explicit_value_is_never_overwritten(server, sent):
     result = await _call(
         server, "list_incidents", {"status": "resolved", "filter[status]": "resolved"}
