@@ -273,7 +273,8 @@ class TestCli:
         bundled = json.loads(swagger_diff.BUNDLED_SPEC.read_text(encoding="utf-8"))
         broken = copy.deepcopy(bundled)
         del broken["info"]  # fastmcp rejects the document: `info` is required
-        broken["paths"]["/v1/observability/logs"] = {"get": {"summary": "List logs"}}
+        # A path the bundled spec can never have, so the added-path line is stable.
+        broken["paths"]["/v1/swagger_diff_probe"] = {"get": {"summary": "Probe"}}
         old_path, new_path, out = tmp_path / "old.json", tmp_path / "new.json", tmp_path / "s.md"
         old_path.write_text(json.dumps(bundled))
         new_path.write_text(json.dumps(broken))
@@ -286,7 +287,7 @@ class TestCli:
         assert "[refreshed spec] ValueError: Invalid OpenAPI schema" in text
         assert "| MCP tools (local defaults) | | | unavailable |" in text
         # The rest of the summary is still there.
-        assert "- `GET /v1/observability/logs` — List logs" in text
+        assert "- `GET /v1/swagger_diff_probe` — Probe" in text
 
     def test_server_build_error_is_truncated(self, monkeypatch, old_spec):
         def boom(spec):
