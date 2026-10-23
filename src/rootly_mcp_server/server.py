@@ -11,7 +11,7 @@ import logging
 import os
 import time
 import traceback
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from contextvars import ContextVar
 from typing import Any
 
@@ -679,6 +679,38 @@ def _is_blank_argument(value: Any) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
+def _singular_forms(segment: str) -> set[str]:
+    """Every plausible singular of a collection path segment (`causes` -> cause, caus)."""
+    forms = {segment}
+    if segment.endswith("ies"):
+        forms.add(segment[:-3] + "y")
+    if segment.endswith("es"):
+        forms.add(segment[:-2])
+    if segment.endswith("s") and not segment.endswith("ss"):
+        forms.add(segment[:-1])
+    return forms
+
+
+def _resource_id_alias(path: str, path_arg: str, args: Mapping[str, Any]) -> str | None:
+    """The caller's ``<resource>_id`` for a ``/v1/<resources>/{id}`` path argument, if any.
+
+    ``get_service(service_id=...)`` against ``/v1/services/{id}`` names the same
+    resource the URL does, so it can only mean ``id``. The segment before the
+    placeholder must name the resource: ``get_incident_action_items(incident_id=...)``
+    against ``/v1/action_items/{id}`` confuses two resources and is not mapped.
+    """
+    segments = path.strip("/").split("/")
+    placeholder = "{" + path_arg + "}"
+    if placeholder not in segments:
+        return None
+    index = segments.index(placeholder)
+    if index == 0 or segments[index - 1].startswith("{"):
+        return None
+    candidates = [f"{form}_id" for form in _singular_forms(segments[index - 1].replace("-", "_"))]
+    present = [name for name in candidates if not _is_blank_argument(args.get(name))]
+    return present[0] if len(present) == 1 else None
+
+
 class PathArgumentValidationMiddleware(fastmcp_middleware.Middleware):
     """Rejects autogen OpenAPI tool calls that omit a required URL path argument.
 
@@ -690,11 +722,12 @@ class PathArgumentValidationMiddleware(fastmcp_middleware.Middleware):
     ROOTLY-MCP-7S shows `get_alert(alert_id=...)`, `get_team(team_id=...)`,
     `get_cause(cause_id=...)` etc. against `/v1/<resource>/{id}` templates.
 
-    This check runs before the request is built and tells the model exactly
-    which argument is missing and which of its arguments the tool does not
-    accept. It never renames arguments itself: guessing that `alert_id` means
-    `id` would be right here but wrong for e.g. `get_incident_action_items`
-    called with `incident_id`, where the model has confused two resources.
+    This check runs before the request is built. A ``<resource>_id`` that names
+    the URL's own resource fills the path argument (``get_alert(alert_id=...)``
+    on ``/v1/alerts/{id}``, see ``_resource_id_alias``); anything else is
+    rejected with the missing argument and the ones the tool does not accept.
+    ``get_incident_action_items(incident_id=...)`` on ``/v1/action_items/{id}``
+    stays rejected: the model has confused two resources.
     """
 
     async def on_call_tool(
@@ -715,11 +748,24 @@ class PathArgumentValidationMiddleware(fastmcp_middleware.Middleware):
 
         method, path, path_args = route_info
         args = context.message.arguments or {}
+        declared = set((getattr(tool, "parameters", None) or {}).get("properties", {}))
+        for name in path_args:
+            if not _is_blank_argument(args.get(name)):
+                continue
+            alias = _resource_id_alias(path, name, args)
+            if alias is None or alias in declared:
+                continue
+            value = args[alias]
+            args = {k: v for k, v in args.items() if k != alias}
+            args[name] = value
+            context.message.arguments = args
+            bucket = _tool_argument_rewrites.get()
+            if bucket is not None:
+                bucket.append(f"{alias}->{name}")
         missing = [name for name in path_args if _is_blank_argument(args.get(name))]
         if not missing:
             return await call_next(context)
 
-        declared = set((getattr(tool, "parameters", None) or {}).get("properties", {}))
         unrecognized = sorted(name for name in args if name not in declared)
         missing_list = ", ".join(f"'{name}'" for name in missing)
         plural = len(missing) > 1
