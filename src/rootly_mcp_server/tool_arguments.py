@@ -16,6 +16,7 @@ failed ``call_tool`` (see ``code_mode._legible_call_error``).
 from __future__ import annotations
 
 import difflib
+import json
 import re
 import typing
 from collections.abc import Callable, Mapping, Sequence
@@ -65,18 +66,24 @@ PARAMETER_SYNONYMS: dict[str, tuple[str, ...]] = {
 # which is what an unqualified start/end bound means, or to the shift tools'
 # start_date/end_date; starts_at/ends_at (the shift records' own field
 # names) only reach the shift tools' range parameters. page_size reaches
-# collect_incidents' batch_size, which is sent as page[size].
+# collect_incidents' batch_size, which is sent as page[size], or list_audits'
+# max_results. start_date/end_date reach get_shift_incidents' start_time/end_time.
 ARGUMENT_ALIASES: dict[str, tuple[str, ...]] = {
     "search": ("query",),
     "start_time": ("started_after", "start_date"),
     "end_time": ("started_before", "end_date"),
+    "start_date": ("started_after", "start_time", "from_date"),
+    "end_date": ("started_before", "end_time", "to_date"),
     "starts_at": ("start_date", "from_date"),
     "ends_at": ("end_date", "to_date"),
     "services": ("service_ids",),
     "max_results": ("page_size",),
-    "page_size": ("batch_size",),
+    "page_size": ("batch_size", "max_results"),
+    "page": ("page_number",),
 }
 
+# Members a JSON:API resource object may carry besides its attributes.
+_JSONAPI_ENVELOPE_KEYS = frozenset({"type", "id", "attributes", "relationships"})
 # Keys that carry a dict of filters (``filters={"status": ...}``).
 _FILTER_CONTAINERS = ("filters", "filter")
 # Range operators of the Rootly API's ``filter[<field>_at][gte]`` shape.
@@ -403,3 +410,68 @@ def unknown_arguments_message(
         message += " To find recently created records, pass sort='-created_at'."
     line = valid_parameters_line(tool_name, schema)
     return f"{message}\n{line}" if line else message
+
+
+def _jsonapi_data_schema(schema: Mapping[str, Any] | None) -> tuple[str | None, dict[str, Any]]:
+    """(single ``data.type`` enum value, ``data.attributes`` properties) of a write body."""
+    data = _properties(schema).get("data")
+    if not isinstance(data, dict):
+        return None, {}
+    data_properties = _properties(data)
+    type_enum = (data_properties.get("type") or {}).get("enum") or []
+    resource_type = type_enum[0] if len(type_enum) == 1 else None
+    return resource_type, _properties(data_properties.get("attributes"))
+
+
+def repair_jsonapi_body(
+    arguments: Mapping[str, Any], schema: Mapping[str, Any] | None
+) -> tuple[dict[str, Any], list[str]]:
+    """Fix unambiguous JSON:API envelope mistakes in an OpenAPI write tool's ``data``.
+
+    Models send ``data`` as a JSON string, wrap it twice (``{"data": {"data":
+    ...}}``), or put attributes straight on ``data`` -- which Rootly rejects
+    with "must be nested under data.attributes". Attributes are moved only
+    when every misplaced key is one the schema declares under
+    ``data.attributes``; anything else is left for the API to reject.
+    """
+    resource_type, attribute_properties = _jsonapi_data_schema(schema)
+    if not attribute_properties:
+        return dict(arguments), []
+    result = dict(arguments)
+    rewrites: list[str] = []
+    data = result.get("data")
+
+    if isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+        except ValueError:
+            return result, rewrites
+        if not isinstance(parsed, dict):
+            return result, rewrites
+        data = parsed
+        rewrites.append("data:json->object")
+    if isinstance(data, dict) and set(data) == {"data"} and isinstance(data["data"], dict):
+        data = data["data"]
+        rewrites.append("data.data->data")
+    if not isinstance(data, dict):
+        return result, rewrites
+
+    misplaced = [key for key in data if key not in _JSONAPI_ENVELOPE_KEYS]
+    attributes = data.get("attributes")
+    if (
+        misplaced
+        and all(key in attribute_properties for key in misplaced)
+        and (attributes is None or isinstance(attributes, dict))
+    ):
+        merged = dict(attributes or {})
+        if any(key in merged and merged[key] != data[key] for key in misplaced):
+            return {**result, "data": data}, rewrites
+        merged.update({key: data[key] for key in misplaced})
+        data = {key: value for key, value in data.items() if key not in misplaced}
+        data["attributes"] = merged
+        rewrites.extend(f"data.{key}->data.attributes.{key}" for key in misplaced)
+    if "attributes" in data and "type" not in data and resource_type is not None:
+        data = {"type": resource_type, **data}
+        rewrites.append("data.type")
+    result["data"] = data
+    return result, rewrites
