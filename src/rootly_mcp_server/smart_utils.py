@@ -181,26 +181,22 @@ class TextSimilarityAnalyzer:
         return sorted(similarities, key=lambda x: x.similarity_score, reverse=True)
 
     def _combine_incident_text(self, incident: dict) -> str:
-        """Combine incident title, description, and other text fields."""
-        text_parts = []
+        """Combine an incident's title and summary into one text for matching.
 
-        # Get text from incident attributes (preferred)
-        attributes = incident.get("attributes", {})
-        title = attributes.get("title", "")
-        summary = attributes.get("summary", "")
-        description = attributes.get("description", "")
+        Incidents are JSON:API resources, so their text lives under
+        ``attributes``. ``title`` and ``summary`` are the two free-text fields
+        IncidentSerializer renders that describe what happened; there is no
+        ``description`` attribute, and nothing sits at the resource's top level
+        besides ``id``/``type``/``attributes``/``relationships``.
+        """
+        text_parts: list[str] = []
 
-        # Fallback to root level if attributes are empty
-        if not title:
-            title = incident.get("title", "")
-        if not summary:
-            summary = incident.get("summary", "")
-        if not description:
-            description = incident.get("description", "")
-
-        # Add non-empty parts, avoiding duplication
-        for part in [title, summary, description]:
-            if part and part not in text_parts:
+        attributes = incident.get("attributes") or {}
+        for key in ("title", "summary"):
+            part = attributes.get(key)
+            # Both are nullable; skip anything that is not text. Identical
+            # title and summary (e.g. a synthetic incident) count once.
+            if isinstance(part, str) and part and part not in text_parts:
                 text_parts.append(part)
 
         combined = " ".join(text_parts)

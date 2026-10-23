@@ -53,6 +53,7 @@ def _parse_csv_set(raw: str | None) -> set[str] | None:
 DEFAULT_HOSTED_ENABLED_TOOLS: frozenset[str] = frozenset(
     {
         "collect_incidents",
+        "count_observability_logs",
         "create_incident",
         "create_incident_action_item",
         "create_override_shift",
@@ -100,6 +101,8 @@ DEFAULT_HOSTED_ENABLED_TOOLS: frozenset[str] = frozenset(
         "list_incident_types",
         "list_incidents",
         "list_meeting_recordings",
+        "list_observability_logs",
+        "list_observability_patterns",
         "list_override_shifts",
         "list_schedule_rotation_active_days",
         "list_schedule_rotation_users",
@@ -350,6 +353,10 @@ DEFAULT_ALLOWED_PATHS = [
     # Alert events
     "/alerts/{alert_id}/events",
     "/alert_events/{id}",
+    # Observability logs, log counts and patterns (read-only)
+    "/observability/logs",
+    "/observability/logs/counts",
+    "/observability/patterns",
     # On-call schedules and shifts
     "/schedules",
     "/schedules/{schedule_id}",

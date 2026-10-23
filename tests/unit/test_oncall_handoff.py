@@ -259,8 +259,7 @@ class TestGetShiftIncidents:
                         "started_at": "2026-03-17T12:30:00Z",
                         "resolved_at": "2026-03-17T16:00:00Z",
                         "summary": "Resolved during shift",
-                        "customer_impact_summary": "Minor impact",
-                        "mitigation": "Patched",
+                        "mitigation_message": "Patched",
                         "url": "https://rootly.com/incidents/1",
                     },
                 }
@@ -280,6 +279,60 @@ class TestGetShiftIncidents:
         assert result["incidents"][0]["status"] == "resolved"
 
     @pytest.mark.asyncio
+    async def test_get_shift_incidents_reports_only_fields_incidents_have(self):
+        # IncidentSerializer renders neither customer_impact_summary nor
+        # action_items_count, so `impact` was always null and the action-item
+        # fallback never fired. Neither is asked for or reported any more.
+        assert "customer_impact_summary" not in SHIFT_INCIDENT_QUERY_FIELDS.split(",")
+        tools, request = self._register_tools()
+        response = Mock()
+        response.status_code = 200
+        # The shape GET /v1/incidents returns for this fieldset: sparse
+        # attributes, severity rendered as a nested JSON:API document.
+        response.json.return_value = {
+            "data": [
+                {
+                    "id": "0f3c8a52-6d0e-4b8e-9c55-2f1a7b9e4d10",
+                    "type": "incidents",
+                    "attributes": {
+                        "title": "Checkout latency",
+                        "status": "mitigated",
+                        "started_at": "2026-03-17T16:00:00Z",
+                        "resolved_at": None,
+                        "created_at": "2026-03-17T16:00:00Z",
+                        "summary": "p99 checkout latency above 5s",
+                        "mitigation_message": None,
+                        "severity": {
+                            "data": {
+                                "id": "sev-1",
+                                "type": "severities",
+                                "attributes": {"name": "SEV1", "slug": "sev1"},
+                            }
+                        },
+                        "url": "https://rootly.com/account/incidents/4460",
+                    },
+                }
+            ],
+            "links": {},
+            "meta": {"current_page": 1, "total_pages": 1, "total_count": 1},
+        }
+        request.return_value = response
+
+        result = await tools["get_shift_incidents"](
+            start_time="2026-03-17T15:00:00Z",
+            end_time="2026-03-18T15:00:00Z",
+        )
+
+        incident = result["incidents"][0]
+        assert "impact" not in incident
+        assert incident["summary"] == "p99 checkout latency above 5s"
+        assert incident["mitigation"] is None
+        assert incident["narrative"] == (
+            "[SEV1] Checkout latency | Started at 2026-03-17T16:00:00Z | Status: mitigated "
+            "| Details: p99 checkout latency above 5s"
+        )
+
+    @pytest.mark.asyncio
     async def test_get_shift_incidents_truncates_large_results(self):
         tools, request = self._register_tools()
         response = Mock()
@@ -297,8 +350,7 @@ class TestGetShiftIncidents:
                         "started_at": "2026-03-17T16:00:00Z",
                         "resolved_at": None,
                         "summary": long_summary,
-                        "customer_impact_summary": long_summary,
-                        "mitigation": long_summary,
+                        "mitigation_message": long_summary,
                         "url": f"https://rootly.com/incidents/{i}",
                     },
                 }
@@ -321,7 +373,8 @@ class TestGetShiftIncidents:
         assert len(result["incidents"]) == DEFAULT_MAX_SHIFT_INCIDENT_RESULTS
         first_incident = result["incidents"][0]
         assert first_incident["summary"].endswith("…")
-        assert first_incident["impact"].endswith("…")
+        # IncidentSerializer has no customer-impact attribute, so none is reported.
+        assert "impact" not in first_incident
         assert first_incident["mitigation"].endswith("…")
         assert first_incident["narrative"] is not None
         assert len(first_incident["narrative"]) <= 400

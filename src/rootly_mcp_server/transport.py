@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 import certifi
-import httpx
 import httpx2
 
 from .exceptions import RootlyValidationError
@@ -364,7 +363,7 @@ class AuthCaptureMiddleware:
     async def _probe_upstream(self, auth_header: str) -> dict[str, str] | None:
         """Make the actual upstream validation request."""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with upstream_client(timeout=10.0) as client:
                 resp = await client.get(
                     f"{self._base_url}/v1/users/me",
                     headers={
@@ -695,7 +694,9 @@ def strip_heavy_shift_data(data: dict[str, Any]) -> dict[str, Any]:
         relationships = shift.get("relationships")
         if isinstance(relationships, dict):
             kept_relationships = {}
-            for rel_key in ("user", "assignee", "on_call_role", "shift_override"):
+            # Api::V1::ShiftSerializer's relationships are shift_override, user
+            # and assignee; nothing else is worth keeping.
+            for rel_key in ("user", "assignee", "shift_override"):
                 if rel_key in relationships:
                     kept_relationships[rel_key] = _collapse_relationship_data(
                         relationships[rel_key]
@@ -711,7 +712,17 @@ def strip_heavy_shift_data(data: dict[str, Any]) -> dict[str, Any]:
     included = data.get("included")
     if isinstance(included, list):
         for resource in included:
+            # A shift's on-call role is its user's, sideloaded through the nested
+            # `user.on_call_role` include, so the link from an included user to
+            # its role must survive the trim or the role becomes unreachable.
+            role_link = None
+            if isinstance(resource, dict) and resource.get("type") == "users":
+                rels = resource.get("relationships")
+                if isinstance(rels, dict) and "on_call_role" in rels:
+                    role_link = _collapse_relationship_data(rels["on_call_role"])
             _strip_minimal_included_resource(resource)
+            if role_link is not None:
+                resource["relationships"] = {"on_call_role": role_link}
 
     return data
 
@@ -799,6 +810,29 @@ def _upstream_ssl_context() -> ssl.SSLContext:
     if os.environ.get("SSL_CERT_DIR"):
         return ssl.create_default_context(capath=os.environ["SSL_CERT_DIR"])
     return ssl.create_default_context(cafile=certifi.where())
+
+
+# The default User-Agent legacy httpx sent on the ad-hoc clients below, which
+# set none of their own. httpx2 would send "python-httpx2/<version>"; pinned
+# so moving them to httpx2 leaves the upstream requests byte-identical.
+_LEGACY_HTTPX_USER_AGENT = "python-httpx/0.28.1"
+
+
+def upstream_client(**kwargs: Any) -> httpx2.AsyncClient:
+    """An httpx2 client for the one-off outbound calls outside the Rootly API client.
+
+    Used by the hosted token probe, the OAuth authorization-server metadata
+    proxy and the On-Call Health client. Applies the same conventions as
+    AuthenticatedHTTPXClient (certifi-first trust roots, pinned
+    Accept-Encoding) and keeps the legacy default User-Agent, so the swap from
+    legacy httpx does not change what these requests look like on the wire.
+    Keyword arguments (timeout, ...) are passed through unchanged.
+    """
+    client = httpx2.AsyncClient(verify=_upstream_ssl_context(), **kwargs)
+    # Assigned in place so each header keeps its slot in the default order.
+    client.headers["Accept-Encoding"] = _UPSTREAM_ACCEPT_ENCODING
+    client.headers["User-Agent"] = _LEGACY_HTTPX_USER_AGENT
+    return client
 
 
 class AuthenticatedHTTPXClient:

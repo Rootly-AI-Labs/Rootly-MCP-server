@@ -87,32 +87,46 @@ class TestTextSimilarityAnalyzer:
         assert "network-error" in patterns
 
     def test_combine_incident_text(self):
-        """Test incident text combination."""
+        """Title and summary come from the JSON:API resource's attributes."""
         incident = {
+            "id": "0f3c8a52-6d0e-4b8e-9c55-2f1a7b9e4d10",
+            "type": "incidents",
             "attributes": {
+                "sequential_id": 4460,
                 "title": "Payment API Error",
-                "summary": "Users cannot checkout",
-                "description": "500 errors from payment service",
-            }
+                "summary": "500 errors from payment service; users cannot checkout",
+                "status": "resolved",
+                "mitigation_message": "Rolled back deploy",
+            },
         }
 
         result = self.analyzer._combine_incident_text(incident)
-        assert "payment api error" in result
-        assert "users cannot checkout" in result
-        assert "500 errors from payment service" in result
+        assert result == "payment api error 500 errors from payment service users cannot checkout"
 
-    def test_combine_incident_text_backward_compatibility(self):
-        """Test incident text combination with root-level fields."""
+    def test_combine_incident_text_tolerates_null_summary(self):
+        """IncidentSerializer renders summary as null when it was never written."""
         incident = {
-            "title": "Auth Service Down",
-            "summary": "Login failures",
-            "description": "Cannot authenticate users",
+            "id": "1",
+            "type": "incidents",
+            "attributes": {"title": "Auth Service Down", "summary": None},
         }
 
-        result = self.analyzer._combine_incident_text(incident)
-        assert "auth service down" in result
-        assert "login failures" in result
-        assert "cannot authenticate users" in result
+        assert self.analyzer._combine_incident_text(incident) == "auth service down"
+
+    def test_combine_incident_text_counts_identical_title_and_summary_once(self):
+        """A synthetic incident built from one description sets both to the same text."""
+        incident = {
+            "id": "synthetic",
+            "attributes": {"title": "Login failures", "summary": "Login failures"},
+        }
+
+        assert self.analyzer._combine_incident_text(incident) == "login failures"
+
+    def test_combine_incident_text_ignores_keys_outside_attributes(self):
+        """JSON:API never puts title/summary at the top level of a resource."""
+        incident = {"id": "1", "type": "incidents", "title": "stray", "attributes": {}}
+
+        assert self.analyzer._combine_incident_text(incident) == ""
 
     def test_calculate_resolution_time(self):
         """Test resolution time calculation."""

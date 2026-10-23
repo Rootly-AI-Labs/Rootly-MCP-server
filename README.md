@@ -16,8 +16,11 @@ Use the hosted MCP server. No local installation required.
 ### Hosted Transport Options
 
 - **Streamable HTTP (recommended):** `https://mcp.rootly.com/mcp`
-- **SSE (stable alternative):** `https://mcp.rootly.com/sse`
 - **Code Mode:** `https://mcp.rootly.com/mcp-codemode`
+- **SSE (deprecated, removed after 2026-11-20):** `https://mcp.rootly.com/sse`
+
+> [!WARNING]
+> **SSE is deprecated.** The hosted `https://mcp.rootly.com/sse` endpoint and the self-hosted `--transport sse` option will be removed after **2026-11-20**. Switch your client to Streamable HTTP (`https://mcp.rootly.com/mcp`) or Code Mode (`https://mcp.rootly.com/mcp-codemode`); for most clients that means changing the URL and, if your client config has one, setting the transport to `http`/`streamable-http`. SSE responses now carry `Deprecation`, `Sunset` and `Link: rel="successor-version"` headers.
 
 Hosted tool profiles:
 
@@ -58,18 +61,6 @@ Your MCP client handles OAuth2 login automatically — a browser window opens fo
 }
 ```
 
-SSE (alternative):
-
-```json
-{
-  "mcpServers": {
-    "rootly": {
-      "url": "https://mcp.rootly.com/sse"
-    }
-  }
-}
-```
-
 Code Mode:
 
 ```json
@@ -81,6 +72,8 @@ Code Mode:
   }
 }
 ```
+
+If your config still points at `https://mcp.rootly.com/sse`, replace it with `https://mcp.rootly.com/mcp` before 2026-11-20 (SSE is deprecated, see above).
 
 ### Agent Setup
 
@@ -395,8 +388,8 @@ A **Global API Key** is recommended for organization-wide queries and for action
 Choose one transport per server process:
 
 - **Streamable HTTP** endpoint path: `/mcp`
-- **SSE** endpoint path: `/sse`
-- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode
+- **SSE (deprecated, removed after 2026-11-20)** endpoint path: `/sse`. `--transport sse` logs a deprecation warning at startup; use `--transport streamable-http` instead.
+- **Code Mode (experimental)** endpoint path: `/mcp-codemode` in hosted dual-transport mode. One `execute` call may make at most 50 tool calls; set `ROOTLY_CODE_MODE_MAX_TOOL_CALLS` to a positive integer to change that.
 
 Hosted and self-hosted deployments now both expose the full tool surface by default.
 
@@ -510,7 +503,7 @@ docker run -p 8000:8000 \
   rootly-mcp-server
 ```
 
-Example Docker run (SSE):
+Example Docker run (SSE, deprecated: removed after 2026-11-20, use Streamable HTTP above):
 
 ```bash
 docker run -p 8000:8000 \
@@ -519,7 +512,7 @@ docker run -p 8000:8000 \
   rootly-mcp-server
 ```
 
-Example Docker run (Dual transport + Code Mode):
+Example Docker run (Dual transport + Code Mode; the `/sse` endpoint it also serves is deprecated):
 
 ```bash
 docker run -p 8000:8000 \
@@ -733,6 +726,9 @@ list_incident_action_items
 list_incident_alerts
 list_incident_form_field_selections
 list_incident_types
+list_observability_logs
+list_observability_patterns
+count_observability_logs
 list_on_call_roles
 list_on_call_shadows
 list_override_shifts

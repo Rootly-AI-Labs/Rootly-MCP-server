@@ -1171,25 +1171,27 @@ async def test_run_profiled_streamable_http_server_routes_requests_by_profile():
 
 @pytest.mark.unit
 class TestHttpxRequestLoggingIsQuiet:
-    """httpx logs one INFO line per outbound request.
+    """httpx2 logs one INFO line per outbound request.
 
     In production that was a quarter of everything this service shipped to
     Datadog, duplicating upstream failures the transport already logs with more
-    context. These tests restore the level afterwards, since setup_logging
-    mutates global logging state.
+    context. Every outbound client is httpx2, which logs under its own name.
+    These tests restore the level afterwards, since setup_logging mutates
+    global logging state.
     """
 
     @staticmethod
     def _run(level):
         from rootly_mcp_server.__main__ import setup_logging
 
-        httpx_logger = logging.getLogger("httpx")
-        previous = httpx_logger.level
+        touched = [logging.getLogger(n) for n in ("httpx2", "rootly_mcp_server", "mcp")]
+        previous = [lg.level for lg in touched]
         try:
             setup_logging(level)
-            return httpx_logger.level
+            return logging.getLogger("httpx2").level
         finally:
-            httpx_logger.setLevel(previous)
+            for lg, prev in zip(touched, previous, strict=True):
+                lg.setLevel(prev)
 
     def test_info_logging_silences_per_request_lines(self):
         assert self._run("INFO") == logging.WARNING
@@ -1201,32 +1203,18 @@ class TestHttpxRequestLoggingIsQuiet:
         # Someone who asked for DEBUG wants to see every request.
         assert self._run("DEBUG") != logging.WARNING
 
-    def test_httpx2_per_request_lines_are_silenced_too(self):
-        # The Rootly API client is httpx2, which logs under its own name.
-        from rootly_mcp_server.__main__ import setup_logging
-
-        touched = [logging.getLogger(n) for n in ("httpx2", "httpx", "rootly_mcp_server", "mcp")]
-        previous = [lg.level for lg in touched]
-        try:
-            setup_logging("INFO")
-            assert logging.getLogger("httpx2").level == logging.WARNING
-        finally:
-            for lg, level in zip(touched, previous, strict=True):
-                lg.setLevel(level)
-
     def test_our_own_loggers_are_untouched(self):
         # The reduction must not come at the cost of our own diagnostics.
         from rootly_mcp_server.__main__ import setup_logging
 
-        ours = logging.getLogger("rootly_mcp_server")
-        previous_ours = ours.level
-        previous_httpx = logging.getLogger("httpx").level
+        touched = [logging.getLogger(n) for n in ("httpx2", "rootly_mcp_server", "mcp")]
+        previous = [lg.level for lg in touched]
         try:
             setup_logging("INFO")
-            assert ours.level == logging.INFO
+            assert logging.getLogger("rootly_mcp_server").level == logging.INFO
         finally:
-            ours.setLevel(previous_ours)
-            logging.getLogger("httpx").setLevel(previous_httpx)
+            for lg, prev in zip(touched, previous, strict=True):
+                lg.setLevel(prev)
 
 
 class TestUvicornAccessLogIsQuiet:
@@ -1353,3 +1341,93 @@ def test_dual_http_server_disables_the_uvicorn_access_log():
 
     assert captured["server_run_called"] is True
     assert captured["config_kwargs"]["access_log"] is False
+
+
+def _capture_dual_http_app(**kwargs: Any) -> Any:
+    """Build the real dual-transport ASGI app, stopping short of uvicorn."""
+    captured: dict[str, Any] = {}
+
+    class FakeConfig:
+        def __init__(self, app, **_kwargs):
+            captured["app"] = app
+
+    class FakeServerRunner:
+        def __init__(self, config):
+            pass
+
+        def run(self):
+            return None
+
+    fake_uvicorn = cast(Any, ModuleType("uvicorn"))
+    fake_uvicorn.Config = FakeConfig
+    fake_uvicorn.Server = FakeServerRunner
+    with patch.dict("sys.modules", {"uvicorn": fake_uvicorn}, clear=False):
+        run_dual_http_server(log_level="INFO", middleware=[], **kwargs)
+    return captured["app"]
+
+
+async def _post_then_disconnect(app: Any, path: str) -> list[dict[str, Any]]:
+    """POST a 2026-07-28 request whose client hangs up halfway through the body."""
+    chunks: list[dict[str, Any]] = [
+        {"type": "http.request", "body": b'{"jsonrpc": "2.0", "id": 1, ', "more_body": True},
+        {"type": "http.disconnect"},
+    ]
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return chunks.pop(0) if chunks else {"type": "http.disconnect"}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [
+            (b"host", b"127.0.0.1:8000"),
+            (b"content-type", b"application/json"),
+            (b"accept", b"application/json, text/event-stream"),
+            (b"mcp-protocol-version", b"2026-07-28"),
+            (b"content-length", b"4096"),
+        ],
+        "client": ("127.0.0.1", 50000),
+        "server": ("127.0.0.1", 8000),
+    }
+    async with app.router.lifespan_context(app):
+        await app(scope, receive, send)
+    return sent
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/mcp", "/mcp-codemode"])
+async def test_dual_http_client_disconnect_mid_body_is_not_an_error(path, caplog):
+    """A client hanging up mid-body is not a server error.
+
+    mcp 2.x's modern-protocol handler lets starlette's ClientDisconnect escape,
+    which uvicorn logged as "Exception in ASGI application" with a traceback.
+    """
+    from fastmcp import FastMCP
+
+    app = _capture_dual_http_app(
+        server=FastMCP("disconnect-test"),
+        code_mode_server=FastMCP("disconnect-test-code-mode"),
+        code_mode_path="/mcp-codemode",
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        sent = await _post_then_disconnect(app, path)
+
+    assert not [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert any("Client disconnected" in r.getMessage() for r in caplog.records)
+    # The MCP app wrote nothing; the only possible message is the empty
+    # trailer the endpoint always returns, which uvicorn drops once the
+    # client is gone.
+    statuses = [m.get("status") for m in sent if m["type"] == "http.response.start"]
+    assert statuses in ([], [200])

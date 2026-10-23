@@ -1060,8 +1060,10 @@ def register_incident_tools(
                         all_incidents.extend(incidents)
 
                         # Check metadata if available
-                        meta = response_data.get("meta", {})
-                        current_page_meta = meta.get("current_page", current_page)
+                        # `current_page` is nullable in the spec, so a present
+                        # null must fall back too (a .get default would not).
+                        meta = response_data.get("meta") or {}
+                        current_page_meta = meta.get("current_page") or current_page
                         total_pages = meta.get("total_pages")
 
                         # If we have reliable metadata, use it
@@ -2058,7 +2060,6 @@ def register_incident_tools(
                     "attributes": {
                         "title": incident_description,
                         "summary": incident_description,
-                        "description": incident_description,
                     },
                 }
             else:
@@ -2075,7 +2076,7 @@ def register_incident_tools(
                 "page[size]": 100,  # Get more incidents for better matching
                 "page[number]": 1,
                 "include": "",
-                "fields[incidents]": "id,title,summary,status,created_at,url",
+                "fields[incidents]": "id,title,summary,status,created_at,resolved_at,updated_at,url",
             }
 
             # Only add status filter if specified
@@ -2224,7 +2225,6 @@ def register_incident_tools(
                     "attributes": {
                         "title": incident_title,
                         "summary": incident_description,
-                        "description": incident_description,
                     },
                 }
             else:
