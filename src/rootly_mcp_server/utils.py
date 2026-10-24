@@ -10,6 +10,18 @@ from urllib.parse import urlparse, urlunparse
 
 logger = logging.getLogger(__name__)
 
+
+def json_line_logger(name: str) -> logging.Logger:
+    """A logger that writes each message as a bare line, so Datadog parses JSON messages."""
+    json_logger = logging.getLogger(name)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    json_logger.handlers = [handler]
+    json_logger.setLevel(logging.INFO)
+    json_logger.propagate = False
+    return json_logger
+
+
 # OAuth 2.0 Protected Resource Metadata (RFC 9728)
 OAUTH_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
 # OAuth 2.0 Authorization Server Metadata (RFC 8414)

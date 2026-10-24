@@ -17,6 +17,7 @@ from typing import Any
 import certifi
 import httpx2
 
+from .auth_logging import auth_rejection, exception_details, log_auth_rejection
 from .exceptions import RootlyValidationError
 from .security import mask_sensitive_data
 from .utils import OAUTH_PROTECTED_RESOURCE_PATH, auth_header_state, resolve_mcp_server_url
@@ -322,10 +323,18 @@ class AuthCaptureMiddleware:
         # Maps token_hash -> (timestamp, authenticated user or None if invalid)
         self._token_cache: dict[str, tuple[float, dict[str, str] | None]] = {}
         # In-flight probes keyed by token_hash to prevent cache stampede
-        self._inflight: dict[str, asyncio.Future[dict[str, str] | None]] = {}
+        self._inflight: dict[
+            str, asyncio.Future[tuple[dict[str, str] | None, dict[str, Any] | None]]
+        ] = {}
 
     async def _validate_token_upstream(self, auth_header: str) -> dict[str, str] | None:
-        """Probe the Rootly API to verify the Bearer token and extract user identity."""
+        """Probe the Rootly API to verify the Bearer token and extract user identity.
+
+        On rejection, the reason is left in ``auth_rejection``. Only a token the
+        Rootly API actually refused is cached as invalid; a probe that crashed or
+        got a server error is retried on the next request.
+        """
+        auth_rejection.set(None)
         token_hash = hashlib.sha256(auth_header.encode()).hexdigest()
         now = time.monotonic()
 
@@ -338,24 +347,37 @@ class AuthCaptureMiddleware:
                 else self._NEGATIVE_CACHE_TTL
             )
             if (now - cached_at) < ttl:
-                return dict(authenticated_user) if authenticated_user is not None else None
+                if authenticated_user is None:
+                    auth_rejection.set({"reason": "negative_cache"})
+                    return None
+                return dict(authenticated_user)
 
         existing = self._inflight.get(token_hash)
         if existing is not None:
-            return await existing
+            authenticated_user, rejection = await existing
+            if authenticated_user is None:
+                auth_rejection.set(rejection)
+            return authenticated_user
 
         loop = asyncio.get_running_loop()
-        future: asyncio.Future[dict[str, str] | None] = loop.create_future()
+        future: asyncio.Future[tuple[dict[str, str] | None, dict[str, Any] | None]] = (
+            loop.create_future()
+        )
         self._inflight[token_hash] = future
 
         try:
             authenticated_user = await self._probe_upstream(auth_header)
-            self._token_cache[token_hash] = (time.monotonic(), authenticated_user)
-            self._evict_cache(time.monotonic())
-            future.set_result(authenticated_user)
+            rejection = auth_rejection.get()
+            refused = rejection is not None and rejection.get("reason") == "upstream_rejected"
+            if authenticated_user is not None or refused:
+                self._token_cache[token_hash] = (time.monotonic(), authenticated_user)
+                self._evict_cache(time.monotonic())
+            future.set_result((authenticated_user, rejection))
             return authenticated_user
-        except Exception:
-            future.set_result(None)
+        except Exception as exc:
+            rejection = exception_details("validation_exception", exc)
+            auth_rejection.set(rejection)
+            future.set_result((None, rejection))
             return None
         finally:
             self._inflight.pop(token_hash, None)
@@ -372,10 +394,22 @@ class AuthCaptureMiddleware:
                     },
                 )
             if not resp.is_success:
+                refused = resp.status_code in (401, 403)
+                auth_rejection.set(
+                    {
+                        "reason": "upstream_rejected" if refused else "upstream_error",
+                        "upstream_status": resp.status_code,
+                    }
+                )
                 return None
-            return _extract_rootly_user_identity(resp.json())
-        except Exception:
-            logger.warning("Token validation probe failed, rejecting request")
+            authenticated_user = _extract_rootly_user_identity(resp.json())
+            if authenticated_user is None:
+                auth_rejection.set(
+                    {"reason": "unreadable_identity", "upstream_status": resp.status_code}
+                )
+            return authenticated_user
+        except Exception as exc:
+            auth_rejection.set(exception_details("probe_exception", exc))
             return None
 
     def _evict_cache(self, now: float) -> None:
@@ -453,6 +487,16 @@ class AuthCaptureMiddleware:
                 await self._validate_token_upstream(auth) if auth_state == "bearer" else None
             )
             if auth_state != "bearer" or not authenticated_user:
+                log_auth_rejection(
+                    auth_header=auth,
+                    auth_state=auth_state,
+                    path=path,
+                    transport=effective_transport,
+                    mcp_mode=mcp_mode,
+                    client_ip=client_ip,
+                    request_id=request_id,
+                    rejection=auth_rejection.get() if auth_state == "bearer" else None,
+                )
                 await send(
                     {
                         "type": "http.response.start",
