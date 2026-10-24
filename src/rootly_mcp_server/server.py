@@ -5,7 +5,6 @@ This module implements a server that dynamically generates MCP tools based on
 the Rootly API's OpenAPI (Swagger) specification using FastMCP's OpenAPI integration.
 """
 
-import hashlib
 import json
 import logging
 import os
@@ -42,16 +41,20 @@ from .transport import upstream_client
 from .utils import (
     OAUTH_AUTHORIZATION_SERVER_PATH,
     OAUTH_PROTECTED_RESOURCE_PATH,
+    _fingerprint_auth_header,
+    _format_traceback_excerpt,
+    _sanitize_log_excerpt,
     auth_header_state,
     derive_oauth_server_url,
     is_mcp_server_url_static,
+    json_line_logger,
     resolve_mcp_server_url,
     sanitize_parameters_in_spec,
 )
 
 # Set up logger
 logger = logging.getLogger(__name__)
-_tool_usage_json_logger = logging.getLogger("rootly_mcp_server.tool_usage_json")
+_tool_usage_json_logger = json_line_logger("rootly_mcp_server.tool_usage_json")
 
 # Argument rewrites applied during the current tool call, collected by
 # ToolArgumentAliasMiddleware and reported by ToolUsageLoggingMiddleware. A
@@ -209,18 +212,6 @@ def _remove_autogen_tools_shadowed_by_curated(mcp: FastMCP) -> None:
         )
 
 
-def _fingerprint_auth_header(auth_header: str) -> str:
-    """Hash auth header token for non-reversible identity correlation."""
-    if not auth_header:
-        return ""
-    token = auth_header.strip()
-    if token.lower().startswith("bearer "):
-        token = token[7:].strip()
-    if not token:
-        return ""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
-
-
 def _auth_header_state(auth_header: str) -> str:
     """Classify Authorization header shape without exposing token contents."""
     return auth_header_state(auth_header)
@@ -247,19 +238,6 @@ def _validate_bearer_auth_header(auth_header: str) -> str:
 def _tool_usage_logging_enabled() -> bool:
     """Return whether per-tool usage logging is enabled."""
     return os.getenv("ROOTLY_TOOL_USAGE_LOGGING", "true").lower() in ("1", "true", "yes")
-
-
-def _configure_tool_usage_json_logger() -> None:
-    """Configure a dedicated logger that emits raw JSON lines for Datadog parsing."""
-    if getattr(_tool_usage_json_logger, "_rootly_configured", False):
-        return
-
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter("%(message)s"))
-    _tool_usage_json_logger.handlers = [handler]
-    _tool_usage_json_logger.setLevel(logging.INFO)
-    _tool_usage_json_logger.propagate = False
-    _tool_usage_json_logger._rootly_configured = True  # type: ignore[attr-defined]
 
 
 def _current_tool_identity() -> dict[str, str]:
@@ -338,7 +316,6 @@ def _log_tool_usage_event(
             {key: value for key, value in error_context.items() if value not in ("", [], None, {})}
         )
 
-    _configure_tool_usage_json_logger()
     _tool_usage_json_logger.info(
         json.dumps(
             {k: v for k, v in event.items() if v not in ("", [], None)}, separators=(",", ":")
@@ -352,7 +329,7 @@ def _normalize_error_details(value: Any) -> Any:
         return value
 
     if isinstance(value, str):
-        return transport._sanitize_log_excerpt(value)
+        return _sanitize_log_excerpt(value)
 
     if isinstance(value, dict):
         return mask_sensitive_data(
@@ -365,14 +342,7 @@ def _normalize_error_details(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [_normalize_error_details(item) for item in value[:20]]
 
-    return transport._sanitize_log_excerpt(value)
-
-
-def _format_traceback_excerpt(tb_text: str) -> str:
-    """Keep a short traceback excerpt for structured logs without file-system noise."""
-    if not tb_text:
-        return ""
-    return transport._sanitize_log_excerpt(tb_text, max_length=1500)
+    return _sanitize_log_excerpt(value)
 
 
 def _extract_structured_tool_error(result: Any) -> dict[str, Any]:
