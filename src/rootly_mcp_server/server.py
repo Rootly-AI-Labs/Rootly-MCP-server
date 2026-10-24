@@ -5,7 +5,6 @@ This module implements a server that dynamically generates MCP tools based on
 the Rootly API's OpenAPI (Swagger) specification using FastMCP's OpenAPI integration.
 """
 
-import hashlib
 import json
 import logging
 import os
@@ -42,6 +41,9 @@ from .transport import upstream_client
 from .utils import (
     OAUTH_AUTHORIZATION_SERVER_PATH,
     OAUTH_PROTECTED_RESOURCE_PATH,
+    _fingerprint_auth_header,
+    _format_traceback_excerpt,
+    _sanitize_log_excerpt,
     auth_header_state,
     derive_oauth_server_url,
     is_mcp_server_url_static,
@@ -210,18 +212,6 @@ def _remove_autogen_tools_shadowed_by_curated(mcp: FastMCP) -> None:
         )
 
 
-def _fingerprint_auth_header(auth_header: str) -> str:
-    """Hash auth header token for non-reversible identity correlation."""
-    if not auth_header:
-        return ""
-    token = auth_header.strip()
-    if token.lower().startswith("bearer "):
-        token = token[7:].strip()
-    if not token:
-        return ""
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
-
-
 def _auth_header_state(auth_header: str) -> str:
     """Classify Authorization header shape without exposing token contents."""
     return auth_header_state(auth_header)
@@ -339,7 +329,7 @@ def _normalize_error_details(value: Any) -> Any:
         return value
 
     if isinstance(value, str):
-        return transport._sanitize_log_excerpt(value)
+        return _sanitize_log_excerpt(value)
 
     if isinstance(value, dict):
         return mask_sensitive_data(
@@ -352,14 +342,7 @@ def _normalize_error_details(value: Any) -> Any:
     if isinstance(value, list | tuple):
         return [_normalize_error_details(item) for item in value[:20]]
 
-    return transport._sanitize_log_excerpt(value)
-
-
-def _format_traceback_excerpt(tb_text: str) -> str:
-    """Keep a short traceback excerpt for structured logs without file-system noise."""
-    if not tb_text:
-        return ""
-    return transport._sanitize_log_excerpt(tb_text, max_length=1500)
+    return _sanitize_log_excerpt(value)
 
 
 def _extract_structured_tool_error(result: Any) -> dict[str, Any]:

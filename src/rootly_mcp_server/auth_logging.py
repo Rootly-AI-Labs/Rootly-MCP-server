@@ -8,7 +8,12 @@ import logging
 import traceback
 from typing import Any
 
-from .utils import json_line_logger
+from .utils import (
+    _fingerprint_auth_header,
+    _format_traceback_excerpt,
+    _sanitize_log_excerpt,
+    json_line_logger,
+)
 
 AUTH_REJECTED_EVENT = "mcp_auth_rejected"
 
@@ -26,16 +31,22 @@ _auth_json_logger = json_line_logger("rootly_mcp_server.auth_json")
 
 
 def exception_details(reason: str, exc: BaseException) -> dict[str, Any]:
-    from .transport import _sanitize_log_excerpt
-
     return {
         "reason": reason,
         "exception_type": type(exc).__name__,
         "exception_message": _sanitize_log_excerpt(exc),
-        "traceback_excerpt": _sanitize_log_excerpt(
-            "".join(traceback.format_exception(exc)), max_length=1500
-        ),
+        "traceback_excerpt": _format_traceback_excerpt("".join(traceback.format_exception(exc))),
     }
+
+
+def _rejection_level(reason: str) -> int:
+    if reason in _FAILURE_REASONS:
+        return logging.WARNING
+    if reason == "missing":
+        # Clients send one header-less request before starting OAuth; that 401 is
+        # routine, so it stays below the logger's INFO threshold.
+        return logging.DEBUG
+    return logging.INFO
 
 
 def log_auth_rejection(
@@ -50,17 +61,10 @@ def log_auth_rejection(
     rejection: dict[str, Any] | None,
 ) -> None:
     """Log one structured event for a request answered with 401."""
-    from .server import _fingerprint_auth_header
-
     details = rejection or {"reason": auth_state if auth_state != "bearer" else "rejected"}
-    if details["reason"] in _FAILURE_REASONS:
-        level = logging.WARNING
-    elif auth_state == "missing":
-        # Clients send one header-less request before starting OAuth; that 401 is
-        # routine, so it stays below the logger's INFO threshold.
-        level = logging.DEBUG
-    else:
-        level = logging.INFO
+    level = _rejection_level(details["reason"])
+    if not _auth_json_logger.isEnabledFor(level):
+        return
     event: dict[str, Any] = {
         "event": AUTH_REJECTED_EVENT,
         "level": logging.getLevelName(level).lower(),

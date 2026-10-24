@@ -28,7 +28,7 @@ from .transport import (
     _normalize_headers,
     _normalize_path,
 )
-from .utils import json_line_logger
+from .utils import _fingerprint_auth_header, json_line_logger
 
 SSE_DEPRECATED_AT = datetime(2026, 10, 21, tzinfo=UTC)
 SSE_SUNSET = datetime(2026, 11, 20, tzinfo=UTC)
@@ -74,8 +74,6 @@ def _query_param(scope: dict[str, Any], name: str) -> str:
 
 def log_sse_deprecated_connection(scope: dict[str, Any]) -> None:
     """Log one structured warning for a newly opened SSE stream."""
-    from .server import _fingerprint_auth_header
-
     headers = _normalize_headers(
         {key.decode("latin-1"): value.decode("latin-1") for key, value in scope.get("headers", [])}
     )

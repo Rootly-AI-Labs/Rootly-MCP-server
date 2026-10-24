@@ -95,20 +95,28 @@ class TestTokenValidationCache:
 
 @pytest.mark.asyncio
 class TestAuthRejectedEvent:
-    async def test_missing_header_is_logged_at_debug(self):
+    async def test_missing_header_is_not_logged(self):
+        # The header-less request before OAuth is routine; it stays below INFO.
         status, events = await _call_middleware([])
+
+        assert status == 401
+        assert events == []
+
+    async def test_malformed_header_is_logged(self):
+        status, events = await _call_middleware([(b"authorization", b"Basic abc")])
 
         assert status == 401
         assert events == [
             {
                 "event": "mcp_auth_rejected",
-                "level": "debug",
+                "level": "info",
                 "message": "MCP request rejected by auth check",
                 "path": "/mcp",
                 "transport": "streamable-http",
                 "mcp_mode": "classic",
-                "auth_header_state": "missing",
-                "reason": "missing",
+                "auth_header_state": "invalid_format",
+                "token_fingerprint": events[0]["token_fingerprint"],
+                "reason": "invalid_format",
             }
         ]
 

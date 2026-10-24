@@ -2,6 +2,7 @@
 Shared utilities for Rootly MCP Server.
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -20,6 +21,46 @@ def json_line_logger(name: str) -> logging.Logger:
     json_logger.setLevel(logging.INFO)
     json_logger.propagate = False
     return json_logger
+
+
+_MAX_LOG_EXCERPT_CHARS = 800
+
+
+def _sanitize_log_excerpt(value: Any, max_length: int = _MAX_LOG_EXCERPT_CHARS) -> str:
+    """Sanitize arbitrary text snippets for structured logs without losing context."""
+    if value in (None, ""):
+        return ""
+
+    text = str(value).replace("\r\n", "\n").strip()
+    text = re.sub(r"/[\w/.-]+\.py", "[file]", text)
+    text = re.sub(r"C:\\[\w\\.-]+\.py", "[file]", text)
+    text = re.sub(r'File "[^"]+"', 'File "[file]"', text)
+    text = re.sub(r"Bearer\s+[A-Za-z0-9._~\-]+", "Bearer ***REDACTED***", text, flags=re.I)
+    text = re.sub(r"\brootly_[A-Za-z0-9]+\b", "rootly_***REDACTED***", text)
+
+    if len(text) > max_length:
+        text = text[:max_length] + "..."
+
+    return text
+
+
+def _format_traceback_excerpt(tb_text: str) -> str:
+    """Keep a short traceback excerpt for structured logs without file-system noise."""
+    if not tb_text:
+        return ""
+    return _sanitize_log_excerpt(tb_text, max_length=1500)
+
+
+def _fingerprint_auth_header(auth_header: str) -> str:
+    """Hash auth header token for non-reversible identity correlation."""
+    if not auth_header:
+        return ""
+    token = auth_header.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    if not token:
+        return ""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
 
 
 # OAuth 2.0 Protected Resource Metadata (RFC 9728)
