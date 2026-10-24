@@ -53,7 +53,14 @@ def log_auth_rejection(
     from .server import _fingerprint_auth_header
 
     details = rejection or {"reason": auth_state if auth_state != "bearer" else "rejected"}
-    level = logging.WARNING if details["reason"] in _FAILURE_REASONS else logging.INFO
+    if details["reason"] in _FAILURE_REASONS:
+        level = logging.WARNING
+    elif auth_state == "missing":
+        # Clients send one header-less request before starting OAuth; that 401 is
+        # routine, so it stays below the logger's INFO threshold.
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
     event: dict[str, Any] = {
         "event": AUTH_REJECTED_EVENT,
         "level": logging.getLevelName(level).lower(),

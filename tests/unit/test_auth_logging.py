@@ -34,6 +34,12 @@ def _connect_error(request: httpx2.Request) -> httpx2.Response:
     raise httpx2.ConnectError("connection reset", request=request)
 
 
+def _connect_error_echoing_token(request: httpx2.Request) -> httpx2.Response:
+    raise httpx2.ConnectError(
+        f"connection reset ({request.headers['authorization']})", request=request
+    )
+
+
 async def _call_middleware(headers: list[tuple[bytes, bytes]]) -> tuple[int, list[dict]]:
     async def app(scope, receive, send):
         await send({"type": "http.response.start", "status": 200, "headers": []})
@@ -89,14 +95,14 @@ class TestTokenValidationCache:
 
 @pytest.mark.asyncio
 class TestAuthRejectedEvent:
-    async def test_missing_header_is_logged(self):
+    async def test_missing_header_is_logged_at_debug(self):
         status, events = await _call_middleware([])
 
         assert status == 401
         assert events == [
             {
                 "event": "mcp_auth_rejected",
-                "level": "info",
+                "level": "debug",
                 "message": "MCP request rejected by auth check",
                 "path": "/mcp",
                 "transport": "streamable-http",
@@ -107,7 +113,7 @@ class TestAuthRejectedEvent:
         ]
 
     async def test_probe_exception_is_logged_without_the_token(self):
-        upstream, _ = _upstream(_connect_error)
+        upstream, _ = _upstream(_connect_error_echoing_token)
         with upstream:
             status, events = await _call_middleware(
                 [(b"authorization", b"Bearer rootly_secret123")]
@@ -118,7 +124,7 @@ class TestAuthRejectedEvent:
         assert event["level"] == "warning"
         assert event["reason"] == "probe_exception"
         assert event["exception_type"] == "ConnectError"
-        assert event["exception_message"] == "connection reset"
+        assert event["exception_message"] == "connection reset (Bearer ***REDACTED***)"
         assert "ConnectError" in event["traceback_excerpt"]
         assert len(event["token_fingerprint"]) == 16
         assert "rootly_secret123" not in json.dumps(event)
