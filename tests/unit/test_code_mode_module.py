@@ -575,7 +575,8 @@ def test_build_code_mode_transform_keeps_monty_resource_limits():
     # budget; a provider constructed with limits=None would drop them.
     provider = build_code_mode_transform().sandbox_provider
     assert isinstance(provider, MontySandboxProvider)
-    assert provider.limits == {"max_duration_secs": 30.0, "max_memory": 100_000_000}
+    # Monty 1.1 renamed max_duration_secs to max_feed_duration_secs (fastmcp 4.1).
+    assert provider.limits == {"max_feed_duration_secs": 30.0, "max_memory": 100_000_000}
 
 
 def test_code_mode_max_tool_calls_from_env(caplog):
